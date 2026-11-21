@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apache NiFi — Day 1</title>
+  <link rel="stylesheet" href="../shared/css/main.css">
+</head>
+<body>
+  <div class="deck">
+
+    <div class="slide s-section s-title" id="s1">
+      <div class="title-left">
+        <div class="eyebrow">Day 1 · Apache NiFi</div>
+        <h1>Apache NiFi:<br />Foundations, records,<br />and clusters</h1>
+        <div class="subtitle">Architecture, building flows, record-based processing, and cluster setup</div>
+      </div>
+      <div class="title-visual">
+        <div class="title-image-placeholder">
+          <img src="../shared/images/nifi-logo.svg" alt="Apache NiFi logo" class="title-nifi-logo">
+        </div>
+      </div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-instructor" id="s2">
+      <div class="instructor-content">
+        <h2>About me</h2>
+        <ul>
+          <li>Big Data Engineer with extensive experience in Python</li>
+          <li>Enthusiastic about math and machine learning</li>
+          <li>Senior Big Data Software Engineer at Softserve</li>
+        </ul>
+      </div>
+      <div class="instructor-photo">
+        <div class="photo-circle">
+          <img src="images/avatar.jpeg" alt="Roman Dryndik">
+        </div>
+        <div class="instructor-name">Roman Dryndik</div>
+        <div class="instructor-title">Senior Big Data Software Engineer</div>
+      </div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s3">
+      <div class="section-number">S3</div>
+      <div class="eyebrow">Day 1</div>
+      <h2 class="section-heading">Agenda</h2>
+      <ol class="bullets numbered">
+        <li><strong>NiFi fundamentals</strong>: architecture, repositories, FlowFile lifecycle</li>
+        <li><strong>Building data flows</strong>: ingestion, routing, back pressure, prioritization</li>
+        <li><strong>Record-based processing</strong>: Readers, Writers, schemas; Record vs Split</li>
+        <li><strong>Installation and cluster setup</strong>: configuration, clustering, deployment, flow versioning</li>
+      </ol>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-intro" id="s4">
+      <h2>NiFi fundamentals</h2>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s5">
+      <div class="section-number">S5</div>
+      <div class="eyebrow">Data in motion vs data at rest</div>
+      <h2 class="section-heading">Two different kinds of data work</h2>
+<div class="split2">
+<div class="split-left">
+<h3>Data at rest</h3>
+<ul class="bullets">
+  <li>Data sitting in storage: databases, data lakes, file systems.</li>
+  <li>Tools: SQL engines, Spark in batch mode.</li>
+  <li>Unit of work: a query or a job over a bounded data set.</li>
+</ul>
+</div>
+<div class="split-right">
+<h3>Data in motion</h3>
+<ul class="bullets">
+  <li>Data moving between systems: events, logs, messages, CDC rows.</li>
+  <li>Unit of work: an event or a batch of events.</li>
+  <li>What matters: latency, ordering, delivery guarantees, back pressure, lineage.</li>
+</ul>
+</div>
+</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s6">
+      <div class="section-number">S6</div>
+      <div class="eyebrow">Where NiFi fits</div>
+      <h2 class="section-heading">NiFi is a data movement tool</h2>
+<ul class="bullets">
+  <li>Dynamic <strong>routing and delivery</strong> of data between heterogeneous systems.</li>
+  <li>Receive, validate, transform, enrich, deliver, and keep the full provenance history.</li>
+  <li>Do light processing in NiFi: filtering, normalization, routing, format conversion.</li>
+  <li>Leave heavy aggregations and large-window joins to Spark, Flink, or a SQL engine.</li>
+</ul>
+<table>
+  <tr><th>Criterion</th><th>Data at rest</th><th>Data in motion (NiFi)</th></tr>
+  <tr><td>Unit of processing</td><td>Table / file / data set</td><td>FlowFile (an event or a batch of events)</td></tr>
+  <tr><td>Key metric</td><td>Job execution time</td><td>Throughput, latency, backlog</td></tr>
+  <tr><td>Failures</td><td>Re-run the job</td><td>Retry, back pressure, redelivery</td></tr>
+  <tr><td>Transparency</td><td>Job logs</td><td>Data Provenance for every FlowFile</td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s7">
+      <div class="section-number">S7</div>
+      <div class="eyebrow">NiFi architecture</div>
+      <h2 class="section-heading">What runs inside a NiFi node</h2>
+<div class="diagram-shell">
+<svg class="diagram-svg" viewBox="0 0 1080 400" style="max-height: 390px;" role="img" aria-label="NiFi node architecture">
+<defs><marker id="arr-arch" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path></marker></defs>
+<rect x="20" y="14" width="1040" height="372" rx="12" fill="#ffffff" stroke="#1a6ba7" stroke-width="2" stroke-dasharray="8 6"></rect>
+<text x="540" y="40" text-anchor="middle" class="svg-title">JVM · one NiFi node</text>
+<rect x="60" y="56" width="960" height="46" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="540" y="85" text-anchor="middle" class="svg-text">Web Server (Jetty): REST API + UI</text>
+<rect x="60" y="120" width="960" height="130" rx="10" fill="#f9fcff" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="540" y="146" text-anchor="middle" class="svg-title">Flow Controller</text>
+<rect x="80" y="160" width="210" height="70" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="185" y="191" text-anchor="middle" class="svg-text">Scheduler</text>
+<text x="185" y="213" text-anchor="middle" class="svg-tag">timer-driven pool</text>
+<rect x="310" y="160" width="220" height="70" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="420" y="191" text-anchor="middle" class="svg-text">Processors</text>
+<text x="420" y="213" text-anchor="middle" class="svg-tag">Controller Services</text>
+<rect x="550" y="160" width="220" height="70" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="660" y="191" text-anchor="middle" class="svg-text">Process Sessions</text>
+<text x="660" y="213" text-anchor="middle" class="svg-tag">Connections (queues)</text>
+<rect x="790" y="160" width="210" height="70" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="895" y="191" text-anchor="middle" class="svg-text">Bulletins</text>
+<text x="895" y="213" text-anchor="middle" class="svg-tag">in-memory repository</text>
+<rect x="60" y="280" width="300" height="80" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="210" y="316" text-anchor="middle" class="svg-text">FlowFile Repository</text>
+<text x="210" y="338" text-anchor="middle" class="svg-tag">WAL: attributes + content pointer</text>
+<rect x="390" y="280" width="300" height="80" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="540" y="316" text-anchor="middle" class="svg-text">Content Repository</text>
+<text x="540" y="338" text-anchor="middle" class="svg-tag">immutable content claims</text>
+<rect x="720" y="280" width="300" height="80" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="870" y="316" text-anchor="middle" class="svg-text">Provenance Repository</text>
+<text x="870" y="338" text-anchor="middle" class="svg-tag">indexed lineage events</text>
+<line x1="210" y1="250" x2="210" y2="278" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-arch)"></line>
+<line x1="540" y1="250" x2="540" y2="278" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-arch)"></line>
+<line x1="870" y1="250" x2="870" y2="278" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-arch)"></line>
+</svg>
+</div>
+<div class="hibox">Extensions are packaged as NARs: Processors, Controller Services, Reporting Tasks, Parameter Providers, Flow Registry Clients, and Python extensions in 2.x.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s8">
+      <div class="section-number">S8</div>
+      <div class="eyebrow">Flow Controller</div>
+      <h2 class="section-heading">The brain of the node</h2>
+<ul class="bullets">
+  <li><strong>Flow Controller</strong> schedules processors, hands out threads from the pool, and manages queues and repositories.</li>
+  <li>A processor does not own a thread: the controller calls <code>onTrigger</code> on schedule.</li>
+  <li>Through a <strong>ProcessSession</strong> the processor takes FlowFiles from incoming queues and transfers them to outgoing ones.</li>
+  <li><strong>2.x:</strong> only the timer-driven thread pool remains; event-driven scheduling was removed in 2.0.</li>
+  <li><strong>Bulletins</strong>: problem reports from components, shown as a red icon, on the Bulletin Board, and via the API.</li>
+</ul>
+<div class="note">Practical takeaway: before migrating, switch any components configured as <em>Event Driven</em> to <em>Timer Driven</em>. The removal is confirmed by distribution docs based on NiFi 2.0; Apache Migration Guidance has no separate line for it.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s9">
+      <div class="section-number">S9</div>
+      <div class="eyebrow">Repositories</div>
+      <h2 class="section-heading">Three repositories behind every guarantee</h2>
+<table>
+  <tr><th>Repository</th><th>What it stores</th><th>Default implementation</th></tr>
+  <tr><td><strong>FlowFile</strong></td><td>State of each FlowFile: attributes, content claim reference, current queue</td><td><code>WriteAheadFlowFileRepository</code> (WAL + checkpoints)</td></tr>
+  <tr><td><strong>Content</strong></td><td>Content bytes as immutable, append-only <em>content claims</em></td><td><code>FileSystemRepository</code></td></tr>
+  <tr><td><strong>Provenance</strong></td><td>Lineage events (RECEIVE, SEND, ROUTE, CONTENT_MODIFIED, DROP…) with a search index</td><td><code>WriteAheadProvenanceRepository</code></td></tr>
+</table>
+<ul class="bullets">
+  <li><code>PersistentProvenanceRepository</code> and legacy classes were removed in 2.0.</li>
+  <li>Repository encryption support was removed in 2.0.0: relevant for migration and for encryption planning.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s10">
+      <div class="section-number">S10</div>
+      <div class="eyebrow">Configuration</div>
+      <h2 class="section-heading">Key repository properties in nifi.properties</h2>
+<pre><code><span class="cm"># FlowFile Repository</span>
+nifi.flowfile.repository.directory=./flowfile_repository
+nifi.flowfile.repository.checkpoint.interval=...  <span class="cm"># 2 mins in docs, 20 secs in sample config</span>
+nifi.flowfile.repository.always.sync=false
+
+<span class="cm"># Content Repository (several directories are allowed)</span>
+nifi.content.repository.directory.default=./content_repository
+nifi.content.repository.archive.*=...
+nifi.content.claim.max.appendable.size=...
+
+<span class="cm"># Provenance Repository</span>
+nifi.provenance.repository.directory.default=./provenance_repository
+nifi.provenance.repository.max.storage.time=...
+nifi.provenance.repository.max.storage.size=...</code></pre>
+<div class="hibox">Exact property names and defaults can differ between minor versions: check <strong>Help → Documentation</strong> in your NiFi UI.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s11">
+      <div class="section-number">S11</div>
+      <div class="eyebrow">Copy-on-write</div>
+      <h2 class="section-heading">Content is immutable</h2>
+<ul class="bullets">
+  <li>A written content claim is <strong>never modified</strong>: changing content means reading the old claim and writing a new one.</li>
+  <li>Cloning a FlowFile (fan-out to two relationships) copies only a reference, not the bytes.</li>
+  <li>Attribute-only operations (<code>UpdateAttribute</code>, <code>RouteOnAttribute</code>) are cheap: content is untouched.</li>
+  <li>Every content transformation is read + write I/O: long chains of content-rewriting processors load the disk.</li>
+  <li>Disk space is freed when no references remain; deleted content may stay in the <strong>archive</strong> for a while.</li>
+</ul>
+<div class="hibox">This is the main motivation for record-based processing with as few content-rewriting steps as possible.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s12">
+      <div class="section-number">S12</div>
+      <div class="eyebrow">FlowFile lifecycle</div>
+      <h2 class="section-heading">How a FlowFile moves through the repositories</h2>
+<div class="diagram-shell">
+<svg class="diagram-svg" viewBox="0 0 1080 330" style="max-height: 320px;" role="img" aria-label="FlowFile lifecycle across repositories">
+<defs><marker id="arr-life" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path></marker></defs>
+<rect x="30" y="40" width="200" height="70" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="130" y="71" text-anchor="middle" class="svg-text">Source processor</text>
+<text x="130" y="93" text-anchor="middle" class="svg-tag">e.g. ListenHTTP</text>
+<rect x="300" y="40" width="200" height="70" rx="8" fill="#fff4e6" stroke="#d17b00" stroke-width="2"></rect>
+<text x="400" y="71" text-anchor="middle" class="svg-text">session.commit()</text>
+<text x="400" y="93" text-anchor="middle" class="svg-tag">durability point</text>
+<rect x="570" y="40" width="200" height="70" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="670" y="71" text-anchor="middle" class="svg-text">Connection</text>
+<text x="670" y="93" text-anchor="middle" class="svg-tag">queue</text>
+<rect x="840" y="40" width="210" height="70" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="945" y="71" text-anchor="middle" class="svg-text">Next processor</text>
+<text x="945" y="93" text-anchor="middle" class="svg-tag">get → process → commit</text>
+<line x1="230" y1="75" x2="300" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-life)"></line>
+<line x1="500" y1="75" x2="570" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-life)"></line>
+<line x1="770" y1="75" x2="840" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-life)"></line>
+<rect x="160" y="200" width="240" height="70" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="280" y="231" text-anchor="middle" class="svg-text">FlowFile Repository</text>
+<text x="280" y="253" text-anchor="middle" class="svg-tag">1. WAL update</text>
+<rect x="420" y="200" width="240" height="70" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="540" y="231" text-anchor="middle" class="svg-text">Content Repository</text>
+<text x="540" y="253" text-anchor="middle" class="svg-tag">new claim on write</text>
+<rect x="680" y="200" width="240" height="70" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="800" y="231" text-anchor="middle" class="svg-text">Provenance Repository</text>
+<text x="800" y="253" text-anchor="middle" class="svg-tag">2. RECEIVE / CREATE</text>
+<line x1="370" y1="110" x2="280" y2="198" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-life)"></line>
+<line x1="400" y1="110" x2="540" y2="198" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-life)"></line>
+<line x1="430" y1="110" x2="790" y2="198" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-life)"></line>
+<rect x="840" y="120" width="210" height="50" rx="8" fill="#fdecec" stroke="#cf4d4d" stroke-width="2"></rect>
+<text x="945" y="151" text-anchor="middle" class="svg-text">DROP → claim freed</text>
+<line x1="945" y1="110" x2="945" y2="120" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-life)"></line>
+<text x="535" y="310" text-anchor="middle" class="svg-tag">Queue features: back pressure · prioritizers · expiration · load balancing</text>
+</svg>
+</div>
+<ol class="bullets">
+  <li><code>session.create()</code> creates a FlowFile; <code>session.write()</code> puts content into a new claim.</li>
+  <li><code>session.transfer()</code> + <code>commit()</code>: WAL update, provenance events, then the FlowFile lands in the queue.</li>
+  <li>A terminal processor or auto-terminated relationship produces a <code>DROP</code> event.</li>
+</ol>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s13">
+      <div class="section-number">S13</div>
+      <div class="eyebrow">Delivery semantics</div>
+      <h2 class="section-heading">At-least-once inside a node</h2>
+<ul class="bullets">
+  <li>Processing is organized as <strong>session transactions</strong>: commit or rollback.</li>
+  <li>On rollback the FlowFile returns to the incoming queue (sometimes with penalization): no data loss between steps.</li>
+  <li>A failure after an external side effect but before commit leads to <strong>reprocessing</strong>.</li>
+  <li>Idempotent writes on the destination (Kafka, DB, REST) are the flow designer's responsibility.</li>
+</ul>
+<div class="hibox">Durability: by default <code>nifi.flowfile.repository.always.sync=false</code> and <code>nifi.content.repository.always.sync=false</code>. The OS flushes asynchronously, so an OS or power crash can lose the latest changes. <code>true</code> increases reliability at the cost of throughput. The checkpoint interval differs between docs (<code>2 mins</code>) and shipped configs (<code>20 secs</code>): check your own <code>nifi.properties</code>.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s14">
+      <div class="section-number">S14</div>
+      <div class="eyebrow">Swapping</div>
+      <h2 class="section-heading">FlowFiles in memory</h2>
+<ul class="bullets">
+  <li>FlowFile metadata (attributes) lives in the JVM heap.</li>
+  <li>To avoid OutOfMemory, NiFi <strong>swaps</strong> FlowFiles from queues to disk above <code>nifi.queue.swap.threshold</code> (default 20,000 per queue).</li>
+  <li>Millions of tiny FlowFiles hurt both heap and speed.</li>
+  <li>Prefer hundreds of large FlowFiles carrying batches of records (record-based processing, <code>MergeRecord</code>).</li>
+</ul>
+<div class="hibox">Rule of thumb: many records per FlowFile, not one record per FlowFile.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s15">
+      <div class="section-number">S15</div>
+      <div class="eyebrow">Key concepts</div>
+      <h2 class="section-heading">Core building blocks (1/2)</h2>
+<table>
+  <tr><th>Concept</th><th>Description</th><th>Practical details</th></tr>
+  <tr><td><strong>FlowFile</strong></td><td>Unit of data: attributes + content</td><td>System attributes: <code>uuid</code>, <code>filename</code>, <code>path</code>, <code>fileSize</code>, <code>mime.type</code></td></tr>
+  <tr><td><strong>Processor</strong></td><td>Unit of work: ingest, transform, route, deliver</td><td>Properties, relationships, scheduling, concurrent tasks, run duration, penalty/yield</td></tr>
+  <tr><td><strong>Relationship</strong></td><td>Named processor output: <code>success</code>, <code>failure</code>, <code>retry</code>…</td><td>Every relationship must be connected or <strong>auto-terminated</strong></td></tr>
+  <tr><td><strong>Connection</strong></td><td>Queue between processors and ports</td><td>Back pressure, prioritizers, expiration, load balancing</td></tr>
+  <tr><td><strong>Process Group</strong></td><td>Container of components with Input/Output Ports</td><td>Unit of modularity, versioning, parameters, and Stateless execution in 2.x</td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s16">
+      <div class="section-number">S16</div>
+      <div class="eyebrow">Key concepts</div>
+      <h2 class="section-heading">Core building blocks (2/2)</h2>
+<table>
+  <tr><th>Concept</th><th>Description</th><th>Practical details</th></tr>
+  <tr><td><strong>Controller Service</strong></td><td>Shared configurable service: DBCP pool, SSL Context, Record Reader/Writer, Schema Registry</td><td>Scope: its Process Group and children; must be <em>enabled</em></td></tr>
+  <tr><td><strong>Parameter Context</strong></td><td>Named set of parameters (including sensitive), bound to a Process Group</td><td>Referenced as <code>#{param}</code>; supports inheritance</td></tr>
+  <tr><td><strong>Reporting Task</strong></td><td>Periodic controller-level task</td><td><code>PrometheusReportingTask</code>, <code>MonitorDiskUsage</code></td></tr>
+  <tr><td><strong>Parameter Provider</strong></td><td>Loads parameters from external stores</td><td>Vault, AWS / GCP Secrets</td></tr>
+  <tr><td><strong>Flow Registry Client</strong></td><td>Integration with a flow version registry</td><td>NiFi Registry, GitHub, GitLab, Bitbucket, Azure DevOps</td></tr>
+</table>
+<div class="note">Removed in 2.0: Variables and the Variable Registry. Use Parameter Contexts; EL scope <code>ENVIRONMENT</code> replaces <code>VARIABLE_REGISTRY</code>.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s17">
+      <div class="section-number">S17</div>
+      <div class="eyebrow">Use cases</div>
+      <h2 class="section-heading">Typical NiFi scenarios</h2>
+<table>
+  <tr><th>Scenario</th><th>Typical components</th></tr>
+  <tr><td><strong>Stream ingestion</strong></td><td><code>ListenHTTP</code> / <code>HandleHttpRequest</code>, <code>ConsumeKafka</code>, MQTT; normalize and route to storage</td></tr>
+  <tr><td><strong>Log shipping</strong></td><td><code>ListenSyslog</code>, <code>TailFile</code>; parse, filter noise, deliver to Splunk / Elastic / Kafka / S3</td></tr>
+  <tr><td><strong>Event pipelines</strong></td><td>Schema validation, enrichment (<code>LookupRecord</code>), multiple destinations, DLQ for bad events</td></tr>
+  <tr><td><strong>Batch integrations</strong></td><td>List/Fetch pattern (<code>ListFile</code> + <code>FetchFile</code>, <code>ListSFTP</code>, <code>ListS3</code>) with state for incremental loads</td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s18">
+      <div class="section-number">S18</div>
+      <div class="eyebrow">Lab 1 · NiFi UI and the first flow</div>
+      <h2 class="section-heading">Lab 1: build and observe a first flow</h2>
+<pre><code>GenerateFlowFile ──success──► UpdateAttribute ──success──► LogAttribute</code></pre>
+<table>
+  <tr><th>Processor</th><th>Property</th><th>Value</th></tr>
+  <tr><td><code>GenerateFlowFile</code></td><td>Run Schedule / Mime Type</td><td><code>5 sec</code> / <code>application/json</code></td></tr>
+  <tr><td></td><td>Custom Text</td><td><code>{"id": ${random():mod(1000)}, "ts": "${now():format(...)}"}</code></td></tr>
+  <tr><td><code>UpdateAttribute</code></td><td>Dynamic properties</td><td><code>lab.stage = ingested</code>, <code>event.id = ${UUID()}</code></td></tr>
+  <tr><td><code>LogAttribute</code></td><td>Log Level / relationships</td><td><code>info</code>; auto-terminate <code>success</code></td></tr>
+</table>
+<div class="hibox">Goal: learn the UI, run a simple flow, and trace it in Data Provenance.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s19">
+      <div class="section-number">S19</div>
+      <div class="eyebrow">Lab 1 · Steps</div>
+      <h2 class="section-heading">Lab 1: step by step</h2>
+<ol class="bullets">
+  <li>Drag processors onto the canvas and connect them with the <code>success</code> relationship.</li>
+  <li>In <code>LogAttribute</code> → <em>Settings</em>, auto-terminate <code>success</code>.</li>
+  <li>Start the flow; watch <em>In/Out</em>, <em>Tasks/Time</em>, and the queue counters.</li>
+  <li>Stop <code>UpdateAttribute</code>, then <strong>List queue</strong> to inspect attributes and content.</li>
+  <li><strong>View data provenance</strong> → open an event → <strong>Lineage graph</strong>.</li>
+</ol>
+<div class="split2">
+<div class="split-left">
+<div class="hibox">Check: <code>nifi-app.log</code> shows <code>lab.stage=ingested</code>; provenance has three events per <code>uuid</code>: CREATE, ATTRIBUTES_MODIFIED, DROP.</div>
+</div>
+<div class="split-right">
+<div class="hibox hibox-red">Typical errors: yellow triangle = unconnected relationship or missing property; queue not moving = stopped destination or back pressure.</div>
+</div>
+</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-intro" id="s20">
+      <h2>Building data flows</h2>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s21">
+      <div class="section-number">S21</div>
+      <div class="eyebrow">Ingestion</div>
+      <h2 class="section-heading">Ingesting different data types</h2>
+<table>
+  <tr><th>Source</th><th>Main components</th><th>State / increment</th></tr>
+  <tr><td>Files (local / SFTP / SMB / S3)</td><td><code>ListFile</code> + <code>FetchFile</code>, <code>ListSFTP</code> + <code>FetchSFTP</code>, <code>ListS3</code> + <code>FetchS3Object</code></td><td><code>List*</code> keeps last timestamps / keys</td></tr>
+  <tr><td>HTTP in</td><td><code>ListenHTTP</code>, <code>HandleHttpRequest</code> + <code>HandleHttpResponse</code></td><td>Configure TLS and authentication</td></tr>
+  <tr><td>HTTP out</td><td><code>InvokeHTTP</code></td><td>Day 2</td></tr>
+  <tr><td>Databases</td><td><code>ExecuteSQLRecord</code>, <code>QueryDatabaseTableRecord</code>, <code>GenerateTableFetch</code></td><td>Maximum-value columns in state</td></tr>
+  <tr><td>Messaging</td><td><code>ConsumeKafka</code>, <code>ConsumeJMS</code>, <code>ConsumeMQTT</code>, <code>ConsumeAMQP</code></td><td>Offsets / acks on the broker</td></tr>
+  <tr><td>Logs / network</td><td><code>TailFile</code>, <code>ListenSyslog</code>, <code>ListenTCP</code>, <code>ListenUDP</code></td><td>Read position in state</td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s22">
+      <div class="section-number">S22</div>
+      <div class="eyebrow">List/Fetch pattern</div>
+      <h2 class="section-heading">List on one node, fetch on all nodes</h2>
+<div class="diagram-shell">
+<svg class="diagram-svg" viewBox="0 0 920 330" style="max-height: 300px;" role="img" aria-label="List Fetch pattern">
+<defs><marker id="arr-lf" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path></marker></defs>
+<rect x="40" y="120" width="220" height="70" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="150" y="151" text-anchor="middle" class="svg-text">ListS3</text>
+<text x="150" y="173" text-anchor="middle" class="svg-tag">Primary Node Only</text>
+<rect x="330" y="120" width="220" height="70" rx="8" fill="#fff4e6" stroke="#d17b00" stroke-width="2"></rect>
+<text x="440" y="151" text-anchor="middle" class="svg-text">Connection</text>
+<text x="440" y="173" text-anchor="middle" class="svg-tag">Round robin</text>
+<rect x="640" y="30" width="240" height="60" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="760" y="66" text-anchor="middle" class="svg-text">FetchS3Object · node 1</text>
+<rect x="640" y="125" width="240" height="60" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="760" y="161" text-anchor="middle" class="svg-text">FetchS3Object · node 2</text>
+<rect x="640" y="220" width="240" height="60" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="760" y="256" text-anchor="middle" class="svg-text">FetchS3Object · node 3</text>
+<line x1="260" y1="155" x2="330" y2="155" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lf)"></line>
+<line x1="550" y1="150" x2="640" y2="62" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lf)"></line>
+<line x1="550" y1="155" x2="640" y2="155" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lf)"></line>
+<line x1="550" y1="160" x2="640" y2="248" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lf)"></line>
+<text x="150" y="220" text-anchor="middle" class="svg-tag">attributes only, no content</text>
+<text x="760" y="310" text-anchor="middle" class="svg-tag">content fetched in parallel across the cluster</text>
+</svg>
+</div>
+<ul class="bullets">
+  <li><code>List*</code> creates content-less FlowFiles describing objects; <code>Fetch*</code> reads the content.</li>
+  <li>Since 1.14, a <em>Primary Node Only</em> processor with incoming connections is invalid: list on the primary, fetch after load balancing.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s23">
+      <div class="section-number">S23</div>
+      <div class="eyebrow">Routing and filtering</div>
+      <h2 class="section-heading">Expression Language basics</h2>
+<pre><code>${filename}                                   <span class="cm">// attribute value</span>
+${filename:toUpper()}                         <span class="cm">// function chain</span>
+${fileSize:gt(1048576)}                       <span class="cm">// boolean: size &gt; 1 MB</span>
+${mime.type:equals(<span class="str">'application/json'</span>)}
+${kafka.topic:startsWith(<span class="str">'orders.'</span>)}
+${now():format(<span class="str">'yyyy-MM-dd'</span>)}                 <span class="cm">// current date</span>
+${http.query.param.limit:replaceNull(<span class="str">'100'</span>)}  <span class="cm">// default value</span>
+${severity:equals(<span class="str">'ERROR'</span>):or(${severity:equals(<span class="str">'FATAL'</span>)})}
+#{db.url}                                     <span class="cm">// Parameter Context reference, not EL</span></code></pre>
+<div class="hibox">EL is evaluated only for properties marked <em>Supports Expression Language</em>. Scope: <code>NONE</code>, <code>ENVIRONMENT</code>, or <code>FLOWFILE_ATTRIBUTES</code>.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s24">
+      <div class="section-number">S24</div>
+      <div class="eyebrow">RouteOnAttribute</div>
+      <h2 class="section-heading">Routing by attributes</h2>
+<table>
+  <tr><th>Property</th><th>Purpose</th></tr>
+  <tr><td><strong>Routing Strategy</strong></td><td><code>Route to Property name</code>, <code>Route to 'match' if all match</code>, <code>Route to 'match' if any matches</code></td></tr>
+  <tr><td>Dynamic property (name = relationship)</td><td>EL expression returning a boolean</td></tr>
+  <tr><td>Relationship <code>unmatched</code></td><td>Everything that matched no condition</td></tr>
+</table>
+<pre><code>big_json   = ${mime.type:equals(<span class="str">'application/json'</span>):and(${fileSize:gt(10485760)})}
+small_json = ${mime.type:equals(<span class="str">'application/json'</span>):and(${fileSize:le(10485760)})}
+csv        = ${filename:endsWith(<span class="str">'.csv'</span>)}</code></pre>
+<div class="hibox">Content is not read, so <code>RouteOnAttribute</code> is very cheap.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s25">
+      <div class="section-number">S25</div>
+      <div class="eyebrow">Content-based routing</div>
+      <h2 class="section-heading">When attributes are not enough</h2>
+<ul class="bullets">
+  <li><code>RouteOnAttribute</code> sees attributes only.</li>
+  <li><code>RouteOnContent</code>: regular expressions over the content (scans the content).</li>
+  <li><code>QueryRecord</code> / <code>PartitionRecord</code>: split by field values without Split processors.</li>
+  <li><code>EvaluateJsonPath</code> / <code>ExtractText</code>: pull a value into an attribute first.</li>
+</ul>
+<div class="hibox hibox-red">Extract into attributes only <strong>small</strong> values: attributes live in the heap and in the WAL.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s26">
+      <div class="section-number">S26</div>
+      <div class="eyebrow">Merging</div>
+      <h2 class="section-heading">Merging flows and data</h2>
+<ul class="bullets">
+  <li>Fan-in: several incoming connections to one processor are allowed.</li>
+  <li><code>MergeContent</code>: byte-level merge (binary concatenation, TAR, ZIP, Avro).</li>
+  <li><code>MergeRecord</code>: record-aware, schema-aware merge (full reference: Day 2, section 2.2.6).</li>
+  <li>Key settings: min/max entries (records), min/max group size, <strong>Max Bin Age</strong>, correlation attribute, merge strategy (<code>Bin-Packing</code> / <code>Defragment</code>).</li>
+</ul>
+<div class="hibox">Always set <strong>Max Bin Age</strong> so the tail of the data is not stuck waiting for a full bin.</div>
+<div class="note">Since 1.8 <code>MergeRecord</code> honors <em>Minimum Number of Records</em>: for large output files set the minimum close to the maximum.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s27">
+      <div class="section-number">S27</div>
+      <div class="eyebrow">Back pressure</div>
+      <h2 class="section-heading">Back pressure protects the system</h2>
+<div class="diagram-shell">
+<svg class="diagram-svg" viewBox="0 0 960 330" style="max-height: 310px;" role="img" aria-label="Back pressure on a full failure queue">
+<defs><marker id="arr-bp" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path></marker></defs>
+<rect x="40" y="130" width="200" height="70" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="140" y="161" text-anchor="middle" class="svg-text">Processor A</text>
+<text x="140" y="183" text-anchor="middle" class="svg-tag">not scheduled</text>
+<rect x="330" y="50" width="300" height="56" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
+<rect x="332" y="52" width="110" height="52" rx="6" fill="#edf8f2"></rect>
+<text x="480" y="84" text-anchor="middle" class="svg-text">success: 3,200 / 10,000</text>
+<rect x="330" y="220" width="300" height="56" rx="8" fill="#fdecec" stroke="#cf4d4d" stroke-width="2"></rect>
+<text x="480" y="254" text-anchor="middle" class="svg-text">failure: 10,000 / 10,000</text>
+<rect x="720" y="50" width="200" height="56" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="820" y="84" text-anchor="middle" class="svg-text">Processor B</text>
+<rect x="720" y="220" width="200" height="56" rx="8" fill="#fff4e6" stroke="#d17b00" stroke-width="2"></rect>
+<text x="820" y="254" text-anchor="middle" class="svg-text">Error handling</text>
+<line x1="240" y1="150" x2="330" y2="80" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-bp)"></line>
+<line x1="240" y1="180" x2="330" y2="248" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-bp)"></line>
+<line x1="630" y1="78" x2="720" y2="78" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-bp)"></line>
+<line x1="630" y1="248" x2="720" y2="248" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-bp)"></line>
+<text x="480" y="310" text-anchor="middle" class="svg-tag">threshold reached on ONE outgoing connection → the whole processor stops</text>
+</svg>
+</div>
+<ul class="bullets">
+  <li>Each connection has an <strong>Object Threshold</strong> and a <strong>Size Threshold</strong>: defaults 10,000 FlowFiles and 1 GB.</li>
+  <li>When either threshold is reached, the source processor <strong>stops being scheduled</strong> until the queue drains.</li>
+  <li>One full outgoing connection (often <code>failure</code>) stops the processor, even if other connections are empty.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s28">
+      <div class="section-number">S28</div>
+      <div class="eyebrow">Connection settings</div>
+      <h2 class="section-heading">What you configure on a connection</h2>
+<table>
+  <tr><th>Setting</th><th>Purpose</th></tr>
+  <tr><td>Back Pressure Object Threshold</td><td>Maximum FlowFiles in the queue (default 10,000)</td></tr>
+  <tr><td>Back Pressure Data Size Threshold</td><td>Maximum total size (default 1 GB)</td></tr>
+  <tr><td>FlowFile Expiration</td><td>Remove unprocessed FlowFiles after this age (default <code>0 sec</code> = never)</td></tr>
+  <tr><td>Prioritizers</td><td>Order in which FlowFiles are taken from the queue</td></tr>
+  <tr><td>Load Balance Strategy</td><td>Distribution across cluster nodes (Block 1.4)</td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s29">
+      <div class="section-number">S29</div>
+      <div class="eyebrow">Prioritization</div>
+      <h2 class="section-heading">Queue prioritizers</h2>
+<table>
+  <tr><th>Prioritizer</th><th>Behavior</th></tr>
+  <tr><td><code>FirstInFirstOutPrioritizer</code></td><td>By time of entering the queue</td></tr>
+  <tr><td><code>NewestFlowFileFirstPrioritizer</code></td><td>Newest first: lowers latency of fresh events during a backlog</td></tr>
+  <tr><td><code>OldestFlowFileFirstPrioritizer</code></td><td>Oldest first, by lineage age</td></tr>
+  <tr><td><code>PriorityAttributePrioritizer</code></td><td>By the <code>priority</code> attribute (lower value = higher priority)</td></tr>
+</table>
+<div class="hibox">Prioritizers do not guarantee strict global order with several concurrent tasks or in a cluster. If order matters (e.g. CDC per key): partition by attribute + 1 concurrent task, or <code>EnforceOrder</code>.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s30">
+      <div class="section-number">S30</div>
+      <div class="eyebrow">Design practices</div>
+      <h2 class="section-heading">Naming and documentation</h2>
+<div class="split2">
+<div class="split-left">
+<h3>Naming</h3>
+<ul class="bullets">
+  <li>One standard: <code>&lt;Action&gt; &lt;Object&gt; [&lt;Source/Destination&gt;]</code>.</li>
+  <li>Examples: <em>Consume orders from Kafka</em>, <em>Validate order schema</em>, <em>Route invalid orders to DLQ</em>.</li>
+  <li>Names must be clear without opening the configuration.</li>
+  <li>Name connections only when it adds meaning (<code>valid</code>, <code>invalid</code>).</li>
+</ul>
+</div>
+<div class="split-right">
+<h3>Documentation</h3>
+<ul class="bullets">
+  <li>Use <strong>Comments</strong> on components and <strong>Labels</strong> on the canvas.</li>
+  <li>Describe the group contract: inputs, outputs, formats, SLA.</li>
+  <li>Fill in the Process Group description.</li>
+</ul>
+</div>
+</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s31">
+      <div class="section-number">S31</div>
+      <div class="eyebrow">Design practices</div>
+      <h2 class="section-heading">Modularity and anti-patterns</h2>
+<div class="split2">
+<div class="split-left">
+<h3>Modularity</h3>
+<ul class="bullets">
+  <li>Process Group per function: <em>ingest</em>, <em>validate</em>, <em>transform</em>, <em>deliver</em>, <em>error handling</em>.</li>
+  <li>Groups talk through Input/Output Ports.</li>
+  <li>Parameter Context for every environment-specific value; inheritance <code>base → prod</code>.</li>
+  <li>Create Controller Services at Process Group level, not root, unless needed globally.</li>
+</ul>
+</div>
+<div class="split-right">
+<h3>Anti-patterns</h3>
+<ul class="bullets">
+  <li>"Spaghetti" of hundreds of processors on one canvas.</li>
+  <li>Hard-coded URLs and passwords.</li>
+  <li>Large content fragments extracted into attributes.</li>
+  <li>Endless <code>failure → same processor</code> loops without a retry limit.</li>
+  <li>Unnamed processors.</li>
+</ul>
+</div>
+</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s32">
+      <div class="section-number">S32</div>
+      <div class="eyebrow">Lab 2 · Multiple sources with routing</div>
+      <h2 class="section-heading">Lab 2: multi-source flow with routing</h2>
+<pre><code>[PG: ingest]                                    [PG: route]
+ ListFile → FetchFile ───────┐
+ ListenHTTP (port 8081) ─────┼─► Output Port ─► RouteOnAttribute ─┬─ json      ─► process_json
+ GenerateFlowFile ───────────┘   "all-sources"                    ├─ csv       ─► process_csv
+                                                                  └─ unmatched ─► quarantine</code></pre>
+<table>
+  <tr><th>Component</th><th>Key properties</th></tr>
+  <tr><td><code>ListFile</code> / <code>FetchFile</code></td><td>Input Directory <code>#{ingest.dir}</code>; filter <code>.*\.(json|csv)</code>; fetch <code>${absolute.path}/${filename}</code></td></tr>
+  <tr><td><code>ListenHTTP</code></td><td>Port <code>8081</code>, Base Path <code>events</code> (no TLS in the lab only)</td></tr>
+  <tr><td><code>UpdateAttribute</code></td><td><code>source</code> = <code>file</code> / <code>http</code> / <code>generator</code></td></tr>
+  <tr><td><code>RouteOnAttribute</code></td><td><code>json</code> = mime type or <code>.json</code> name; <code>csv</code> = <code>${filename:endsWith('.csv')}</code></td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s33">
+      <div class="section-number">S33</div>
+      <div class="eyebrow">Lab 2 · Steps</div>
+      <h2 class="section-heading">Lab 2: step by step</h2>
+<ol class="bullets">
+  <li>Create Parameter Context <code>lab-params</code> (<code>ingest.dir=/data/in</code>) and bind it to the groups.</li>
+  <li>Build the <code>ingest</code> group with three sources and an output port.</li>
+  <li>Build the <code>route</code> group and connect the ports.</li>
+  <li>Set <code>NewestFlowFileFirstPrioritizer</code> on the merged connection.</li>
+  <li>Send a test event and drop files into the input directory.</li>
+</ol>
+<div class="terminal-window"><div class="terminal-titlebar"><span class="terminal-dot terminal-dot-red"></span><span class="terminal-dot terminal-dot-yellow"></span><span class="terminal-dot terminal-dot-green"></span><span class="terminal-title">bash</span></div><pre><code><span class="terminal-prompt">$</span> curl -X POST -H <span class="str">'Content-Type: application/json'</span> \
+    -d <span class="str">'{"id":1,"type":"click"}'</span> http://localhost:8081/events
+<span class="terminal-prompt">$</span> printf <span class="str">'id,type\n2,view\n'</span> &gt; /data/in/sample.csv</code></pre></div>
+<div class="hibox">Check: FlowFiles appear in <code>json</code> / <code>csv</code>; <code>source</code> matches the origin; provenance shows a <code>ROUTE</code> event.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-intro" id="s34">
+      <h2>Record-based processing</h2>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s35">
+      <div class="section-number">S35</div>
+      <div class="eyebrow">The record concept</div>
+      <h2 class="section-heading">Why one FlowFile per object does not scale</h2>
+<div class="split2">
+<div class="split-left">
+<h3>Classic model</h3>
+<ul class="bullets">
+  <li>A JSON array of 10,000 events → <code>SplitJson</code> → 10,000 FlowFiles.</li>
+  <li>10,000 FlowFile Repository entries and provenance events.</li>
+  <li>10,000 <code>onTrigger</code> calls on every step; heavy heap pressure.</li>
+</ul>
+</div>
+<div class="split-right">
+<h3>Record-oriented model</h3>
+<ul class="bullets">
+  <li>A FlowFile is a <strong>set of records</strong> of one format.</li>
+  <li>Format (JSON, CSV, Avro, Parquet, XML…) is abstracted by Reader and Writer services.</li>
+  <li>Records are streamed: one record in memory at a time.</li>
+</ul>
+</div>
+</div>
+<div class="note"><code>QueryRecord</code> and <code>MergeRecord</code> have their own memory nuances: not every processor is purely streaming.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s36">
+      <div class="section-number">S36</div>
+      <div class="eyebrow">Reader → Processor → Writer</div>
+      <h2 class="section-heading">The record processing pipeline</h2>
+<div class="diagram-shell">
+<svg class="diagram-svg" viewBox="0 0 1140 290" style="max-height: 300px;" role="img" aria-label="Record reader processor writer pipeline">
+<defs><marker id="arr-rec" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path></marker></defs>
+<rect x="20" y="150" width="180" height="76" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="110" y="184" text-anchor="middle" class="svg-text">FlowFile</text>
+<text x="110" y="206" text-anchor="middle" class="svg-tag">NDJSON, 100k records</text>
+<rect x="250" y="150" width="180" height="76" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="340" y="184" text-anchor="middle" class="svg-text">Record Reader</text>
+<text x="340" y="206" text-anchor="middle" class="svg-tag">JsonTreeReader</text>
+<rect x="480" y="150" width="200" height="76" rx="8" fill="#fff4e6" stroke="#d17b00" stroke-width="2"></rect>
+<text x="580" y="184" text-anchor="middle" class="svg-text">Record processor</text>
+<text x="580" y="206" text-anchor="middle" class="svg-tag">Convert / Update / Query</text>
+<rect x="730" y="150" width="180" height="76" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="820" y="184" text-anchor="middle" class="svg-text">Record Writer</text>
+<text x="820" y="206" text-anchor="middle" class="svg-tag">JsonRecordSetWriter</text>
+<rect x="960" y="150" width="160" height="76" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="1040" y="184" text-anchor="middle" class="svg-text">FlowFile</text>
+<text x="1040" y="206" text-anchor="middle" class="svg-tag">1 FlowFile out</text>
+<rect x="440" y="30" width="280" height="60" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="580" y="66" text-anchor="middle" class="svg-text">Schema Registry</text>
+<line x1="200" y1="188" x2="250" y2="188" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-rec)"></line>
+<line x1="430" y1="188" x2="480" y2="188" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-rec)"></line>
+<line x1="680" y1="188" x2="730" y2="188" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-rec)"></line>
+<line x1="910" y1="188" x2="960" y2="188" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-rec)"></line>
+<line x1="500" y1="90" x2="360" y2="148" stroke="#1a6ba7" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr-rec)"></line>
+<line x1="660" y1="90" x2="800" y2="148" stroke="#1a6ba7" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr-rec)"></line>
+<text x="570" y="270" text-anchor="middle" class="svg-tag">stream of Record objects — one repository entry, one provenance event per step</text>
+</svg>
+</div>
+<ul class="bullets">
+  <li><strong>Record Reader</strong>: <code>JsonTreeReader</code>, <code>CSVReader</code>, <code>AvroReader</code>, <code>ParquetReader</code>, <code>XMLReader</code>, <code>GrokReader</code>.</li>
+  <li><strong>Record Writer</strong>: <code>JsonRecordSetWriter</code>, <code>CSVRecordSetWriter</code>, <code>AvroRecordSetWriter</code>, <code>ParquetRecordSetWriter</code>.</li>
+  <li><strong>Schema</strong> describes fields and types; the Writer may use a different schema than the Reader.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s37">
+      <div class="section-number">S37</div>
+      <div class="eyebrow">Schema Access Strategy</div>
+      <h2 class="section-heading">Where the Reader gets its schema</h2>
+<table>
+  <tr><th>Strategy</th><th>Schema source</th><th>When to use</th></tr>
+  <tr><td><code>Infer Schema</code></td><td>Derived from the data itself</td><td>Prototyping, loose data; not a production target</td></tr>
+  <tr><td><code>Use 'Schema Name' Property</code></td><td><code>schema.name</code> attribute resolved via a Schema Registry</td><td>Production: many data types, shared registry</td></tr>
+  <tr><td><code>Use 'Schema Text' Property</code></td><td>Avro schema JSON in the property</td><td>Single stable schemas</td></tr>
+  <tr><td><code>Schema Reference Reader</code> etc.</td><td>Reference in the data or header (e.g. Confluent wire format)</td><td>Confluent Schema Registry integration</td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s38">
+      <div class="section-number">S38</div>
+      <div class="eyebrow">Writers and registries</div>
+      <h2 class="section-heading">Schema Write Strategy and Schema Registry</h2>
+<div class="split2">
+<div class="split-left">
+<h3>Schema Write Strategy</h3>
+<ul class="bullets">
+  <li><code>Do Not Write Schema</code></li>
+  <li><code>Set 'schema.name' Attribute</code></li>
+  <li><code>Embed Avro Schema</code></li>
+  <li><code>Inherit Record Schema</code></li>
+</ul>
+<div class="hibox"><code>ConvertRecord</code> converts both <strong>format and schema</strong>.</div>
+</div>
+<div class="split-right">
+<h3>Schema Registry services</h3>
+<table>
+  <tr><th>Service</th><th>Feature</th></tr>
+  <tr><td><code>AvroSchemaRegistry</code></td><td>Schemas in the service config; versioned with the flow</td></tr>
+  <tr><td><code>ConfluentSchemaRegistry</code></td><td>External Confluent registry</td></tr>
+  <tr><td><code>AmazonGlueSchemaRegistry</code></td><td>Cloud registries (1.23+ / 2.x)</td></tr>
+</table>
+</div>
+</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s39">
+      <div class="section-number">S39</div>
+      <div class="eyebrow">Explicit schema</div>
+      <h2 class="section-heading">Avro schema registered as order.v1</h2>
+<div class="split2">
+<div class="split-left">
+<pre><code>{
+  <span class="str">"type"</span>: <span class="str">"record"</span>,
+  <span class="str">"name"</span>: <span class="str">"Order"</span>,
+  <span class="str">"namespace"</span>: <span class="str">"com.example.orders"</span>,
+  <span class="str">"fields"</span>: [
+    {"name": <span class="str">"order_id"</span>, "type": "string"},
+    {"name": <span class="str">"customer"</span>, "type": ["null", "string"], "default": null},
+    {"name": <span class="str">"amount"</span>,   "type": {"type": "bytes",
+       "logicalType": "decimal", "precision": 12, "scale": 2}},
+    {"name": <span class="str">"currency"</span>, "type": "string", "default": "EUR"},
+    {"name": <span class="str">"created_at"</span>, "type": {"type": "long",
+       "logicalType": "timestamp-millis"}}
+  ]
+}</code></pre>
+</div>
+<div class="split-right">
+<ul class="bullets">
+  <li>Registered in <code>AvroSchemaRegistry</code> as a dynamic property <code>order.v1</code>.</li>
+  <li><code>UpdateAttribute</code> sets <code>schema.name=order.v1</code> after ingest.</li>
+  <li>The schema gives a contract: required fields, decimals, defaults, timestamps.</li>
+</ul>
+<div class="note">2.x: Record date/time parsing moved from <code>SimpleDateFormat</code> to <code>DateTimeFormatter</code>: patterns must follow <code>java.time</code> syntax.</div>
+</div>
+</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s40">
+      <div class="section-number">S40</div>
+      <div class="eyebrow">Record vs Split</div>
+      <h2 class="section-heading">Record processors vs Split processors</h2>
+<table>
+  <tr><th>Aspect</th><th>Split (<code>SplitJson</code>, <code>SplitText</code>…)</th><th>Record (<code>ConvertRecord</code>, <code>QueryRecord</code>…)</th></tr>
+  <tr><td>Number of FlowFiles</td><td>N (one per record)</td><td>1 (or a few partitions)</td></tr>
+  <tr><td>FlowFile Repository / provenance load</td><td>High</td><td>Low</td></tr>
+  <tr><td>Heap for metadata</td><td>Grows with N</td><td>Constant</td></tr>
+  <tr><td>Content rewrite</td><td>Every step, for every record</td><td>Once per step for the whole FlowFile</td></tr>
+  <tr><td>Schema and types</td><td>None (JSONPath on strings)</td><td>Yes: validation and type coercion</td></tr>
+  <tr><td>Filtering / routing</td><td><code>EvaluateJsonPath</code> + <code>RouteOnAttribute</code></td><td>SQL in <code>QueryRecord</code>, <code>PartitionRecord</code></td></tr>
+  <tr><td>Merge back</td><td><code>MergeContent</code> (Defragment)</td><td>Not needed, or <code>MergeRecord</code></td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s41">
+      <div class="section-number">S41</div>
+      <div class="eyebrow">Typical replacement</div>
+      <h2 class="section-heading">From Split chains to Record chains</h2>
+<h3>Before</h3>
+<pre><code>SplitJson ► EvaluateJsonPath ► RouteOnAttribute ► ReplaceText ► MergeContent ► PutX</code></pre>
+<h3>After</h3>
+<pre><code>QueryRecord (filter + projection + routing) ► UpdateRecord (if needed) ► PutXRecord</code></pre>
+<div class="hibox">Split is still justified when each record is an independent unit with its own result (e.g. one REST call per record with independent retry), or to cap batch size with <code>SplitRecord</code> + <em>Records Per Split</em>.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s42">
+      <div class="section-number">S42</div>
+      <div class="eyebrow">JsonTreeReader</div>
+      <h2 class="section-heading">Infer Schema and its limits</h2>
+<ul class="bullets">
+  <li>One Reader accepts a single object, an array of objects, and <strong>NDJSON</strong>.</li>
+  <li><strong>Extra pass</strong> over the data to infer the schema: noticeable CPU/I/O on large FlowFiles.</li>
+  <li><strong>Unstable schema</strong> between FlowFiles: <code>1, 2, 3</code> → integer, but <code>1.5</code> elsewhere → a different type; all-null fields get no useful type.</li>
+  <li><strong>Silent propagation</strong>: a Writer with <code>Inherit Record Schema</code> repeats the "random" schema; errors surface only at the destination.</li>
+  <li><strong>No contract</strong>: no required fields, date formats, decimal precision, or defaults.</li>
+  <li><strong>Dates</strong>: <code>2026-11-15T10:00:00Z</code> may stay a string or become a timestamp depending on Reader formats.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s43">
+      <div class="section-number">S43</div>
+      <div class="eyebrow">JsonTreeReader</div>
+      <h2 class="section-heading">What the JsonTreeReader reference confirms</h2>
+<ul class="bullets">
+  <li><strong>Default Schema Access Strategy is <code>Infer Schema</code></strong>: unless you change it, the Reader infers the schema from each FlowFile.</li>
+  <li>Accepts JSON-per-line (NDJSON), single objects, and arrays; array elements become separate records.</li>
+  <li>With an explicit schema, <strong>JSON fields missing from the schema are dropped</strong>, and schema fields missing from the JSON become <code>null</code>.</li>
+  <li><strong>Infer Schema Cache</strong>: without it inference repeats for every FlowFile; with it a found schema is reused.</li>
+</ul>
+<div class="hibox">Consequence: with an explicit schema, everything needed downstream (Jolt, <code>QueryRecord</code>) must be described in the Reader schema. A schema cache is a cheap optimization, not a replacement for a schema contract.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s44">
+      <div class="section-number">S44</div>
+      <div class="eyebrow">JsonTreeReader</div>
+      <h2 class="section-heading">When to define the schema explicitly</h2>
+<div class="split2">
+<div class="split-left">
+<ul class="bullets">
+  <li>Any production flow.</li>
+  <li>Writing to databases and columnar formats (Avro / Parquet).</li>
+  <li>Validation with <code>ValidateRecord</code>.</li>
+  <li>Data shared between several teams.</li>
+  <li>Controlled schema evolution.</li>
+</ul>
+</div>
+<div class="split-right">
+<table>
+  <tr><th>Property</th><th>Purpose</th></tr>
+  <tr><td>Schema Access Strategy</td><td>See the strategies table</td></tr>
+  <tr><td>Starting Field Strategy + Name</td><td>Read records from a nested array (e.g. <code>$.data.items</code>)</td></tr>
+  <tr><td>Schema Application Strategy</td><td>Which nodes the schema applies to</td></tr>
+  <tr><td>Date / Time / Timestamp Format</td><td>Parsing patterns</td></tr>
+  <tr><td>Allow Comments</td><td>Allow comments in JSON</td></tr>
+  <tr><td>Max String Length</td><td>Max string value length (default <code>20 MB</code>)</td></tr>
+  <tr><td>Infer Schema Cache</td><td>Optional cache for inferred schemas</td></tr>
+</table>
+</div>
+</div>
+<div class="note">2.10.0 made JSON readers more lenient: regression-test "dirty" data when upgrading.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s45">
+      <div class="section-number">S45</div>
+      <div class="eyebrow">Performance</div>
+      <h2 class="section-heading">Tuning Readers and Writers</h2>
+<div class="split2">
+<div class="split-left">
+<ol class="bullets">
+  <li><strong>Explicit schema</strong> instead of Infer: no extra pass, stable types.</li>
+  <li><strong>Minimal transformations</strong>: no extra <code>ConvertRecord</code> for JSON → same JSON.</li>
+  <li><strong>Writer</strong>: <code>Pretty Print JSON = false</code>; <code>Output Grouping</code>: Array or One Line Per Object (NDJSON).</li>
+  <li><strong>Writer schema</strong> with the desired field order defines the output order.</li>
+</ol>
+</div>
+<div class="split-right">
+<ol class="bullets">
+  <li><strong>Binary formats</strong> (Avro, Parquet) are cheaper than JSON; convert at the boundaries.</li>
+  <li><strong>FlowFile size</strong>: aim for tens to hundreds of MB, not gigabytes.</li>
+  <li><strong>Concurrent Tasks</strong> scale record processors, but only with several FlowFiles in the queue.</li>
+  <li><strong>Reuse services</strong>: one Reader/Writer for many processors.</li>
+</ol>
+</div>
+</div>
+<div class="hibox">NDJSON is friendlier than arrays for Splunk, Kafka, and logs: it can be cut by lines, concatenated, and streamed.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s46">
+      <div class="section-number">S46</div>
+      <div class="eyebrow">Record processors</div>
+      <h2 class="section-heading">Main record processors</h2>
+<div class="split2">
+<div class="split-left">
+<table>
+  <tr><th>Processor</th><th>Purpose</th></tr>
+  <tr><td><code>ConvertRecord</code></td><td>Format/schema → format/schema</td></tr>
+  <tr><td><code>QueryRecord</code></td><td>SQL (Apache Calcite) over records: <code>FROM FLOWFILE</code></td></tr>
+  <tr><td><code>UpdateRecord</code></td><td>Change field values via RecordPath</td></tr>
+  <tr><td><code>JoltTransformRecord</code></td><td>Structural transformations with Jolt</td></tr>
+  <tr><td><code>ValidateRecord</code></td><td>Schema validation: <code>valid</code> / <code>invalid</code> / <code>failure</code></td></tr>
+  <tr><td><code>PartitionRecord</code></td><td>Split by field values with attributes</td></tr>
+</table>
+</div>
+<div class="split-right">
+<table>
+  <tr><th>Processor</th><th>Purpose</th></tr>
+  <tr><td><code>LookupRecord</code></td><td>Enrichment via a Lookup Service</td></tr>
+  <tr><td><code>MergeRecord</code></td><td>Merge small FlowFiles into large ones</td></tr>
+  <tr><td><code>SplitRecord</code></td><td>Split into record batches when needed</td></tr>
+  <tr><td><code>RemoveRecordField</code></td><td>Remove fields (since 1.23.0)</td></tr>
+  <tr><td><code>ForkRecord</code></td><td>Unfold nested arrays</td></tr>
+</table>
+</div>
+</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s47">
+      <div class="section-number">S47</div>
+      <div class="eyebrow">Split processors</div>
+      <h2 class="section-heading">Three Split processors compared</h2>
+<table class="deployment-table">
+  <tr><th></th><th><code>SplitText</code></th><th><code>SplitRecord</code></th><th><code>SplitJson</code></th></tr>
+  <tr><td>Splits</td><td>Text <strong>by lines</strong></td><td>Any format a Record Reader reads</td><td>An <strong>array</strong> inside one JSON document (JsonPath)</td></tr>
+  <tr><td>Understands structure</td><td>No: lines and sizes only</td><td>Yes (schema, Reader/Writer)</td><td>Yes, but JSON only</td></tr>
+  <tr><td>Typical input</td><td>Logs, CSV, NDJSON "as text"</td><td>JSON, NDJSON, CSV, Avro, Parquet…</td><td>One JSON with an array (<code>{"items":[…]}</code>)</td></tr>
+  <tr><td>Part size</td><td>Lines and/or bytes</td><td>Records (<code>Records Per Split</code>)</td><td>Always one element per FlowFile</td></tr>
+  <tr><td>Output format</td><td>Same text</td><td>Record Writer format (can convert)</td><td>JSON fragment or scalar</td></tr>
+  <tr><td>Relationships</td><td><code>splits</code>, <code>original</code>, <code>failure</code></td><td><code>splits</code>, <code>original</code>, <code>failure</code></td><td><code>split</code>, <code>original</code>, <code>failure</code></td></tr>
+</table>
+<div class="hibox">All three write <code>fragment.identifier</code>, <code>fragment.index</code>, <code>fragment.count</code>, <code>segment.original.filename</code>. <code>MergeContent</code>/<code>MergeRecord</code> in <strong>Defragment</strong> mode reassemble the parts (requires <code>fragment.identifier</code> and <code>fragment.count</code>).</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s48">
+      <div class="section-number">S48</div>
+      <div class="eyebrow">SplitText</div>
+      <h2 class="section-heading">SplitText: split text by lines</h2>
+<table>
+  <tr><th>Property</th><th>Purpose</th></tr>
+  <tr><td><strong>Line Split Count</strong></td><td>Lines per part (excluding header); <code>0</code> only together with <em>Maximum Fragment Size</em></td></tr>
+  <tr><td><strong>Maximum Fragment Size</strong></td><td>Max part size in bytes incl. header; with both limits, whichever is hit first wins</td></tr>
+  <tr><td><strong>Header Line Count</strong></td><td>First N lines are a header, <strong>copied into every part</strong> (handy for CSV)</td></tr>
+  <tr><td><strong>Header Line Marker Characters</strong></td><td>Alternative: lines starting with these characters are the header</td></tr>
+  <tr><td><strong>Remove Trailing Newlines</strong></td><td>Default <code>true</code>; set <code>false</code> if parts will be merged back</td></tr>
+</table>
+<div class="note">Output attributes: <code>text.line.count</code> plus the <code>fragment.*</code> attributes.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s49">
+      <div class="section-number">S49</div>
+      <div class="eyebrow">SplitText</div>
+      <h2 class="section-heading">SplitText: recommendations</h2>
+<ul class="bullets">
+  <li>Split in <strong>large batches</strong> (<code>Line Split Count</code> = thousands of lines), not line by line: this already half-solves the small-FlowFile problem.</li>
+  <li>Very many parts increase memory pressure (FlowFiles with attributes live in memory, not the content).</li>
+  <li>If needed, use <strong>two-stage splitting</strong>: large chunks first, then smaller ones.</li>
+  <li><code>SplitText</code> <strong>does not understand JSON</strong>: it will cut pretty-printed multi-line JSON in the middle of an object.</li>
+</ul>
+<div class="hibox-red hibox">For multi-line JSON use <code>SplitRecord</code> or <code>SplitJson</code>, not <code>SplitText</code>.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s50">
+      <div class="section-number">S50</div>
+      <div class="eyebrow">SplitRecord</div>
+      <h2 class="section-heading">SplitRecord: split by number of records</h2>
+<div class="split2">
+<div class="split-left">
+<table>
+  <tr><th>Property</th><th>Purpose</th></tr>
+  <tr><td><strong>Record Reader</strong></td><td>How to read the input</td></tr>
+  <tr><td><strong>Record Writer</strong></td><td>How to write each part</td></tr>
+  <tr><td><strong>Records Per Split</strong></td><td>Records per part; supports EL on FlowFile attributes</td></tr>
+</table>
+</div>
+<div class="split-right">
+<ul class="bullets">
+  <li>Reader + Writer: split <strong>and</strong> change format in one step.</li>
+  <li><code>splits</code>, <code>original</code>; <code>failure</code> returns the FlowFile unchanged.</li>
+  <li>Attributes: <code>mime.type</code>, <code>record.count</code>, <code>fragment.*</code>, <code>segment.original.filename</code>.</li>
+</ul>
+</div>
+</div>
+<div class="hibox">Not for "one record per FlowFile" (an anti-pattern) but for <strong>batch-size control</strong>: split a huge FlowFile into parts of 10,000–100,000 records so several threads or nodes process them in parallel.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s51">
+      <div class="section-number">S51</div>
+      <div class="eyebrow">SplitJson</div>
+      <h2 class="section-heading">SplitJson: split a JSON array</h2>
+<table>
+  <tr><th>Property</th><th>Purpose</th></tr>
+  <tr><td><strong>JsonPath Expression</strong></td><td>Path to the array, e.g. <code>$.items</code></td></tr>
+  <tr><td><strong>Null Value Representation</strong></td><td>How to represent <code>null</code>: empty string (default) or the string <code>null</code></td></tr>
+  <tr><td><strong>Max String Length</strong></td><td>Max string value length when parsing (default 20 MB)</td></tr>
+</table>
+<ul class="bullets">
+  <li>Relationships: <code>split</code> (elements), <code>original</code>, <code>failure</code> (invalid JSON, path not found or not an array).</li>
+  <li>Built for <strong>one JSON document</strong> parsed as a whole; not meant for NDJSON.</li>
+  <li>Creates <strong>one FlowFile per element</strong>: a large array leads straight to the small-FlowFile problem.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s52">
+      <div class="section-number">S52</div>
+      <div class="eyebrow">Choosing</div>
+      <h2 class="section-heading">How to choose</h2>
+<table>
+  <tr><th>Task</th><th>Use</th></tr>
+  <tr><td>Cut logs / NDJSON / CSV into batches of N lines without parsing</td><td><code>SplitText</code> with a large <code>Line Split Count</code></td></tr>
+  <tr><td>Cut any format into batches of N <strong>records</strong>, or change format at once</td><td><code>SplitRecord</code></td></tr>
+  <tr><td>Get separate objects from one <code>{"items":[…]}</code> for independent processing</td><td><code>SplitJson</code>, or better <code>ForkRecord</code>/<code>QueryRecord</code> if independence is not needed</td></tr>
+  <tr><td>Filter, project, route records</td><td><strong>Not Split</strong>: <code>QueryRecord</code>, <code>PartitionRecord</code>, <code>UpdateRecord</code></td></tr>
+</table>
+<div class="hibox"><strong>Split is justified</strong> when each element needs its own result, retry, or external API call; when the batch size must be capped before the destination; or when no Reader supports the format. Otherwise the Record approach wins.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s53">
+      <div class="section-number">S53</div>
+      <div class="eyebrow">QueryRecord</div>
+      <h2 class="section-heading">QueryRecord: SQL instead of Split → Evaluate → Route</h2>
+<ul class="bullets">
+  <li>Write a <strong>SQL query</strong> over the records of a FlowFile (the table is called <code>FLOWFILE</code>); the result becomes the output content.</li>
+  <li>Each <strong>dynamic property</strong> = one <strong>relationship</strong>: property name = relationship, value = SQL <code>SELECT</code>. At least one is required.</li>
+  <li>ANSI SQL on Apache Calcite; needs a Record Reader and a Record Writer.</li>
+</ul>
+<div class="diagram-shell">
+<svg class="diagram-svg" viewBox="0 0 980 230" role="img" aria-label="One FlowFile into QueryRecord routed to three relationships">
+  <defs><marker id="arr-qr137" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path></marker></defs>
+  <rect x="30" y="88" width="230" height="56" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
+  <text x="145" y="114" text-anchor="middle" class="svg-text">FlowFile</text>
+  <text x="145" y="134" text-anchor="middle" class="svg-tag">100,000 records</text>
+  <rect x="350" y="88" width="210" height="56" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
+  <text x="455" y="122" text-anchor="middle" class="svg-text">QueryRecord</text>
+  <rect x="680" y="14" width="270" height="50" rx="8" fill="#fff4e6" stroke="#d17b00" stroke-width="2"></rect>
+  <text x="815" y="45" text-anchor="middle" class="svg-text">errors</text>
+  <rect x="680" y="91" width="270" height="50" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+  <text x="815" y="122" text-anchor="middle" class="svg-text">normal</text>
+  <rect x="680" y="168" width="270" height="50" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
+  <text x="815" y="199" text-anchor="middle" class="svg-text">stats</text>
+  <line x1="260" y1="116" x2="350" y2="116" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-qr137)"></line>
+  <line x1="560" y1="104" x2="680" y2="40" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-qr137)"></line>
+  <line x1="560" y1="116" x2="680" y2="116" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-qr137)"></line>
+  <line x1="560" y1="128" x2="680" y2="192" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-qr137)"></line>
+</svg>
+</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s54">
+      <div class="section-number">S54</div>
+      <div class="eyebrow">QueryRecord</div>
+      <h2 class="section-heading">Three typical queries, three relationships</h2>
+<pre><code><span class="cm">-- relationship "errors": only errors, only the needed fields</span>
+<span class="kw">SELECT</span> ts, svc, msg <span class="kw">FROM</span> FLOWFILE <span class="kw">WHERE</span> level = <span class="str">'ERROR'</span>
+
+<span class="cm">-- relationship "normal": everything except DEBUG</span>
+<span class="kw">SELECT</span> * <span class="kw">FROM</span> FLOWFILE <span class="kw">WHERE</span> level &lt;&gt; <span class="str">'DEBUG'</span>
+
+<span class="cm">-- relationship "stats": aggregate per service</span>
+<span class="kw">SELECT</span> svc, <span class="fn">COUNT</span>(*) <span class="kw">AS</span> cnt <span class="kw">FROM</span> FLOWFILE <span class="kw">GROUP BY</span> svc</code></pre>
+<div class="hibox">One FlowFile with 100,000 records is processed without a single Split; three relationships receive data in the shape they need. Full reference (properties, empty results, result schema, cost): Day 2, section 2.2.6.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s55">
+      <div class="section-number">S55</div>
+      <div class="eyebrow">RecordPath</div>
+      <h2 class="section-heading">RecordPath: addressing fields in records</h2>
+<p class="subtitle">Used by <code>UpdateRecord</code>, <code>PartitionRecord</code>, <code>LookupRecord</code>, <code>RemoveRecordField</code>.</p>
+<table>
+  <tr><th>Construct</th><th>Meaning</th><th>Example</th></tr>
+  <tr><td><code>/field</code></td><td>Top-level field</td><td><code>/level</code></td></tr>
+  <tr><td><code>/parent/child</code></td><td>Nested field</td><td><code>/user/id</code></td></tr>
+  <tr><td><code>//field</code></td><td>Field with this name at any nesting level</td><td><code>//id</code></td></tr>
+  <tr><td><code>/array[*]</code></td><td>All array elements</td><td><code>/items[*]/sku</code></td></tr>
+  <tr><td><code>..</code></td><td>Parent of the current node</td><td><code>../id</code></td></tr>
+</table>
+<div class="note">Detailed RecordPath and functions (<code>concat</code>, <code>format</code>, …): Day 2, section 2.2.6, together with <code>UpdateRecord</code>.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s56">
+      <div class="section-number">S56</div>
+      <div class="eyebrow">Lab 3 · Split vs Record</div>
+      <h2 class="section-heading">Lab 3: compare Split-flow and Record-flow</h2>
+<h3>Variant A · Split-based</h3>
+<pre><code>GenerateRecord ► SplitRecord(Records Per Split=1) ► EvaluateJsonPath ► RouteOnAttribute
+               ► UpdateAttribute ► MergeContent ► LogAttribute</code></pre>
+<h3>Variant B · Record-based</h3>
+<pre><code>GenerateRecord ► QueryRecord ─ valid ───► UpdateRecord ► LogAttribute
+                            └ rejected ─► LogAttribute</code></pre>
+<pre><code><span class="cm">-- QueryRecord dynamic property "valid"</span>
+<span class="kw">SELECT</span> order_id, customer, amount, currency <span class="kw">FROM</span> FLOWFILE
+<span class="kw">WHERE</span> amount &gt; 0 <span class="kw">AND</span> currency <span class="kw">IN</span> (<span class="str">'EUR'</span>, <span class="str">'USD'</span>)
+<span class="cm">-- "rejected"</span>
+<span class="kw">SELECT</span> * <span class="kw">FROM</span> FLOWFILE <span class="kw">WHERE</span> amount &lt;= 0 <span class="kw">OR</span> currency <span class="kw">NOT IN</span> (<span class="str">'EUR'</span>, <span class="str">'USD'</span>)</code></pre>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s57">
+      <div class="section-number">S57</div>
+      <div class="eyebrow">Lab 3 · Methodology</div>
+      <h2 class="section-heading">Lab 3: how to measure</h2>
+<div class="split2">
+<div class="split-left">
+<ol class="bullets">
+  <li>Same input: e.g. 100 FlowFiles × 100,000 records (<code>GenerateRecord</code> → <em>Number of Records</em>).</li>
+  <li>Freeze conditions: empty queues, equal <code>Concurrent Tasks</code>.</li>
+  <li>Run A; record time, <em>Tasks/Time</em>, <em>Bytes Read/Written</em>, queue counts, heap/GC, provenance events.</li>
+  <li>Clear queues, run B on the same input, repeat the measurements.</li>
+  <li>Repeat 3 times and take the median.</li>
+</ol>
+</div>
+<div class="split-right">
+<div class="hibox">Expected: B is noticeably faster with less heap/GC pressure, and orders of magnitude fewer provenance events. Get the numbers <strong>in your environment</strong>.</div>
+<div class="hibox">Correctness: <code>valid</code> + <code>rejected</code> = input count; check <code>record.count</code>.</div>
+<div class="hibox hibox-red">Pitfalls: table name must be <code>FLOWFILE</code>; decimal vs double → explicit schema; <code>MergeContent</code> waits → set <em>Max Bin Age</em>.</div>
+</div>
+</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-intro" id="s58">
+      <h2>Installation and cluster setup</h2>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s59">
+      <div class="section-number">S59</div>
+      <div class="eyebrow">Configuration files</div>
+      <h2 class="section-heading">NIFI_HOME/conf: the core files</h2>
+<table class="deployment-table">
+  <tr><th>File</th><th>Purpose</th><th>Cluster notes</th></tr>
+  <tr><td><code>nifi.properties</code></td><td><strong>Main node settings</strong>: web ports, TLS, repositories, cluster, ZooKeeper, Site-to-Site, sensitive key</td><td>One per node: some values shared, some node-specific. Restart required</td></tr>
+  <tr><td><code>bootstrap.conf</code></td><td><strong>JVM launch</strong>: <code>java.arg.N</code> (heap, GC, heap dump), Java path, shutdown timeout</td><td>Tuned for memory (Block 3.4); restart required</td></tr>
+  <tr><td><code>flow.json.gz</code></td><td><strong>Saved flow</strong>: processors, connections, groups, services, Parameter Contexts</td><td>Same on all nodes; never edited by hand. Only format in 2.x</td></tr>
+  <tr><td><code>authorizers.xml</code></td><td><strong>Authorization</strong>: user group provider, access policy provider, Initial Admin, node identities</td><td>Must be consistent across nodes</td></tr>
+  <tr><td><code>login-identity-providers.xml</code></td><td><strong>Login authentication</strong>: LDAP/AD, Single User, etc.</td><td>Same on all nodes</td></tr>
+  <tr><td><code>users.xml</code>, <code>authorizations.xml</code></td><td>Users, groups, and policies for <strong>file-based</strong> providers; managed by NiFi</td><td>Must match across nodes; <strong>include in backup</strong></td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s60">
+      <div class="section-number">S60</div>
+      <div class="eyebrow">Configuration files</div>
+      <h2 class="section-heading">State, logging, and supporting files</h2>
+<table class="deployment-table">
+  <tr><th>File</th><th>Purpose</th><th>Cluster notes</th></tr>
+  <tr><td><code>state-management.xml</code></td><td><strong>Component state</strong>: local provider (<code>state/local</code>) and cluster provider (ZooKeeper or Kubernetes)</td><td>Cluster provider settings identical on all nodes</td></tr>
+  <tr><td><code>logback.xml</code></td><td><strong>Logging</strong>: <code>nifi-app</code>, <code>nifi-user</code>, <code>nifi-bootstrap</code>, <code>nifi-request</code>, <code>nifi-deprecation</code> logs</td><td>Levels often changed while debugging; usually picked up without restart</td></tr>
+  <tr><td><code>zookeeper.<wbr>properties</code></td><td><strong>Embedded ZooKeeper</strong>: ports, data dir, servers</td><td>Labs only; production uses an external ensemble</td></tr>
+  <tr><td><code>archive/</code></td><td><strong>Previous flow versions</strong> with timestamps</td><td>First line of configuration rollback</td></tr>
+  <tr><td>Keystore / truststore or PEM</td><td><strong>TLS material</strong>: node certificate, private key, trusted CAs</td><td>Unique per node (SAN = node name); restricted permissions</td></tr>
+  <tr><td><code>bin/nifi-env.sh</code></td><td>Environment for start scripts (e.g. <code>JAVA_HOME</code>)</td><td>Needed if Java is not detected automatically</td></tr>
+</table>
+<div class="note">Gone in 2.x: <code>flow.xml.gz</code> (replaced by <code>flow.json.gz</code>), <code>bootstrap-notification-services.xml</code> (removed in 2.0.0-M2), <code>encrypt-config</code> for <code>nifi.properties</code> (removed in 2.0.0-M4).</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s61">
+      <div class="section-number">S61</div>
+      <div class="eyebrow">nifi.properties</div>
+      <h2 class="section-heading">Main property groups</h2>
+<div class="split2">
+<div class="split-left">
+<table>
+  <tr><th>Prefix</th><th>Responsible for</th></tr>
+  <tr><td><code>nifi.web.*</code></td><td>HTTPS address and ports (default 8443), proxy hosts, Jetty</td></tr>
+  <tr><td><code>nifi.security.*</code></td><td>Keystore/truststore, authentication and authorization mode</td></tr>
+  <tr><td><code>nifi.flow.configuration.*</code></td><td>Path to <code>flow.json.gz</code>, flow archiving</td></tr>
+  <tr><td><code>nifi.*.repository.*</code></td><td>FlowFile, Content, and Provenance repository location and settings</td></tr>
+  <tr><td><code>nifi.queue.*</code></td><td>Queue swap thresholds</td></tr>
+</table>
+</div>
+<div class="split-right">
+<table>
+  <tr><th>Prefix</th><th>Responsible for</th></tr>
+  <tr><td><code>nifi.cluster.*</code></td><td>Node role, addresses, load balancing, flow election</td></tr>
+  <tr><td><code>nifi.zookeeper.*</code></td><td>ZooKeeper connection</td></tr>
+  <tr><td><code>nifi.remote.*</code></td><td>Site-to-Site</td></tr>
+  <tr><td><code>nifi.sensitive.props.*</code></td><td>Key and algorithm for sensitive values</td></tr>
+  <tr><td><code>nifi.state.management.*</code></td><td>Path to <code>state-management.xml</code> and state providers</td></tr>
+</table>
+</div>
+</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s62">
+      <div class="section-number">S62</div>
+      <div class="eyebrow">Configuration files</div>
+      <h2 class="section-heading">Practical rules for configuration changes</h2>
+<ol class="bullets">
+  <li>Change configuration through <strong>configuration management</strong> (Ansible, Helm values, images), not by hand on nodes: nodes stay consistent.</li>
+  <li>Restart where required (<code>nifi.properties</code>, <code>bootstrap.conf</code>); after a change check <code>nifi-app.log</code> for startup errors.</li>
+  <li>Keep secrets (keystore passwords, <code>nifi.sensitive.props.key</code>) out of config repositories and logs; restrict file permissions (<code>chmod 600/640</code>, owned by the NiFi user).</li>
+  <li>Copy a file before editing it; take a full backup of <code>conf/</code> before a migration (Block 2.4 and 3.1.5).</li>
+</ol>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s63">
+      <div class="section-number">S63</div>
+      <div class="eyebrow">Topology</div>
+      <h2 class="section-heading">Single node vs cluster</h2>
+<table>
+  <tr><th>Aspect</th><th>Single node</th><th>Cluster</th></tr>
+  <tr><td>Scaling</td><td>Vertical</td><td>Horizontal (add nodes)</td></tr>
+  <tr><td>Availability</td><td>Single point of failure</td><td>A node failure does not stop the cluster</td></tr>
+  <tr><td>Complexity</td><td>Low</td><td>ZooKeeper or Kubernetes leader election, TLS between nodes, balancing</td></tr>
+  <tr><td>Flow management</td><td>—</td><td>A flow change applies to all nodes</td></tr>
+  <tr><td>When to choose</td><td>Development, small loads, simple sources</td><td>Throughput beyond one node, HA, rolling maintenance</td></tr>
+</table>
+<div class="hibox">A NiFi cluster is a <strong>set of independent nodes running the same flow</strong>, not a single shared queue. Each node processes its own FlowFiles; data moves between nodes only via load balancing or Site-to-Site.</div>
+<div class="note">Data in a failed node's repositories is unavailable until the node returns: plan storage reliability (RAID, volume replication).</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s64">
+      <div class="section-number">S64</div>
+      <div class="eyebrow">Cluster roles</div>
+      <h2 class="section-heading">Zero-master clustering</h2>
+<div class="diagram-shell">
+<svg class="diagram-svg" viewBox="0 0 1080 360" style="max-height: 330px;" role="img" aria-label="NiFi cluster roles">
+<defs><marker id="arr-cl" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path></marker></defs>
+<rect x="360" y="20" width="340" height="60" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="530" y="56" text-anchor="middle" class="svg-text">ZooKeeper ensemble (3 or 5)</text>
+<rect x="60" y="170" width="260" height="90" rx="8" fill="#fff4e6" stroke="#d17b00" stroke-width="2"></rect>
+<text x="190" y="211" text-anchor="middle" class="svg-text">Node 1</text>
+<text x="190" y="233" text-anchor="middle" class="svg-tag">Cluster Coordinator</text>
+<rect x="410" y="170" width="260" height="90" rx="8" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
+<text x="540" y="211" text-anchor="middle" class="svg-text">Node 2</text>
+<text x="540" y="233" text-anchor="middle" class="svg-tag">Primary Node</text>
+<rect x="760" y="170" width="260" height="90" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
+<text x="890" y="211" text-anchor="middle" class="svg-text">Node 3</text>
+<text x="890" y="233" text-anchor="middle" class="svg-tag">worker node</text>
+<line x1="190" y1="168" x2="420" y2="82" stroke="#1a6ba7" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr-cl)"></line>
+<line x1="540" y1="168" x2="540" y2="82" stroke="#1a6ba7" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr-cl)"></line>
+<line x1="890" y1="168" x2="660" y2="82" stroke="#1a6ba7" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr-cl)"></line>
+<text x="300" y="128" text-anchor="middle" class="svg-tag">leader election</text>
+<text x="800" y="128" text-anchor="middle" class="svg-tag">cluster state</text>
+<line x1="320" y1="230" x2="410" y2="230" stroke="#20804d" stroke-width="2" stroke-dasharray="4 4"></line>
+<line x1="670" y1="230" x2="760" y2="230" stroke="#20804d" stroke-width="2" stroke-dasharray="4 4"></line>
+<path d="M190,260 C190,330 890,330 890,260" fill="none" stroke="#20804d" stroke-width="2" stroke-dasharray="4 4"></path>
+<text x="540" y="345" text-anchor="middle" class="svg-tag">load balancing · port 6342 · mTLS between nodes</text>
+</svg>
+</div>
+<table>
+  <tr><th>Role</th><th>Function</th></tr>
+  <tr><td><strong>Cluster Coordinator</strong></td><td>Receives heartbeats, manages membership, replicates UI requests to all nodes, merges responses</td></tr>
+  <tr><td><strong>Primary Node</strong></td><td>The only node running <em>Primary Node Only</em> processors (<code>List*</code>, <code>QueryDatabaseTableRecord</code>)</td></tr>
+  <tr><td>Other nodes</td><td>Run the flow and take part in load balancing</td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s65">
+      <div class="section-number">S65</div>
+      <div class="eyebrow">Coordination</div>
+      <h2 class="section-heading">Leader election, state, and flow election</h2>
+<ul class="bullets">
+  <li>Coordinator and Primary are chosen by <strong>leader election</strong>: Apache ZooKeeper by default; in 2.x also <strong>Kubernetes Leases / ConfigMaps</strong>.</li>
+  <li>In 2.6.0 the ZooKeeper integration moved into a separate NAR.</li>
+  <li>ZooKeeper is also the <strong>cluster state provider</strong> (e.g. <code>List*</code> pointers); <em>local</em> state lives in <code>state/local</code>.</li>
+  <li><strong>Flow election</strong>: nodes vote for the flow, waiting for <code>max.wait.time</code> or <code>max.candidates</code>; the most-voted flow wins.</li>
+  <li>A node with a different flow syncs to the cluster flow after backing up its own.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s66">
+      <div class="section-number">S66</div>
+      <div class="eyebrow">Configuration</div>
+      <h2 class="section-heading">Cluster properties in nifi.properties</h2>
+<pre><code>nifi.cluster.is.node=<span class="kw">true</span>
+nifi.cluster.node.address=nifi-1.example.com
+nifi.cluster.node.protocol.port=11443
+nifi.cluster.flow.election.max.wait.time=5 mins
+nifi.cluster.flow.election.max.candidates=3
+nifi.cluster.load.balance.host=nifi-1.example.com
+nifi.cluster.load.balance.port=6342
+nifi.zookeeper.connect.string=zk1:2181,zk2:2181,zk3:2181
+nifi.zookeeper.root.node=/nifi
+nifi.state.management.configuration.file=./conf/state-management.xml</code></pre>
+<ul class="bullets">
+  <li>Since <strong>2.12.0</strong> with TLS, <code>load.balance.host</code> and <code>node.address</code> must be <strong>DNS names</strong>.</li>
+  <li>All nodes need valid certificates (SAN matching the host name); mutual TLS between nodes is required.</li>
+  <li>Embedded ZooKeeper is for labs only: use an external ensemble of 3 or 5 nodes in production.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s67">
+      <div class="section-number">S67</div>
+      <div class="eyebrow">Load balancing</div>
+      <h2 class="section-heading">Load balancing strategies per connection</h2>
+<table>
+  <tr><th>Strategy</th><th>Behavior</th><th>When to use</th></tr>
+  <tr><td><code>Do not load balance</code></td><td>FlowFile stays on the node where it was created</td><td>Sources that already spread load evenly</td></tr>
+  <tr><td><code>Round robin</code></td><td>Evenly across nodes</td><td>After a single-node source (<code>List*</code>, Kafka with few partitions)</td></tr>
+  <tr><td><code>Partition by attribute</code></td><td>Attribute hash selects the node</td><td>Keep related data together: aggregation, merge by key, per-key order</td></tr>
+  <tr><td><code>Single node</code></td><td>All FlowFiles to one node</td><td>Serialized access to a resource, global aggregation</td></tr>
+</table>
+<ul class="bullets">
+  <li>Compression: none / attributes only / content and attributes.</li>
+  <li>Traffic goes through <code>nifi.cluster.load.balance.port</code> (6342): open it between nodes.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s68">
+      <div class="section-number">S68</div>
+      <div class="eyebrow">Load balancing</div>
+      <h2 class="section-heading">Balancing in practice and Offload</h2>
+<ul class="bullets">
+  <li>Load balancing costs extra network I/O and repository writes on the receiving node.</li>
+  <li>Do not enable it "just in case" on every connection.</li>
+  <li>Typical design: distribute once right after the source, then process locally.</li>
+  <li>2.3.0 fixed distribution for <em>partition by attribute</em>; 2.10.0 fixed rare offload/balancing issues.</li>
+</ul>
+<div class="hibox"><strong>Offload</strong> before maintenance: the node stops accepting new data and hands its FlowFiles to other nodes. Cluster dialog → <em>Disconnect</em> → <em>Offload</em>, then stop the node safely.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s69">
+      <div class="section-number">S69</div>
+      <div class="eyebrow">Deployment options</div>
+      <h2 class="section-heading">Docker, Kubernetes / Helm, Ansible</h2>
+<table>
+  <tr><th>Option</th><th>Official support</th><th>Comment</th></tr>
+  <tr><td><strong>Docker</strong></td><td>Official <code>apache/nifi</code> images</td><td>Configured via env vars: <code>SINGLE_USER_CREDENTIALS_*</code>, <code>NIFI_JVM_HEAP_INIT/MAX</code>, <code>NIFI_WEB_HTTPS_PORT</code>, <code>NIFI_SENSITIVE_PROPS_KEY</code>, <code>NIFI_ELECTION_*</code>. Install dir <code>/opt/nifi/nifi-current</code>. Check the Java version of the tag (2.x needs Java 21)</td></tr>
+  <tr><td><strong>Kubernetes / Helm</strong></td><td>No official Apache Helm chart</td><td>Community options: <code>cetic/helm-nifi</code> is <strong>archived</strong> (last chart targets NiFi 1.23.2); operators Stackable and NiFiKop. Kubernetes leader election in 2.x removes the need for ZooKeeper</td></tr>
+  <tr><td><strong>Ansible</strong></td><td>No official role in the project</td><td>Own or community roles: Java 21, unpack the distribution, template <code>nifi.properties</code>, certificates</td></tr>
+</table>
+<div class="note">The absence of an official Helm chart was confirmed on the NiFi users mailing list (Nov 2024); re-check for your timeline.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s70">
+      <div class="section-number">S70</div>
+      <div class="eyebrow">Docker</div>
+      <h2 class="section-heading">Minimal single-node lab</h2>
+<div class="terminal-window"><div class="terminal-titlebar"><span class="terminal-dot terminal-dot-red"></span><span class="terminal-dot terminal-dot-yellow"></span><span class="terminal-dot terminal-dot-green"></span><span class="terminal-title">bash</span></div><pre><code><span class="terminal-prompt">$</span> docker run --name nifi -p 8443:8443 -d \
+    -e SINGLE_USER_CREDENTIALS_USERNAME=admin \
+    -e SINGLE_USER_CREDENTIALS_PASSWORD=<span class="str">ChangeMe-Min12Chars!</span> \
+    apache/nifi:latest
+<span class="cm"># UI: https://localhost:8443/nifi (self-signed certificate)</span></code></pre></div>
+<ul class="bullets">
+  <li>Single User password: at least 12 characters, otherwise NiFi generates random credentials (<code>docker logs nifi | grep Generated</code>).</li>
+  <li>Put repositories and <code>conf/</code> on <strong>volumes</strong>: the container is replaceable, the data is not.</li>
+  <li><code>nifi.sensitive.props.key</code> must be <strong>identical</strong> on all nodes and stored in a secret store.</li>
+  <li>Pin an exact image version (not <code>latest</code>); on Kubernetes use a StatefulSet with persistent volumes per node.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-code" id="s71">
+      <div class="section-number">S71</div>
+      <div class="eyebrow">Layout</div>
+      <h2 class="section-heading">NIFI_HOME structure</h2>
+<pre><code>NIFI_HOME/
+├── bin/                   <span class="cm">nifi.sh start|stop|restart|status|dump|diagnostics</span>
+├── conf/
+│   ├── nifi.properties    <span class="cm">ports, TLS, repositories, cluster</span>
+│   ├── bootstrap.conf     <span class="cm">JVM arguments</span>
+│   ├── logback.xml, state-management.xml, authorizers.xml
+│   ├── flow.json.gz       <span class="cm">current flow (the only format in 2.x)</span>
+│   └── archive/           <span class="cm">previous flow versions</span>
+├── lib/  extensions/  python/          <span class="cm">framework NARs, custom NARs, Python (2.x)</span>
+├── flowfile_repository/  content_repository/  provenance_repository/
+├── database_repository/   <span class="cm">Flow Configuration History</span>
+├── state/  work/
+└── logs/                  <span class="cm">nifi-app, nifi-bootstrap, nifi-user, nifi-request, nifi-deprecation</span></code></pre>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s72">
+      <div class="section-number">S72</div>
+      <div class="eyebrow">Configuration facts</div>
+      <h2 class="section-heading">What to remember about configuration</h2>
+<ul class="bullets">
+  <li>2.x does not use <code>flow.xml.gz</code>: <code>nifi.flow.configuration.file</code> must point to <code>flow.json.gz</code>.</li>
+  <li>Previous flow versions are archived in <code>conf/archive</code>: your first line of configuration rollback.</li>
+  <li><code>nifi.sensitive.props.key</code> encrypts sensitive properties: <strong>losing it means re-entering all sensitive values</strong>. Mandatory since 1.14.0.</li>
+  <li>JVM settings live in <code>bootstrap.conf</code> (<code>java.arg.N</code>); the default heap is small (~512 MB).</li>
+  <li>Default ports: HTTPS <code>8443</code>, load balancing <code>6342</code>; cluster protocol and Site-to-Site ports are configurable.</li>
+  <li>Put repositories on <strong>separate volumes</strong>: at least FlowFile apart from Content, and Provenance separately.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s73">
+      <div class="section-number">S73</div>
+      <div class="eyebrow">Flow versioning</div>
+      <h2 class="section-heading">Flow Registry Clients</h2>
+<table>
+  <tr><th>Client</th><th>Status / version</th></tr>
+  <tr><td><strong>NiFi Registry</strong></td><td>Historical default; <strong>deprecated in 2.8.0</strong> in favor of git-based clients</td></tr>
+  <tr><td><strong>GitHub</strong></td><td>Since 2.0.0-M3; branches supported</td></tr>
+  <tr><td><strong>GitLab</strong></td><td>Since 2.0.0</td></tr>
+  <tr><td><strong>Bitbucket</strong></td><td>Since 2.4.0 (Data Center since 2.7.0)</td></tr>
+  <tr><td><strong>Azure DevOps (Git)</strong></td><td>Since 2.6.0</td></tr>
+</table>
+<div class="hibox">2.10.0 added branch creation and Author + Committer for git clients; 2.11.0 added initial rebase support.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s74">
+      <div class="section-number">S74</div>
+      <div class="eyebrow">Flow versioning</div>
+      <h2 class="section-heading">Version control workflow</h2>
+<ol class="bullets">
+  <li>Process Group → <strong>Version → Start version control</strong>: choose client, bucket/branch, flow name.</li>
+  <li>After changes the group shows <em>locally modified</em>: <strong>Show local changes</strong> displays the diff.</li>
+  <li><strong>Commit local changes</strong> creates a new version; <strong>Revert local changes</strong> rolls back.</li>
+  <li>On another environment: <strong>Import from Registry</strong> or <strong>Change version</strong>; NiFi stops affected components and applies changes.</li>
+  <li>Since 2.5.0 git clients can handle parameter values so environment-specific values are not committed.</li>
+</ol>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s75">
+      <div class="section-number">S75</div>
+      <div class="eyebrow">Change management</div>
+      <h2 class="section-heading">Practices for safe changes</h2>
+<ul class="bullets">
+  <li>Environments dev → test → prod: the same flow version, only the Parameter Context differs.</li>
+  <li>Secrets only as sensitive parameters or Parameter Providers, never in Git.</li>
+  <li>Review changes in git (pull requests) instead of editing in the prod UI; restrict edit rights on prod.</li>
+  <li><strong>Flow Analysis Rules</strong> (API since 2.0.0-M1) check design standards automatically; 2.6.0 ships <code>DisallowComponentType</code>, <code>RestrictBackpressureSettings</code>, <code>RequireServerSSLContextService</code>, <code>RestrictFlowFileExpiration</code> (Day 3, 3.2.6).</li>
+  <li>XML Templates were removed in 2.0: use JSON flow definitions and versioning.</li>
+  <li>Since 2.1.0 the UI supports copy/paste of flow definitions between deployments.</li>
+</ul>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s76">
+      <div class="section-number">S76</div>
+      <div class="eyebrow">Stateless execution</div>
+      <h2 class="section-heading">Stateless Process Groups in 2.x</h2>
+<ul class="bullets">
+  <li>Since 2.0 any Process Group can run in <strong>Stateless</strong> mode.</li>
+  <li>The group runs as one transaction from source to sink, without persisting intermediate FlowFiles.</li>
+  <li>On failure the whole transaction is rolled back.</li>
+  <li>Gives exactly-once-like semantics for Kafka → … → Kafka chains.</li>
+  <li>Trade-off: limited parallelism and data sizes, because data is held in memory.</li>
+</ul>
+<div class="note">2.13.0 added in-memory content support for the Stateless engine: validate before using it in production.</div>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-intro" id="s77">
+      <h2>Day 1 recap</h2>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s78">
+      <div class="section-number">S78</div>
+      <div class="eyebrow">Recap</div>
+      <h2 class="section-heading">What we learned today</h2>
+<table>
+  <tr><th>Topic</th><th>Takeaway</th></tr>
+  <tr><td>Architecture</td><td>Flow Controller + three repositories; immutable content; at-least-once inside a node; configurable durability</td></tr>
+  <tr><td>FlowFile</td><td>Attributes in heap/WAL, content on disk; tiny FlowFiles hurt performance</td></tr>
+  <tr><td>Building flows</td><td>List/Fetch, <code>RouteOnAttribute</code>, EL; one full output stops the processor</td></tr>
+  <tr><td>Records</td><td>One FlowFile = many records; Reader/Writer/Schema; explicit schemas in production</td></tr>
+  <tr><td>Cluster</td><td>Independent nodes; elected coordinator and primary; balancing per connection; TLS + DNS names</td></tr>
+  <tr><td>Versioning</td><td>Parameter Contexts + git-based Flow Registry Clients; NiFi Registry deprecated in 2.8.0</td></tr>
+</table>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s79">
+      <div class="section-number">S79</div>
+      <div class="eyebrow">Self-check</div>
+      <h2 class="section-heading">Questions for self-check</h2>
+<ol class="bullets">
+  <li>Why is <code>UpdateAttribute</code> cheaper than <code>ReplaceText</code>?</li>
+  <li>What happens to a processor if its <code>failure</code> queue hits the back pressure threshold while <code>success</code> is empty?</li>
+  <li>When does <code>Infer Schema</code> produce different schemas for neighboring FlowFiles?</li>
+  <li>How does <code>Partition by attribute</code> differ from <code>Round robin</code>, and when is each needed?</li>
+  <li>What is lost irreversibly if <code>nifi.sensitive.props.key</code> is lost?</li>
+</ol>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-intro" id="s80">
+      <h2>Takk</h2>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+  </div>
+
+  <div class="progress" id="progress">
+    <div class="progress-bar" id="progress-bar"></div>
+  </div>
+
+  <div class="controls">
+    <span class="ctr" id="slide-counter">1 / 80</span>
+    <div class="dots" id="dots"></div>
+  </div>
+
+  <script src="../shared/js/deck.js"></script>
+</body>
+</html>

@@ -4,54 +4,47 @@ aliases:
   - exercises/index
 ---
 
-Практическая часть воркшопа: восемь лабораторных по ходу трёх дней и финальная сквозная лабораторная. Каждая
-лабораторная — самостоятельное задание с архитектурой, настройками компонентов, командами проверки и разбором типичных
-ошибок. Все задания проверены на Apache NiFi 2.12.0.
+The hands-on part of the workshop: eight labs over the three days and a final end-to-end lab. Each lab is a
+self-contained task with an architecture, component settings, verification commands, and a review of common mistakes.
+All labs are verified on Apache NiFi 2.12.0.
 
-## Лабораторные
+## Labs
 
-| Лабораторная | День | Что отрабатывается | Эталонное решение |
+| Lab | Day | What you practice | Solution |
 |---|---|---|---|
-| [[labs/lab-1\|Lab 1 — Интерфейс NiFi и первый flow]] | Day 1 | UI, запуск flow, очереди, provenance, Content Viewer | [lab1-first-flow.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab1-first-flow.json) |
-| [[labs/lab-2\|Lab 2 — Несколько источников и маршрутизация]] | Day 1 | ListFile/FetchFile, ListenHTTP, Process Groups и порты, Parameter Context, RouteOnAttribute | [lab2-multi-source-routing.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab2-multi-source-routing.json) |
-| [[labs/lab-3\|Lab 3 — Split-flow против Record-flow]] | Day 1 | GenerateRecord, SplitRecord против QueryRecord/UpdateRecord, замер throughput | [lab3-split-vs-record.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab3-split-vs-record.json) |
-| [[labs/lab-4\|Lab 4 — БД + REST + Kafka на record-обработке]] | Day 2 | ConsumeKafka, ValidateRecord, LookupRecord + REST, PutDatabaseRecord UPSERT, DLQ | [lab4-db-rest-kafka.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab4-db-rest-kafka.json) |
-| [[labs/lab-5\|Lab 5 — NDJSON transformation pipeline]] | Day 2 | ValidateRecord, удаление секрета и порядок полей через Writer-схему, MergeRecord | [lab5-ndjson-pipeline.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab5-ndjson-pipeline.json) |
-| [[labs/lab-6\|Lab 6 — Доставка событий в Splunk]] | Day 2 | PutSplunk (TCP), InvokeHTTP → HEC, размер пачек и throughput | [lab6-splunk-delivery.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab6-splunk-delivery.json) |
-| [[labs/lab-7\|Lab 7 — Retry и обработка ошибок]] | Day 3 | InvokeHTTP, RetryFlowFile, DLQ, back pressure при сбое приёмника | [lab7-retry-errors.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab7-retry-errors.json) |
-| [[labs/lab-8\|Lab 8 — Тест производительности и тюнинг]] | Day 3 | Базовая линия, сценарии тюнинга, метрики и отчёт | [lab8-performance.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab8-performance.json) |
-| [[labs/final-lab\|Финальная лабораторная — сквозной конвейер]] | Day 3 | Kafka → валидация и трансформация → Splunk → DLQ, сверка и тесты отказов | [lab9-final-pipeline.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab9-final-pipeline.json) |
+| [[labs/lab-1\|Lab 1 — The NiFi UI and a first flow]] | Day 1 | The UI, running a flow, queues, provenance, Content Viewer | [[solutions/lab-1\|Solution]] |
+| [[labs/lab-2\|Lab 2 — Several sources and routing]] | Day 1 | ListFile/FetchFile, ListenHTTP, Process Groups and ports, Parameter Context, RouteOnAttribute | [[solutions/lab-2\|Solution]] |
+| [[labs/lab-3\|Lab 3 — A Split flow versus a Record flow]] | Day 1 | GenerateRecord, SplitRecord versus QueryRecord/UpdateRecord, measuring throughput | [[solutions/lab-3\|Solution]] |
+| [[labs/lab-4\|Lab 4 — A database + REST + Kafka with record processing]] | Day 2 | ConsumeKafka, ValidateRecord, LookupRecord + REST, PutDatabaseRecord UPSERT, DLQ | [[solutions/lab-4\|Solution]] |
+| [[labs/lab-5\|Lab 5 — An NDJSON transformation pipeline]] | Day 2 | ValidateRecord, removing a secret and field order via the Writer schema, MergeRecord | [[solutions/lab-5\|Solution]] |
+| [[labs/lab-6\|Lab 6 — Delivering events to Splunk]] | Day 2 | PutSplunk (TCP), InvokeHTTP → HEC, batch size and throughput | [[solutions/lab-6\|Solution]] |
+| [[labs/lab-7\|Lab 7 — Retry and error handling]] | Day 3 | InvokeHTTP, RetryFlowFile, DLQ, back pressure when the destination fails | [[solutions/lab-7\|Solution]] |
+| [[labs/lab-8\|Lab 8 — A performance test and tuning]] | Day 3 | A baseline, tuning scenarios, metrics, and a report | [[solutions/lab-8\|Solution]] |
+| [[labs/final-lab\|Final lab — an end-to-end pipeline]] | Day 3 | Kafka → validation and transformation → Splunk → DLQ, reconciliation and failure tests | [[solutions/final-lab\|Solution]] |
 
-## Стенд
+Try to build each flow yourself first, then compare it with the solution. Reference Flow Definitions and how to
+import them are on the [[solutions/index|Solutions]] page.
 
-Лабораторные выполняются на готовом стенде [NiFi playground](https://github.com/MagnetonBora/nifi-playground):
-NiFi (одиночный узел или кластер), NiFi Registry, PostgreSQL, Kafka, Prometheus и Grafana, Splunk и заглушки внешних
-систем (REST API клиентов, эмулятор Splunk, нестабильный API). Нужен Docker с памятью от 8 ГБ и `make`.
+## Lab stand
+
+The labs run on a ready-made stand, [NiFi playground](https://github.com/MagnetonBora/nifi-playground):
+NiFi (a single node or a cluster), NiFi Registry, PostgreSQL, Kafka, Prometheus and Grafana, Splunk, and mocks of
+external systems (a customers REST API, a Splunk emulator, an unstable API). You need Docker with at least 8 GB of
+memory and `make`.
 
 ```bash
 git clone https://github.com/MagnetonBora/nifi-playground.git
 cd nifi-playground
-make up          # NiFi и всё окружение; первый старт — несколько минут
-make lab-setup   # таблица и топики для лабораторных
-make urls        # адреса и логины
+make up          # NiFi and the whole environment; the first start takes a few minutes
+make lab-setup   # the table and topics for the labs
+make urls        # addresses and logins
 ```
 
-NiFi откроется на `https://localhost:8443/nifi`. Адреса, которые указываются в лабораторных (Kafka, PostgreSQL,
-каталоги, заглушки), собраны в [[materials/Appendix-A|Приложении A]] материалов Day 3.
+NiFi opens at `https://localhost:8443/nifi`. The addresses used in the labs (Kafka, PostgreSQL, directories, mocks)
+are collected in [[materials/Appendix-A#a5-addresses-for-the-labs|Appendix A.5]].
 
-## Эталонные решения
+## Before a re-run
 
-Для каждой лабораторной есть проверенный Flow Definition — готовая Process Group с Parameter Context, где уже
-указаны адреса стенда. Сначала постройте flow сами, затем сравните с эталоном.
-
-- **В UI:** скачайте файл по ссылке из таблицы, перетащите на холст значок **Process Group** и нажмите значок
-  загрузки файла.
-- **Из терминала:** `make import f=nifi/flows/<файл>.json` (для кластера — `make import-cluster`).
-
-После импорта включите Controller Services группы (*Enable all controller services*) и запустите её.
-
-## Перед повторным прогоном
-
-Лабораторные с Kafka (Lab 4 и финальная) запоминают прочитанные сообщения в consumer group. Чтобы прогнать их
-заново с начала топика, сбросьте группу и очистите результаты — команды в
-[[materials/Appendix-A#a7-test-data-and-reset|Приложении A.7]].
+The labs with Kafka (Lab 4 and the final lab) remember the messages they have read in a consumer group. To re-run
+them from the start of the topic, reset the group and clear the results — the commands are in
+[[materials/Appendix-A#a7-test-data-and-reset|Appendix A.7]].

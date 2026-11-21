@@ -1,76 +1,24 @@
 ---
-title: "Lab 3 — Split-flow против Record-flow"
+title: "Lab 3 — A Split flow versus a Record flow"
 aliases:
   - exercises/lab-3
 ---
 
-> Из материалов [[materials/day-1|Day 1 — Apache NiFi Fundamentals]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
+> From the materials of [[materials/day-1|Day 1 — Apache NiFi Fundamentals]]. The lab stand is described on the [[labs/index|Labs]] page; loading the reference solutions — on the [[solutions/index|Solutions]] page.
+> Solution: [[solutions/lab-3|Lab 3 — solution]].
 
-**Цель.** Количественно сравнить два варианта обработки одного набора данных.
+**Goal.** Quantitatively compare two variants of processing the same data set.
 
-**Исходные данные.** `GenerateRecord` (процессор появился в 1.20.0) создаёт FlowFile с N случайных записей по заданной схеме. Либо `GenerateFlowFile` с NDJSON-текстом.
+**Source data.** `GenerateRecord` (the processor appeared in 1.20.0) creates a FlowFile with N random records according to a given schema. Or `GenerateFlowFile` with NDJSON text.
 
-Нужны **две схемы**. Схема генератора (`Schema Text` у `GenerateRecord`, Writer — `JsonRecordSetWriter` с `Output Grouping = One Line Per Object`): `currency` объявлен enum, иначе генератор выдаёт случайные строки и фильтр по валюте не сработает:
+**Measurement method.**
 
-```json
-{"type": "record", "name": "GeneratedOrder", "fields": [
-  {"name": "order_id", "type": "string"},
-  {"name": "customer", "type": "string"},
-  {"name": "amount",   "type": "double"},
-  {"name": "currency", "type": {"type": "enum", "name": "Currency", "symbols": ["EUR", "USD", "GBP"]}}
-]}
-```
+1. The same input: for example, 100 FlowFiles of 100,000 records each (configured in `GenerateRecord`: *Number of Records*). Mind the scale: variant A turns such an input into ~10 million FlowFiles, which does not fit into the training heap (1–2 GB on the stand). On a laptop, start with 1 FlowFile of 10,000 records (*Run Once* on the generator) and increase the volume while watching the heap and back pressure.
+2. Freeze the initial conditions: clean queues, the same `Concurrent Tasks`.
+3. Run variant A and wait until all the data is processed; record: the processing time, the *Tasks/Time* values, *Bytes Read/Written*, the number of FlowFiles in the queues, heap and GC (System Diagnostics), and the number of provenance events.
+4. Stop, clear the queues, run variant B with the same input data; repeat the measurements.
+5. Repeat 3 times and take the median.
 
-Схема Reader (`JsonTreeReader`, `Use 'Schema Text' Property`) — та же, но `currency` объявлен строкой: SQL-движок `QueryRecord` (Apache Calcite) не сравнивает enum со строками в `IN` / `NOT IN`:
+**Expected behavior (qualitatively).** Variant B processes the data noticeably faster and with less load on the heap/GC; the number of provenance events and entries in the FlowFile Repository is orders of magnitude smaller. The absolute values depend on the hardware — **the numbers must be obtained in your environment**, not taken from a textbook.
 
-```json
-{"type": "record", "name": "Order", "fields": [
-  {"name": "order_id", "type": "string"},
-  {"name": "customer", "type": "string"},
-  {"name": "amount",   "type": "double"},
-  {"name": "currency", "type": "string"}
-]}
-```
-
-**Вариант A (Split-based).**
-
-```text
-GenerateRecord ► SplitRecord(Records Per Split=1) ► EvaluateJsonPath ► RouteOnAttribute ► UpdateAttribute ► MergeContent ► LogAttribute
-```
-
-**Вариант B (Record-based).**
-
-```text
-GenerateRecord ► QueryRecord ─ valid ─► UpdateRecord ► LogAttribute
-                              └ rejected ─► LogAttribute
-```
-
-QueryRecord, динамическое свойство `valid`:
-
-```sql
-SELECT order_id, customer, amount, currency
-FROM FLOWFILE
-WHERE amount > 0 AND currency IN ('EUR', 'USD')
-```
-
-и `rejected`:
-
-```sql
-SELECT * FROM FLOWFILE WHERE amount <= 0 OR currency NOT IN ('EUR', 'USD')
-```
-
-**Методика замера.**
-
-1. Одинаковый вход: например, 100 FlowFile по 100 000 записей (настраивается в `GenerateRecord`: *Number of Records*). Учтите масштаб: вариант A превращает такой вход в ~10 млн FlowFile, что не помещается в учебный heap (на стенде 1–2 ГБ). На ноутбуке начинайте с 1 FlowFile по 10 000 записей (*Run Once* у генератора) и увеличивайте объём, следя за heap и back pressure.
-2. Заморозьте начальные условия: чистые очереди, одинаковые `Concurrent Tasks`.
-3. Запустите вариант A, дождитесь обработки всех данных; запишите: время обработки, значения *Tasks/Time*, *Bytes Read/Written*, число FlowFile в очередях, heap и GC (System Diagnostics), число provenance-событий.
-4. Остановите, очистите очереди, запустите вариант B с теми же входными данными; повторите замеры.
-5. Повторите 3 раза и берите медиану.
-
-**Ожидаемое поведение (качественно).** Вариант B обрабатывает данные заметно быстрее и с меньшей нагрузкой на heap/GC; число provenance-событий и записей в FlowFile Repository на порядки меньше. Абсолютные значения зависят от железа — **цифры нужно получить в вашем окружении**, а не брать из учебника.
-
-**Проверка корректности.** Сумма записей в `valid` и `rejected` = входному числу; атрибуты `record.count` (`QueryRecord` ставит его на выходные FlowFile) совпадают. Например, при 10 000 записей на входе: `valid` 4910 + `rejected` 5090 (событие `ROUTE` у `QueryRecord` в provenance).
-
-**Типичные ошибки.** `QueryRecord` падает с ошибкой SQL — имя таблицы должно быть `FLOWFILE`; тип поля не совпал (decimal vs double) — задайте схему явно; ошибка `Values passed to NOT IN operator must have compatible types` — поле в схеме Reader объявлено enum, объявите его строкой; в варианте A `MergeContent` ждёт нужного числа элементов — задайте *Max Bin Age*. Одинаковые имена процессоров в вариантах A и B (например, два `LogAttribute (valid)`) путают при поиске в provenance — давайте им разные имена.
-
-**Эталонное решение:** [lab3-split-vs-record.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab3-split-vs-record.json).
+**Correctness check.** The sum of the records in `valid` and `rejected` = the input count; the `record.count` attributes (`QueryRecord` sets it on the output FlowFiles) match. For example, with 10,000 records on the input: `valid` 4910 + `rejected` 5090 (the `ROUTE` event of `QueryRecord` in provenance).

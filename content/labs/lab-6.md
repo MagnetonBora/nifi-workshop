@@ -1,26 +1,20 @@
 ---
-title: "Lab 6 — Доставка событий в Splunk"
+title: "Lab 6 — Delivering events to Splunk"
 aliases:
   - exercises/lab-6
 ---
 
-> Из материалов [[materials/day-2|Day 2 — Data Processing and Integrations]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
+> From the materials of [[materials/day-2|Day 2 — Data Processing and Integrations]]. The lab stand is described on the [[labs/index|Labs]] page; loading the reference solutions — on the [[solutions/index|Solutions]] page.
+> Solution: [[solutions/lab-6|Lab 6 — solution]].
 
-**Цель.** Отправить NDJSON-события из Lab 5 в Splunk либо в эмулированный endpoint и измерить throughput.
+**Goal.** Send the NDJSON events from Lab 5 to Splunk or to an emulated endpoint and measure throughput.
 
-**Архитектура.**
-
-```text
-...► MergeRecord (NDJSON) ► PutSplunk (TCP) ► [Splunk TCP input / netcat-эмулятор]
-                       └─► (альтернатива) InvokeHTTP ► [HEC / http-эмулятор]
-```
-
-**Эмуляция.** На стенде эмулятор Splunk уже запущен (`make lab-services`, контейнер `splunk-sim`, код — `lab-services/splunk_sim.py`): TCP input на `splunk-sim:5514` пишет события в `/data/splunk_in.log`, HEC на `http://splunk-sim:8088/services/collector/event` — в `/data/hec_in.log` и отвечает как Splunk (`{"text":"Success","code":0}`). Без стенда тот же эффект даёт:
+**Emulation.** On the stand, the Splunk emulator is already running (`make lab-services`, the container `splunk-sim`, the code is `lab-services/splunk_sim.py`): the TCP input on `splunk-sim:5514` writes events to `/data/splunk_in.log`, and HEC at `http://splunk-sim:8088/services/collector/event` writes to `/data/hec_in.log` and responds like Splunk (`{"text":"Success","code":0}`). Without the stand, the same effect is given by:
 
 ```bash
-# Эмуляция TCP-input Splunk
+# Emulating a Splunk TCP input
 nc -lk 5514 > /tmp/splunk_in.log
-# Либо на Python: простой приёмник HTTP для HEC
+# Or in Python: a simple HTTP receiver for HEC
 python3 - <<'EOF'
 from http.server import BaseHTTPRequestHandler, HTTPServer
 class H(BaseHTTPRequestHandler):
@@ -32,22 +26,12 @@ HTTPServer(('0.0.0.0', 8088), H).serve_forever()
 EOF
 ```
 
-**Источник событий.** `GenerateRecord` (схема лог-события, 100 записей на FlowFile, `Run Schedule 1 sec`) ► `MergeRecord` (Min/Max Records `10000`, Max Bin Age `10 sec`). Удобно собрать две группы: A — `PutSplunk` (TCP), B — `InvokeHTTP` (HEC) — и запускать их по очереди.
+**The event source.** `GenerateRecord` (a log event schema, 100 records per FlowFile, `Run Schedule 1 sec`) ► `MergeRecord` (Min/Max Records `10000`, Max Bin Age `10 sec`). It is convenient to build two groups: A — `PutSplunk` (TCP), B — `InvokeHTTP` (HEC) — and to run them in turn.
 
-**Конфигурация `PutSplunk`:** Protocol `TCP`; Hostname `#{splunk.host}` (`splunk-sim`); Port `#{splunk.port}` (`5514`); Message Delimiter `\n`; Concurrent Tasks `1` (затем эксперимент с `2`, `4`). Свойства `Connection Per FlowFile` в NiFi 2.12 нет (см. 2.3.2).
+**The experiment.**
 
-**Конфигурация `InvokeHTTP` (HEC):** HTTP Method `POST`; HTTP URL `#{hec.url}`; Request Content-Type `application/json`; динамическое свойство `Authorization` = `Splunk #{hec.token}` — динамические свойства `InvokeHTTP` становятся заголовками запроса.
+1. Prepare 1 million events (repeated `GenerateRecord`/`GenerateFlowFile`). On a laptop, start with ~100,000 and increase while watching the heap.
+2. Variant 1: small FlowFiles of 100 events. Variant 2: batches of 10,000 through `MergeRecord`. Variant 3: `Concurrent Tasks=4`.
+3. Measure events/s using the queue counters and time (on the stand: `make lab-splunk-count`).
 
-> **Формат тела HEC.** Эндпоинт `/services/collector/event` настоящего Splunk принимает события только в конверте `{"time": …, "sourcetype": …, "event": {…}}` (см. 2.3.4), а «голый» NDJSON отклоняет. Эмулятор стенда принимает любое тело, поэтому лабораторная работает и без конверта. Для реального HEC оберните записи перед `InvokeHTTP`, например `JoltTransformRecord` со спецификацией `[{"operation":"shift","spec":{"*":"event.&"}},{"operation":"default","spec":{"sourcetype":"app:log","index":"main"}}]` (**[проверить]** на вашей версии) — либо отправляйте на `/services/collector/raw`.
-
-**Эксперимент.**
-
-1. Подготовьте 1 млн событий (многократный `GenerateRecord`/`GenerateFlowFile`). На ноутбуке начните с ~100 000 и увеличивайте, следя за heap.
-2. Вариант 1: мелкие FlowFile по 100 событий. Вариант 2: пачки по 10 000 через `MergeRecord`. Вариант 3: `Concurrent Tasks=4`.
-3. Измеряйте события/с по счётчикам очереди и времени (на стенде: `make lab-splunk-count`).
-
-**Проверка.** `make lab-splunk-count` (или `wc -l /tmp/splunk_in.log` без стенда) равно числу отправленных событий — например, 21 FlowFile по 100 событий дают ровно 2100 строк и по TCP, и по HEC; в provenance события `SEND` показывают адрес приёмника. Перед новым замером обнулите файлы эмулятора: `docker exec splunk-sim sh -c ': > /data/splunk_in.log; : > /data/hec_in.log'`.
-
-**Типичные ошибки.** `PutSplunk` в `failure` — приёмник недоступен/закрыл соединение; всё в одну строку — нет разделителя между событиями; Splunk не разбирает время — формат/порядок полей не соответствует настройкам sourcetype; HEC отвечает `400 Invalid data format` — событие не завёрнуто в конверт `{"event": …}`.
-
-**Эталонное решение:** [lab6-splunk-delivery.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab6-splunk-delivery.json) (без конверта HEC — рассчитано на эмулятор).
+**Verification.** `make lab-splunk-count` (or `wc -l /tmp/splunk_in.log` without the stand) equals the number of events sent — for example, 21 FlowFiles of 100 events give exactly 2,100 lines over both TCP and HEC; in provenance the `SEND` events show the destination address. Before a new measurement, zero the emulator files: `docker exec splunk-sim sh -c ': > /data/splunk_in.log; : > /data/hec_in.log'`.

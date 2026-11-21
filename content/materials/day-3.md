@@ -372,7 +372,7 @@ Restarting the process is a last resort. Most failures should be resolved **with
 
 **Steps.**
 
-1. Run the pipeline from Lab 7 or Block 3.5 with load.
+1. Run the pipeline from [[labs/lab-7|Lab 7]] or the [[labs/final-lab|final lab]] with load.
 2. **A planned restart:** follow the runbook from [the order of stopping and starting](#the-order-of-stopping-and-starting-from-sources-to-sinks-and-back) (stop the sources → drain → stop → start → sinks → sources). Measure the stop/start time.
 3. **An emergency restart:** send `kill -9` to the NiFi JVM process (**in a lab only**). Observe: the supervisor brings NiFi back up, and with `autoResumeState=true` the flow starts by itself.
 4. Compare the number of records at the input and at the destination; count the duplicates (the event key).
@@ -403,67 +403,7 @@ In 2.12.0 a framework abstraction **PropertyEncryptionProvider** for encrypting 
 
 ### Lab 7: a flow with retry and error handling
 
-**Goal.** Build a flow that survives temporary failures of the destination and does not get blocked by "bad" data.
-
-**Architecture.**
-
-```text
-GenerateRecord ► ValidateRecord ─ invalid ─► [DLQ group]
-                     │ valid
-                     ▼
-              InvokeHTTP (an endpoint that simulates failures)
-                 ├ Original (2xx) ► PutFile #{ok.dir}
-                 ├ Response ► LogAttribute
-                 ├ Retry ──► RetryFlowFile ─ retry ► (penalize) ► InvokeHTTP
-                 │                 └ retries_exceeded ► [DLQ group]
-                 ├ No Retry ───────────────────────────────► [DLQ group]
-                 └ Failure ► RetryFlowFile (the same one)
-[DLQ group]: UpdateAttribute (error.*) ► PutFile #{dlq.dir}/${error.stage} (with a high back pressure threshold)
-```
-
-`Original` is the source FlowFile of the request after a 2xx response (it is the one that makes sense to put into `ok`); `Response` is the response body (here `{}`).
-
-The Parameter Context `lab7-params` (the stand): `flaky.url=http://flaky:9099/events`, `ok.dir=/opt/nifi/data/ok`, `dlq.dir=/opt/nifi/data/dlq` (on the host — `nifi/data/ok`, `nifi/data/dlq`).
-
-**A data source with invalid records.** `GenerateRecord` produces records strictly according to its schema, so without preparation the `invalid` branch is empty. Declare the fields in the generator schema as `["null", …]` and set `Nullable Fields = true`, `Null Value Percentage = 5`, and in `ValidateRecord` (Schema Access Strategy `Use 'Schema Text' Property`) validate against a strict schema in which all fields are required: records with `null` will go to `invalid`.
-
-**Simulating an unstable API.** On the stand the service is already running: the container `flaky` (`make lab-services`, the code is `lab-services/flaky.py`), the address from NiFi is `http://flaky:9099/events`. Without the stand:
-
-```bash
-python3 - <<'EOF'
-import random
-from http.server import BaseHTTPRequestHandler, HTTPServer
-class H(BaseHTTPRequestHandler):
-    def do_POST(self):
-        self.rfile.read(int(self.headers.get('Content-Length', 0)))
-        r = random.random()
-        code = 200 if r < 0.6 else (503 if r < 0.9 else 400)   # 60% ok, 30% 503, 10% 400
-        self.send_response(code); self.end_headers(); self.wfile.write(b'{}')
-HTTPServer(('0.0.0.0', 9099), H).serve_forever()
-EOF
-```
-
-**Configuration.**
-
-| Component | Setting |
-|---|---|
-| `GenerateRecord` | Schema Text — a schema with `["null", …]` fields; Number of Records `5`; Nullable Fields `true`; Null Value Percentage `5`; Run Schedule `2 sec` |
-| `ValidateRecord` | Schema Access Strategy `Use 'Schema Text' Property` — a strict schema (all fields required); Strict Type Checking `true`; Validation Details Attribute Name `validation.details` |
-| `InvokeHTTP` | URL `#{flaky.url}`; POST; Connection/Read Timeout — `5 sec` each; Concurrent Tasks `2` |
-| `RetryFlowFile` | Maximum Retries `3`; Penalize Retries `true`; Retry Attribute — the default; the dynamic property `error.stage` = `retries_exceeded`. The penalty value is *Penalty Duration* on the Settings tab (for example, `10 sec`) |
-| The connection `...► DLQ` | Back Pressure Object Threshold `100000`, Size `10 GB` |
-| `UpdateAttribute` (before the DLQ) | `error.stage` = `validation` / `http-${invokehttp.status.code}` / `retries-exceeded` (depending on the error path); `filename` = `${uuid}.json` |
-| `PutFile` (DLQ) | Directory `#{dlq.dir}/${error.stage}`; Conflict Resolution `replace` (names by `${uuid}`) |
-
-**Verification** (from the stand host):
-
-- After a few minutes most FlowFiles are in `nifi/data/ok` (`ls nifi/data/ok | wc -l`); `400` responses — in `nifi/data/dlq/http-400`, invalid records — in `nifi/data/dlq/validation`; `503` responses pass through `RetryFlowFile` (FlowFiles with a penalty are visible in the `InvokeHTTP → RetryFlowFile` queue).
-- `retries_exceeded` almost never occurs while `flaky` is running: four `503` responses in a row are needed (~1%). Stop the service — `docker stop flaky`: requests go to `Failure`, after 3 retries with a penalty `nifi/data/dlq/retries-exceeded` appears, the queue before `InvokeHTTP` grows, and then back pressure kicks in; after `docker start flaky` the queue drains *without intervention*.
-- Check provenance: a FlowFile with several attempts has a chain of `ROUTE`/`SEND` events; the `flowfile.retries` attribute shows the number of attempts.
-
-**Mistakes and diagnostics.** A loop without a counter (retry → the same processor, without `RetryFlowFile`) — endless retries; the `Failure` queue is not empty and blocks the source — it must be routed to a sink; the DLQ directory fills the disk — add monitoring (`MonitorDiskUsage`) and cleanup; the `invalid` branch is always empty — the generator produces only records that are valid according to its own schema (see "A data source with invalid records").
-
-**Reference solution:** `nifi/flows/lab7-retry-errors.json`.
+> The lab: [[labs/lab-7|Lab 7 — Retry and error handling]].
 
 ---
 
@@ -1240,179 +1180,13 @@ Pros: very high IOPS/throughput of the shared pool, simplicity, fast Lucene merg
 
 ### Lab 8: a performance test and pipeline tuning
 
-**Goal.** Measure the throughput of the pipeline from [Lab 5](day-2.md#lab-5-an-ndjson-transformation-pipeline), find the bottleneck, and improve the indicators.
-
-**Method (step by step).**
-
-1. **The baseline.** Record the version, the configuration (heap, thread pool, concurrent tasks), the hardware. Prepare a load generator (`GenerateRecord`, a Kafka producer perf-test).
-2. **Metrics.** Events/s at the output; Tasks/Time per processor; queues (where they grow); heap/GC; CPU; `iostat`; the size/time of provenance events.
-3. **Scenarios.**
-   - A: the baseline configuration.
-   - B: explicit schemas (remove Infer).
-   - C: increase `Concurrent Tasks` of the bottleneck.
-   - D: increase the batch size (`MergeRecord`).
-   - E: move Provenance to a separate volume/reduce indexing.
-   - F: increase the heap and thread pool (in line with the growing number of cores).
-4. **One parameter at a time;** 3 runs each; the median.
-5. **The report:** a "change → effect → conclusion" table, the updated settings, recommendations.
-
-**On the stand (Appendix A).**
-
-- **The generator:** `GenerateRecord` (a log event schema with `user.pwd`, Number of Records `10000`, Run Schedule `1 sec`) before the [Lab 5](day-2.md#lab-5-an-ndjson-transformation-pipeline) pipeline — about 10,000 events/s; the load is increased through *Number of Records* and *Run Schedule*. While the generator remains the bottleneck, that is the baseline.
-- **The output counter:** `UpdateCounter` after `MergeRecord` with Delta `${record.count}` — events/s = the growth of the counter (☰ → Counters) over an interval.
-- **Scenario A** — a Reader with `Infer Schema`; **B** — switch the Record Reader of `ValidateRecord` to a `JsonTreeReader` with an explicit schema.
-- **Scenario D** — *Minimum/Maximum Number of Records* of `MergeRecord`.
-- **Scenario E** — on Docker Desktop all volumes sit on one virtual disk, so the effect of a separate volume cannot be reproduced; reduce the provenance indexing in `conf/nifi.properties` (the volume `nifi_conf`): `nifi.provenance.repository.indexed.fields`, `nifi.provenance.repository.indexed.attributes`, `nifi.provenance.repository.max.storage.time`, then restart with `make nifi` (**[verify]** the effect on your version).
-- **Scenario F** — heap: `NIFI_JVM_HEAP_INIT` / `NIFI_JVM_HEAP_MAX` in `nifi/single/docker-compose-nifi-single.yml` and `make nifi` (mind the Docker Desktop memory limit); thread pool: ☰ → Controller Settings → *Maximum Timer Driven Thread Count*.
-- **Metrics:** Prometheus already collects NiFi metrics (`http://localhost:9090`, job `nifi`), and the graphs are in Grafana at `http://localhost:3000`.
-- **The output** is written to `nifi/data/lab8-out` with names by seconds (`lab8-${now():format('ss')}.ndjson`, Conflict Resolution `replace`) — no more than 60 files are on disk at any load.
-
-**A results table template.**
-
-| Scenario | Change | events/s | CPU % | GC pause (p95) | I/O await (ms) | Conclusion |
-|---|---|---|---|---|---|---|
-| A | baseline | | | | | |
-| B | explicit schemas | | | | | |
-| C | more Concurrent Tasks on the bottleneck | | | | | |
-| D | larger `MergeRecord` batches | | | | | |
-| E | Provenance on a separate volume / less indexing | | | | | |
-| F | larger heap and thread pool | | | | | |
-
-**Useful commands.**
-
-```bash
-bin/nifi.sh dump /tmp/nifi-dump.txt           # thread dump
-bin/nifi.sh diagnostics /tmp/diag.txt         # diagnostics
-iostat -x 5                                   # disk load
-jstat -gcutil <pid> 5000                      # GC
-```
-
-On the stand the same commands are run inside the container, and the load is visible through `docker stats`:
-
-```bash
-docker exec nifi /opt/nifi/nifi-current/bin/nifi.sh dump /tmp/nifi-dump.txt
-docker exec nifi /opt/nifi/nifi-current/bin/nifi.sh diagnostics /tmp/diag.txt
-docker exec nifi sh -c 'jstat -gcutil $(pgrep -f org.apache.nifi.NiFi | head -1) 5000'   # [verify]
-docker stats nifi                                                                     # the container's CPU / memory
-```
-
-**Common mistakes.** Measuring without a stable input; changing several parameters at once; ignoring JVM warm-up (the first minutes are not representative); comparing without identical data; output to disk without a volume limit (it fills the disk within minutes).
-
-**Reference solution:** `nifi/flows/lab8-performance.json`.
+> The lab: [[labs/lab-8|Lab 8 — A performance test and tuning]].
 
 ---
 
 ## Block 3.5: Final hands-on lab: end-to-end pipeline
 
-### Goal and result
-
-Build a production-oriented pipeline: **Kafka → validation and transformation of JSON/NDJSON (Record) → delivery (Splunk or a file) → error handling → a performance check and tuning**.
-
-### Architecture
-
-```text
-                         ┌───────────────────────── PG: ingest ─────────────────────────┐
- Kafka topic logs.raw ──►│ ConsumeKafka (Processing=RECORD, Group=nifi-logs, Output=Value)│
-                         │   └ parse failure ───────────────────────────► PG: errors     │
-                         └───────────────┬───────────────────────────────────────────────┘
-                                         ▼
-                         ┌───────────────── PG: validate-transform ───────────────────┐
-                         │ ValidateRecord (schema LogEvent.in)                         │
-                         │   ├ invalid ─────────────────────────────► PG: errors        │
-                         │ UpdateRecord (ingest_ts; a writer schema without secrets,    │
-                         │               field order: ingest_ts first)                  │
-                         │ QueryRecord (WHERE level <> 'DEBUG')                         │
-                         │ MergeRecord (NDJSON, up to 10,000 records, Max Bin Age 30 sec)│
-                         └───────────────┬───────────────────────────────────────────────┘
-                                         ▼
-                         ┌───────────────────── PG: deliver ─────────────────────────┐
-                         │ PutSplunk (TCP)  or  InvokeHTTP→HEC  or PutFile              │
-                         │   ├ failure/retry ► RetryFlowFile ► (exhausted) ► PG: errors │
-                         └───────────────┬───────────────────────────────────────────────┘
-                                         ▼
-                         ┌───────────────────── PG: errors ───────────────────────────┐
-                         │ UpdateAttribute(error.*) ► PublishKafka (logs.dlq) / PutFile │
-                         └───────────────────────────────────────────────────────────────┘
-```
-
-### Controller Services and parameters
-
-| Service/parameter | Value |
-|---|---|
-| `Kafka3ConnectionService` | `#{kafka.bootstrap}` |
-| `AvroSchemaRegistry` | `LogEvent.in`, `LogEvent.out` |
-| `JsonTreeReader` | Schema Name Property, the registry; without Infer |
-| `JsonRecordSetWriter` | `LogEvent.out`, `One Line Per Object`, without Pretty Print |
-| Parameter Context `logs-prod` | `kafka.bootstrap`, `splunk.host`, `splunk.port`, `dlq.topic`, `out.dir` |
-
-Values for the stand (Appendix A.5): `kafka.bootstrap=kafka1:19092`, `splunk.host=splunk-sim`, `splunk.port=5514`, `dlq.topic=logs.dlq`, `out.dir=/opt/nifi/data/final` (a fallback sink for the DLQ; on the host — `nifi/data/final`).
-
-In `RECORD` mode `ConsumeKafka` has a relationship **`parse failure`** (messages that the Reader could not parse) — route it to `errors`, otherwise the processor is invalid. For reconciliation it is convenient to put an `UpdateCounter` with Delta `${record.count}` at the points "accepted" (after `ConsumeKafka`), "delivered" (before `PutSplunk`), "filtered" (the `debug` output of the second `QueryRecord`: `SELECT * FROM FLOWFILE WHERE level = 'DEBUG'`), and "to the DLQ" (in the `errors` group).
-
-### Sequence
-
-1. Prepare the stand (Appendix A); create the topics `logs.raw` (for example, 6 partitions) and `logs.dlq` — on the stand `make lab-setup` does this.
-2. Create the Parameter Context and the Controller Services (the schemas!).
-3. Build the groups in the order: ingest → validate-transform → deliver → errors; connect the ports.
-4. Configure back pressure on the inter-group connections; on the connections into `errors` — high thresholds.
-5. Enable framework retry on `PutSplunk`/`InvokeHTTP`; `RetryFlowFile` for those that exhausted their attempts.
-6. Start the load generator: a mix of valid and invalid events (5–10% invalid), DEBUG events, events with a secret. On the stand: `make lab-final-load n=100000` (the code is `lab-services/produce_logs.py`). Manually:
-
-```bash
-python3 - <<'EOF' | docker exec -i kafka1 kafka-console-producer --bootstrap-server kafka1:19092 --topic logs.raw
-import json, random, time
-for i in range(100000):
-    r = random.random()
-    if r < 0.05:
-        print('{"ts":"bad"}')                     # an invalid record
-    else:
-        print(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ"), "level": random.choice(["INFO","ERROR","DEBUG"]),
-                          "svc": "api", "msg": "event %d" % i, "user": {"id": i % 100, "pwd": "s3cret"}}))
-EOF
-```
-
-### Correctness check
-
-- At the destination: events **without** `pwd`, without `DEBUG`, with `ingest_ts` as the first field.
-- In `logs.dlq` — invalid records (about 5%) with error attributes/headers.
-- The sum: `accepted = delivered + filtered (DEBUG) + to the DLQ` (reconciled through `record.count`/the `UpdateCounter` counters).
-- There is no growth of the queues in `errors` above the thresholds; the main queue is not blocked when the DLQ grows.
-- Provenance: for a random event the path Kafka → … → SEND is visible.
-
-On the stand:
-
-```bash
-make lab-splunk-count                                    # lines in the emulator = final.delivered
-docker exec splunk-sim sh -c 'grep -c pwd /data/splunk_in.log; grep -c DEBUG /data/splunk_in.log'   # we expect 0 and 0
-docker exec kafka1 kafka-console-consumer --bootstrap-server kafka1:19092 --topic logs.dlq \
-   --from-beginning --timeout-ms 10000 --property print.headers=true | head
-```
-
-An example of reconciliation on 2,000 events: `final.accepted` 2000 = `final.delivered` 1256 + `final.filtered.debug` 636 + `final.dlq` 108 (☰ → Counters).
-
-**Re-running.** The consumer group `nifi-logs` stores the offsets; before a new run from the start of the topic, stop `ConsumeKafka` and run `docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-logs`; zero the emulator: `docker exec splunk-sim sh -c ': > /data/splunk_in.log'`.
-
-### Failure testing
-
-1. Stop the destination (the Splunk emulator; on the stand `docker stop splunk-sim`, then `docker start splunk-sim`): the queue grows, back pressure stops the ingest; the Kafka lag grows (there is no loss; `docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --describe --group nifi-logs`); after it returns — the backlog drains.
-2. Restart NiFi during the load (on the stand `docker restart nifi`): the queues are restored, the consumer continues from the committed offsets; repeats are possible (at-least-once) — check idempotency/acceptability.
-3. Submit a "batch of garbage" (100% invalid): the main flow does not stop; the DLQ accepts it.
-
-### Performance check and tuning
-
-Perform Lab 8 on this pipeline: the goal is stable throughput without growth of the lag, GC pauses within the SLO; record the final settings (heap, thread pool, concurrent tasks, batch sizes, repositories).
-
-### Common mistakes and diagnostics
-
-| Symptom | Diagnostics |
-|---|---|
-| Data does not appear | The status of `ConsumeKafka` (Group/Offset Reset), bulletins; `kafka-consumer-groups.sh --describe` (on the stand `docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --describe --group nifi-logs`); the group has already read the topic — see "Re-running" |
-| `ConsumeKafka` is invalid | The `parse failure` relationship is not connected |
-| Everything goes to the DLQ | The `LogEvent.in` schema does not match the data (types/nested structures) — look at the error attributes |
-| Low throughput | Tasks/Time, queues; not enough partitions; small FlowFiles; a single thread on `PutSplunk` |
-| Duplicates at the destination | Restarts/rebalances; idempotency is needed |
-
-**Reference solution:** `nifi/flows/lab9-final-pipeline.json`. The failure tests (stopping the destination, restarting NiFi under load) were not run on the reference solution.
+> The lab: [[labs/final-lab|Final lab — an end-to-end pipeline]].
 
 ---
 

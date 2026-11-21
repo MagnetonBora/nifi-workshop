@@ -494,130 +494,7 @@ Rules:
 
 ### Lab 4: a database + REST + Kafka with record processing
 
-**Goal.** Build a flow: order events are read from Kafka, enriched with data from a REST API, written to a database, and the result is published to an output topic.
-
-**Architecture.**
-
-```text
-ConsumeKafka(topic: orders.raw, Processing=RECORD, reader: infer) ─ parse failure ─► DLQ
-   │ success
-   ▼
-ValidateRecord (schema order.v1) ─ invalid / failure ─► DLQ
-   │ valid  (written with the order.v1 schema, the schema.name attribute)
-   ▼
-LookupRecord (RestLookupService /customers/${customer_id}) ─ unmatched / failure ─► DLQ
-   │ matched
-   ▼
-SplitRecord (Records Per Split = 1) ─ failure ─► DLQ
-   │ splits
-   ▼
-PutDatabaseRecord (UPSERT orders_stage) ─ failure ─► DLQ
-   │ success                          └ retry ─► framework retry (3 attempts) ─► DLQ
-   ▼
-PublishKafka (orders.enriched, key = order_id) ─ failure ─► DLQ
-
-DLQ: UpdateAttribute (error.stage = validate | lookup | db | publish) ► PublishKafka (orders.dlq, one message per row)
-```
-
-`SplitRecord` before the database is needed because `PutDatabaseRecord` executes the whole FlowFile in one transaction: `o-1001` and `o-1002` arrive in one FlowFile, and a `CHECK` error on `o-1002` would roll back `o-1001` too. Splitting by single records isolates errors at the cost of throughput; for large volumes the alternative is to keep the batches and handle `failure` separately.
-
-**The database table.** On the stand it is created by `make lab-setup` (the file `postgres/init/01-lab4-orders.sql`):
-
-```sql
-CREATE TABLE IF NOT EXISTS orders_stage (
-    order_id       varchar(64)    PRIMARY KEY,
-    customer_id    varchar(64),
-    customer_name  varchar(256),
-    customer_tier  varchar(32),
-    amount         numeric(12, 2) NOT NULL CONSTRAINT orders_stage_amount_positive CHECK (amount > 0),
-    currency       varchar(3)     NOT NULL,
-    created_at     timestamptz,
-    loaded_at      timestamptz    NOT NULL DEFAULT now()
-);
-```
-
-The `CHECK (amount > 0)` constraint is the business rule on which `o-1002` goes to the DLQ.
-
-**Parameter Context `lab4-params`** (values for the stand, Appendix A.5): `kafka.bootstrap=kafka1:19092`, `db.url=jdbc:postgresql://postgres:5432/nifi`, `db.user=nifi`, `db.password=nifi` (sensitive), `db.driver=/opt/nifi/drivers/postgresql-42.7.14.jar`, `customers.api=http://customers-api:8000`.
-
-**Controller Services.**
-
-| Service | Configuration |
-|---|---|
-| `Kafka3ConnectionService` | Bootstrap Servers `#{kafka.bootstrap}`; Security Protocol depends on the environment (on the stand `PLAINTEXT`) |
-| `JsonTreeReader` (`reader-infer`) | Schema Access Strategy `Infer Schema` — for `ConsumeKafka`, `ValidateRecord`, `SplitRecord`, `PutDatabaseRecord`, `PublishKafka` |
-| `JsonTreeReader` (`reader-order`) | Schema Access Strategy: `Use 'Schema Name' Property` (`${schema.name}`); Schema Registry: `AvroSchemaRegistry` — for `LookupRecord` |
-| `JsonRecordSetWriter` (`writer-order-ndjson`) | Schema Access: `Use 'Schema Name' Property` = `order.v1`; Schema Write Strategy: `Set 'schema.name' Attribute`; Output Grouping: `One Line Per Object`; Pretty Print `false` |
-| `JsonRecordSetWriter` (`writer-ndjson`) | Schema Access `Inherit Record Schema`; `One Line Per Object` — for the remaining processors (keeps the fields added by `LookupRecord`) |
-| `AvroSchemaRegistry` | The dynamic property `order.v1` with the schema from [Block 1.3](day-1.md#block-13-record-based-processing) |
-| `DBCPConnectionPool` | URL `#{db.url}`; Driver `org.postgresql.Driver`; Driver Locations `#{db.driver}`; User `#{db.user}`; Password `#{db.password}` |
-| `RestLookupService` | URL `#{customers.api}/customers/${customer_id}`; Record Reader — `JsonTreeReader` (Infer Schema) |
-
-`ConsumeKafka` reads with `Infer Schema`, not with the `order.v1` schema: with a strict schema the record `o-1004` (`"amount":"not-a-number"`) cannot be parsed at all, whereas with schema inference it lands in a separate FlowFile (*Schema Conflict Resolution* `Create New FlowFile`) and is honestly rejected by validation. In `RECORD` mode `ConsumeKafka` has a relationship **`parse failure`** — messages that the Reader could not parse; route it to the DLQ, otherwise the processor is invalid.
-
-**`ValidateRecord` configuration:** Record Reader `reader-infer`; Record Writer `writer-order-ndjson`; Record Writer for Invalid Records `writer-ndjson`; Schema Access Strategy `Use 'Schema Name' Property` = `order.v1`; *Allow Extra Fields* `false`; ***Strict Type Checking* `false`**; *Validation Details Attribute Name* `validation.details`. Relationships: `valid`, `invalid`, `failure`.
-
-`Strict Type Checking = false` allows coercion of compatible types: a JSON number → `decimal`, `long` → `timestamp-millis`. With `true`, **all** records are rejected (JSON does not carry Avro logical types); `o-1004` remains invalid with `false` too — the string `not-a-number` cannot be coerced to a number, and the required `created_at` is missing. Valid records are written with the `order.v1` schema (with the correct `decimal` and `timestamp`) and get the `schema.name` attribute.
-
-**`LookupRecord` configuration:** Reader `reader-order`; Writer `writer-ndjson`; Lookup Service `RestLookupService`; Routing Strategy `Route to 'matched' or 'unmatched'`; Record Result Contents `Insert Record Fields`; Record Update Strategy `Use Property`; Result RecordPath `/`; the dynamic property `customer_id` = `/customer_id`. The API responds with the fields `customer_name`, `customer_tier` — their names match the columns of `orders_stage`, so `LookupRecord` places them at the root of the record and `PutDatabaseRecord` writes them without mapping. "Customer not found" is a `404` response with an empty body: `RestLookupService` returns "no match", and the record goes to `unmatched`.
-
-**`PutDatabaseRecord` configuration:** Database Type `PostgreSQL`; Statement Type `UPSERT`; Table Name `orders_stage`; Update Keys `order_id`; Unmatched Field Behavior `Ignore Unmatched Fields`; Unmatched Column Behavior `Ignore Unmatched Columns`; Batch Size — by measurement (a starting point: 1000). *Settings → Retry*: the `retry` relationship, 3 attempts; those that exhausted the attempts and `failure` go to the DLQ.
-
-**DLQ configuration:** `UpdateAttribute` on every error path sets `error.stage` (`validate`, `lookup`, `db`, `publish`) and `error.time`; `PublishKafka` (`orders.dlq`) with *Message Demarcator* `\n` (one NDJSON line — one message) and *FlowFile Attribute Header Pattern* `error\..*|validation\..*` (the attributes go into the Kafka headers).
-
-**Preparing test data.** On the stand: `make lab4-data`, or manually:
-
-```bash
-docker exec -i kafka1 kafka-console-producer \
-  --bootstrap-server kafka1:19092 --topic orders.raw <<'EOF'
-{"order_id":"o-1001","customer_id":"c-1","amount":120.50,"currency":"EUR","created_at":1731660000000}
-{"order_id":"o-1002","customer_id":"c-2","amount":-5.00,"currency":"EUR","created_at":1731660001000}
-{"order_id":"o-1003","customer_id":"c-9999","amount":45.00,"currency":"USD","created_at":1731660002000}
-{"order_id":"o-1004","amount":"not-a-number","currency":"EUR"}
-EOF
-```
-
-**Expected behavior.**
-
-| Record | Expectation |
-|---|---|
-| `o-1001` | Passes through the whole chain; an UPSERT in the database (with `customer_name = Alice Example`, `customer_tier = gold`); into `orders.enriched` with the key `o-1001` |
-| `o-1002` (a negative amount) | Violates the `CHECK` in the database → `failure` → the DLQ with `error.stage=db`; does not affect `o-1001` thanks to `SplitRecord` |
-| `o-1003` (no such customer) | `unmatched` in `LookupRecord` → the DLQ with `error.stage=lookup` |
-| `o-1004` | `invalid` in `ValidateRecord` (no `created_at`, `amount` is not a number) → the DLQ with `error.stage=validate` and `validation.details` |
-
-**Verification.**
-
-```bash
-docker exec kafka1 kafka-console-consumer --bootstrap-server kafka1:19092 \
-   --topic orders.enriched --from-beginning --timeout-ms 10000 --property print.key=true
-docker exec kafka1 kafka-console-consumer --bootstrap-server kafka1:19092 \
-   --topic orders.dlq --from-beginning --timeout-ms 10000 --property print.headers=true
-docker exec nifi-postgres psql -U nifi -d nifi \
-   -c "SELECT order_id, customer_name, customer_tier, amount, currency FROM orders_stage ORDER BY order_id"
-```
-
-**Re-running.** The consumer group `nifi-lab4` stores the offsets it has read: on a re-run `ConsumeKafka` will read nothing. Reset the group (with the processor stopped) and clear the table:
-
-```bash
-docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-lab4
-docker exec nifi-postgres psql -U nifi -d nifi -c "TRUNCATE orders_stage"
-```
-
-**Common mistakes and diagnostics.**
-
-| Symptom | Cause | Action |
-|---|---|---|
-| `ConsumeKafka` reads nothing | A different `Group ID` and `Auto Offset Reset=latest`; or the group has already read the topic | Set `earliest` for the new Group ID; reset the group (see "Re-running") |
-| `ConsumeKafka` is invalid: `Relationship 'parse failure' is not connected` | In RECORD mode the processor has a `parse failure` relationship | Route it to the DLQ |
-| Endless retries of `PutDatabaseRecord` | `retry` is connected to the processor's input | Limit the number of attempts (framework retry), send the exhausted ones to the DLQ |
-| Validation rejects all records | `Strict Type Checking = true` + the schema's logical types (`decimal`, `timestamp-millis`) against JSON numbers | `Strict Type Checking = false`, or bring the schema in line with the actual data (`double`, `long`) |
-| There are no records in the database although some orders are correct | Correct and erroneous records are in one FlowFile: one error rolls back the transaction of the whole FlowFile | `SplitRecord` before `PutDatabaseRecord`, or separate handling of `failure` |
-| Empty `customer_name` / `customer_tier` in the database | The names of the API response fields do not match the columns | Align the names (or `UpdateRecord` with `Record Path Value`) |
-| Duplicates in the database | at-least-once + INSERT | Use UPSERT/a key |
-| A "Failed to connect" bulletin | A wrong bootstrap/TLS errors | Check `Kafka3ConnectionService` and the availability of the broker from the NiFi container |
-
-**Reference solution:** `nifi/flows/lab4-db-rest-kafka.json` (the customers REST API — `lab-services/customers_api.py`).
+> The lab: [[labs/lab-4|Lab 4 — A database + REST + Kafka with record processing]].
 
 ---
 
@@ -991,7 +868,7 @@ A practical rule: **NiFi is for moving data and light preparation, external engi
 
 ### 2.2.6 Reference: ValidateRecord, QueryRecord, UpdateRecord (RecordPath), EvaluateJsonPath, MergeRecord
 
-This section collects detailed descriptions of the processors most often used in NDJSON pipelines (Lab 5, Lab 4, the final lab). The properties were checked against the NiFi component references ([ValidateRecord](https://nifi.apache.org/documentation/nifi-2.0.0-M2/components/org.apache.nifi/nifi-standard-nar/2.0.0-M2/org.apache.nifi.processors.standard.ValidateRecord/index.html), [QueryRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/latest/org.apache.nifi.processors.standard.QueryRecord/index.html), [UpdateRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/latest/org.apache.nifi.processors.standard.UpdateRecord/index.html), [EvaluateJsonPath](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.2.0/org.apache.nifi.processors.standard.EvaluateJsonPath/index.html), [MergeRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.3.0/org.apache.nifi.processors.standard.MergeRecord/additionalDetails.html)); the versions of the references are given in the links, so check the property names in your version in the built-in documentation.
+This section collects detailed descriptions of the processors most often used in NDJSON pipelines ([[labs/lab-5|Lab 5]], [[labs/lab-4|Lab 4]], [[labs/final-lab|the final lab]]). The properties were checked against the NiFi component references ([ValidateRecord](https://nifi.apache.org/documentation/nifi-2.0.0-M2/components/org.apache.nifi/nifi-standard-nar/2.0.0-M2/org.apache.nifi.processors.standard.ValidateRecord/index.html), [QueryRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/latest/org.apache.nifi.processors.standard.QueryRecord/index.html), [UpdateRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/latest/org.apache.nifi.processors.standard.UpdateRecord/index.html), [EvaluateJsonPath](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.2.0/org.apache.nifi.processors.standard.EvaluateJsonPath/index.html), [MergeRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.3.0/org.apache.nifi.processors.standard.MergeRecord/additionalDetails.html)); the versions of the references are given in the links, so check the property names in your version in the built-in documentation.
 
 #### ValidateRecord
 
@@ -1229,7 +1106,7 @@ Destination = flowfile-content, Return Type = json
 3. For very large resulting FlowFiles — **a two-stage merge**: the first MergeRecord collects 1,000 at a time, its `merged` goes to a second MergeRecord, also 1,000 at a time (this is how a million records are assembled without inflating the number of bins in memory).
 4. Different schemas are **not merged** — they will land in different bins; make sure the source does not "drift" in its schema (Infer Schema, [Block 1.3.4](day-1.md#134-json-tree-reader-infer-schema-limitations-and-an-explicit-schema)).
 5. Grouping by a key (a tenant, a topic): set an attribute (through `UpdateAttribute`/`PartitionRecord`) and specify it in *Correlation Attribute Name*.
-6. Balance: the larger the bin, the higher the throughput of the destination, but also the higher the latency and memory; tune by measurement ([Lab 8](day-3.md#lab-8-a-performance-test-and-pipeline-tuning)).
+6. Balance: the larger the bin, the higher the throughput of the destination, but also the higher the latency and memory; tune by measurement ([[labs/lab-8|Lab 8]]).
 
 **Common mistakes.** No `Max Bin Age` → the last records "hang"; `Minimum Number of Records` = 1 (the default) → a million small FlowFiles on output; Maximum Number of Bins less than the number of threads → fragmentation; expecting a strict limit on records although it is "soft"; `Defragment` without the `fragment.*` attributes.
 
@@ -1249,55 +1126,7 @@ Destination = flowfile-content, Return Type = json
 
 ### Lab 5: an NDJSON transformation pipeline
 
-**Goal.** Build a pipeline: NDJSON logs → validation → removing a secret → adding `ingest_ts` to the start of the object → merging into large NDJSON files.
-
-**Architecture.**
-
-```text
-GenerateFlowFile(NDJSON) ► ValidateRecord ─ invalid / failure ─► UpdateAttribute(filename) ► PutFile (#{quarantine.dir}) / PublishKafka(dlq)
-        │ valid
-        ▼
-UpdateRecord (writer schema: ingest_ts first, without user.pwd) ► MergeRecord (NDJSON) ► UpdateAttribute(filename) ► PutFile (#{out.dir})
-```
-
-The Parameter Context `lab5-params`: `out.dir=/opt/nifi/data/out`, `quarantine.dir=/opt/nifi/data/quarantine` (on the stand host — `nifi/data/out`, `nifi/data/quarantine`), `log.schema.in` and `log.schema.out` — the schema texts (one schema is used by several services).
-
-**Input data (`Custom Text` in `GenerateFlowFile`, Mime Type `application/x-ndjson`):**
-
-```json
-{"ts":"2026-11-15T10:00:00Z","level":"INFO","svc":"api","msg":"started","user":{"id":7,"pwd":"s3cret"}}
-{"ts":"2026-11-15T10:00:01Z","level":"ERROR","svc":"api","msg":"db timeout","user":{"id":9,"pwd":"x"}}
-{"ts":"bad","level":"INFO"}
-```
-
-**Configuration.**
-
-| Component | Key properties |
-|---|---|
-| `JsonTreeReader` `r-log` | Schema Access: `Use 'Schema Text' Property` = `#{log.schema.in}` (the input schema with `ts`, `level`, `svc`, `msg`, `user{id,pwd}`; `pwd` is allowed) |
-| `JsonTreeReader` `r-log-out` | Schema Access: `Use 'Schema Text' Property` = `#{log.schema.out}` (the `LogEvent` schema) — the Reader for `MergeRecord` |
-| `JsonRecordSetWriter` `w-log` | `Use 'Schema Text' Property` = `#{log.schema.out}` (the `LogEvent` schema from section 2.2.4); Output Grouping `One Line Per Object`; Pretty Print `false` |
-| `JsonRecordSetWriter` `w-raw` | `Inherit Record Schema`; `One Line Per Object` — for invalid rows (keeps them as is) |
-| `ValidateRecord` | Reader `r-log`; Writer `w-log`; Record Writer for Invalid Records `w-raw`; Schema Access Strategy `Use Reader's Schema`; Strict Type Checking `true` |
-| `UpdateRecord` | Reader `r-log`; Writer `w-log`; Strategy `Literal Value`; `/ingest_ts` = `${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UTC")}` |
-| `MergeRecord` | Reader `r-log-out`, Writer `w-log` (both — the `LogEvent` schema); Min Records `1000`; Max Records `10000`; **Max Bin Age** `30 sec` |
-| `UpdateAttribute` | `filename` = `${uuid}.ndjson` (before each `PutFile`) |
-| `PutFile` | Directory `#{out.dir}` (for invalid ones — `#{quarantine.dir}`); Conflict Resolution `replace` |
-
-**What happens to the data.** After `ValidateRecord`, line 3 goes to `invalid` (a type error/missing fields). The remaining records in `UpdateRecord` get `ingest_ts` as the first field and lose `user.pwd`; `MergeRecord` assembles batches of up to 10,000 records or on timeout.
-
-**Verification** (from the stand host, from the repository root):
-
-```bash
-head -n 2 nifi/data/out/*.ndjson
-# we expect: {"ingest_ts":"2026-11-15T...","ts":"2026-11-15T10:00:00Z","level":"INFO",...,"user":{"id":7}}
-grep -c pwd nifi/data/out/*.ndjson   # we expect 0
-cat nifi/data/quarantine/*.ndjson    # we expect {"ts":"bad","level":"INFO"}
-```
-
-**Common mistakes.** The `ingest_ts` field does not appear — it is absent from the Writer schema; the key order is "wrong" — the Writer uses `Inherit Record Schema` rather than an explicit schema; `MergeRecord` does not release data — `Max Bin Age` is not set and *Minimum Number of Records* has not been reached (the generator produces 2 valid records every 10 seconds — without `Max Bin Age` the bin will never close); the secret remains — you are removing it from the Reader schema, not from the Writer schema (fields that are absent from the Writer schema are discarded precisely in the Writer); in `MergeRecord` you cannot specify a Writer as a Reader — a separate `JsonTreeReader` with the `LogEvent` schema is needed.
-
-**Reference solution:** `nifi/flows/lab5-ndjson-pipeline.json`.
+> The lab: [[labs/lab-5|Lab 5 — An NDJSON transformation pipeline]].
 
 ---
 
@@ -1364,51 +1193,7 @@ Body        : several JSON events in a row, for example
 
 ### Lab 6: delivering events to Splunk (or to a simulation)
 
-**Goal.** Send the NDJSON events from Lab 5 to Splunk or to an emulated endpoint and measure throughput.
-
-**Architecture.**
-
-```text
-...► MergeRecord (NDJSON) ► PutSplunk (TCP) ► [Splunk TCP input / a netcat emulator]
-                       └─► (an alternative) InvokeHTTP ► [HEC / an http emulator]
-```
-
-**Emulation.** On the stand, the Splunk emulator is already running (`make lab-services`, the container `splunk-sim`, the code is `lab-services/splunk_sim.py`): the TCP input on `splunk-sim:5514` writes events to `/data/splunk_in.log`, and HEC at `http://splunk-sim:8088/services/collector/event` writes to `/data/hec_in.log` and responds like Splunk (`{"text":"Success","code":0}`). Without the stand, the same effect is given by:
-
-```bash
-# Emulating a Splunk TCP input
-nc -lk 5514 > /tmp/splunk_in.log
-# Or in Python: a simple HTTP receiver for HEC
-python3 - <<'EOF'
-from http.server import BaseHTTPRequestHandler, HTTPServer
-class H(BaseHTTPRequestHandler):
-    def do_POST(self):
-        n = int(self.headers.get('Content-Length', 0)); body = self.rfile.read(n)
-        open('/tmp/hec_in.log','ab').write(body + b'\n')
-        self.send_response(200); self.end_headers(); self.wfile.write(b'{"text":"Success","code":0}')
-HTTPServer(('0.0.0.0', 8088), H).serve_forever()
-EOF
-```
-
-**The event source.** `GenerateRecord` (a log event schema, 100 records per FlowFile, `Run Schedule 1 sec`) ► `MergeRecord` (Min/Max Records `10000`, Max Bin Age `10 sec`). It is convenient to build two groups: A — `PutSplunk` (TCP), B — `InvokeHTTP` (HEC) — and to run them in turn.
-
-**`PutSplunk` configuration:** Protocol `TCP`; Hostname `#{splunk.host}` (`splunk-sim`); Port `#{splunk.port}` (`5514`); Message Delimiter `\n`; Concurrent Tasks `1` (then an experiment with `2`, `4`). The `Connection Per FlowFile` property does not exist in NiFi 2.12 (see 2.3.2).
-
-**`InvokeHTTP` (HEC) configuration:** HTTP Method `POST`; HTTP URL `#{hec.url}`; Request Content-Type `application/json`; the dynamic property `Authorization` = `Splunk #{hec.token}` — the dynamic properties of `InvokeHTTP` become request headers.
-
-> **The HEC body format.** The `/services/collector/event` endpoint of a real Splunk accepts events only in the envelope `{"time": …, "sourcetype": …, "event": {…}}` (see 2.3.4) and rejects "bare" NDJSON. The stand's emulator accepts any body, so the lab works without the envelope. For a real HEC, wrap the records before `InvokeHTTP`, for example with `JoltTransformRecord` using the specification `[{"operation":"shift","spec":{"*":"event.&"}},{"operation":"default","spec":{"sourcetype":"app:log","index":"main"}}]` (**[verify]** on your version) — or send to `/services/collector/raw`.
-
-**The experiment.**
-
-1. Prepare 1 million events (repeated `GenerateRecord`/`GenerateFlowFile`). On a laptop, start with ~100,000 and increase while watching the heap.
-2. Variant 1: small FlowFiles of 100 events. Variant 2: batches of 10,000 through `MergeRecord`. Variant 3: `Concurrent Tasks=4`.
-3. Measure events/s using the queue counters and time (on the stand: `make lab-splunk-count`).
-
-**Verification.** `make lab-splunk-count` (or `wc -l /tmp/splunk_in.log` without the stand) equals the number of events sent — for example, 21 FlowFiles of 100 events give exactly 2,100 lines over both TCP and HEC; in provenance the `SEND` events show the destination address. Before a new measurement, zero the emulator files: `docker exec splunk-sim sh -c ': > /data/splunk_in.log; : > /data/hec_in.log'`.
-
-**Common mistakes.** `PutSplunk` goes to `failure` — the destination is unavailable/closed the connection; everything on one line — there is no delimiter between events; Splunk does not parse the time — the format/field order does not match the sourcetype settings; HEC replies `400 Invalid data format` — the event is not wrapped in the `{"event": …}` envelope.
-
-**Reference solution:** `nifi/flows/lab6-splunk-delivery.json` (without the HEC envelope — designed for the emulator).
+> The lab: [[labs/lab-6|Lab 6 — Delivering events to Splunk]].
 
 ---
 

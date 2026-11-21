@@ -172,46 +172,7 @@ About the Variable Registry: **[rem 2.0]** variables (Variables) and the Variabl
 
 ### Lab 1: the NiFi UI and a first flow
 
-> Step-by-step lab: [[labs/lab-1|Lab 1]].
-
-**Goal.** Get to know the NiFi UI, create, run, and trace the simplest flow, and see provenance.
-
-**Expected result.** The flow `GenerateFlowFile → UpdateAttribute → LogAttribute`, queue statistics, provenance events, and the FlowFile content in the Content Viewer.
-
-**Solution architecture.**
-
-```text
-GenerateFlowFile ──success──► UpdateAttribute ──success──► LogAttribute (auto-terminate success)
-```
-
-**Processors and configuration.**
-
-| Processor | Property | Value |
-|---|---|---|
-| `GenerateFlowFile` | Scheduling → Run Schedule | `5 sec` |
-| | File Size | `0 B` (if Custom Text is set) |
-| | Custom Text | `{"id": ${random():mod(1000)}, "ts": "${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")}"}` |
-| | Mime Type | `application/json` |
-| `UpdateAttribute` | Dynamic property `lab.stage` | `ingested` |
-| | Dynamic property `event.id` | `${UUID()}` |
-| `LogAttribute` | Log Level | `info`; Relationship `success` → Auto-terminate |
-
-**Sequence.**
-
-1. Add the processors by dragging the Processor icon onto the canvas (search by name).
-2. Connect them with a `success` connection; in the Connection dialog check only `success`.
-3. For `LogAttribute`, enable `success` under *Settings → Automatically Terminate Relationships*.
-4. Start the flow (Start). Watch the *In/Out* counters, *Tasks/Time*, and the queue on the connection.
-5. Right-click the connection → **List queue** → view attributes and content (to see it with the destination stopped, stop `UpdateAttribute` and the queue will fill).
-6. Right-click the processor → **View data provenance** → open an event and the **Lineage graph**.
-
-**What happens to the FlowFile.** `GenerateFlowFile` creates the FlowFile (a `CREATE` event); `UpdateAttribute` records `ATTRIBUTES_MODIFIED`; `LogAttribute` writes to `nifi-app.log` and the FlowFile terminates (`DROP`).
-
-**Verification.** In `logs/nifi-app.log` (on the lab stand: `make logs s=nifi`) `LogAttribute` entries with the attributes `lab.stage=ingested` appear; provenance shows three events for one `uuid`; in the Content Viewer — JSON of the form `{"id": 598, "ts": "2026-11-19T16:00:05.141Z"}`.
-
-**Common mistakes.** The processor keeps a yellow triangle (it is invalid): there are no connected/auto-terminated relationships, or required properties are not set. The queue "does not move": the destination is stopped or back pressure has been reached. Instead of a date, the content contains the raw text `${now():format(...)}` — Expression Language did not parse the expression: write the format string with the literal `'T'` in **double** quotes (`format("yyyy-MM-dd'T'...")`); the variant `format('yyyy-MM-dd\'T\'...')` is not evaluated in NiFi 2.12. The processor remains valid in this case — the error is visible only in the FlowFile content.
-
-**Reference solution:** `nifi/flows/lab1-first-flow.json` ([Appendix A.8](Appendix-A.md#a8-reference-solutions)).
+> The lab: [[labs/lab-1|Lab 1 — The NiFi UI and a first flow]].
 
 ---
 
@@ -319,53 +280,7 @@ Prioritizers do not guarantee a strict global order with several concurrent task
 
 ### Lab 2: a flow from several sources with routing
 
-> Step-by-step lab: [[labs/lab-2|Lab 2]].
-
-**Goal.** Receive data from several sources (files, HTTP, a generator) and route it by attributes.
-
-**Architecture.**
-
-```text
-[PG: ingest]                                   [PG: route]
- ListFile → FetchFile ───────┐
- ListenHTTP (port 8081) ─────┼─► Output Port ─► RouteOnAttribute ─┬─ json  ─► (PG: process_json)
- GenerateFlowFile ───────────┘   "all-sources"                    ├─ csv   ─► (PG: process_csv)
-                                                                  └─ unmatched ─► LogAttribute / PutFile (quarantine)
-```
-
-**Configuration.**
-
-| Component | Key properties |
-|---|---|
-| `ListFile` | Input Directory `#{ingest.dir}`; File Filter `.*\.(json|csv)`; the default Listing Strategy (tracking timestamps) |
-| `FetchFile` | File to Fetch `${absolute.path}/${filename}`; Completion Strategy `None` (lab mode) |
-| `ListenHTTP` | Listening Port `8081`; Base Path `events`; **HTTP Headers for Attributes `Content-Type`**; for the lab without TLS (in production — an SSL Context Service) |
-| `UpdateAttribute` (on every input) | `source` = `file` / `http` / `generator`; on the HTTP input additionally `mime.type` = `${'Content-Type':substringBefore(';'):trim()}` — `ListenHTTP` does not set `mime.type` itself |
-| `GenerateFlowFile` | Custom Text — JSON; Mime Type `application/json` |
-| `RouteOnAttribute` | Routing Strategy `Route to Property name`; `json`=`${mime.type:equals('application/json'):or(${filename:endsWith('.json')})}`, `csv`=`${filename:endsWith('.csv')}` |
-| `PutFile` (quarantine) | Directory `#{quarantine.dir}` |
-| Parameter Context `lab-params` | `ingest.dir=/opt/nifi/data/in`, `quarantine.dir=/opt/nifi/data/quarantine` (on the lab stand host — `nifi/data/in`, `nifi/data/quarantine`, see [Appendix A.5](Appendix-A.md#a5-addresses-for-the-labs)) |
-
-**Build order.**
-
-1. Create the Parameter Context `lab-params` and bind it to the groups (*Configure Process Group → Parameter Context*).
-2. Build the `ingest` group: three sources and an output port inside.
-3. Build the `route` group; connect the port of the `ingest` group to the input port of `route`.
-4. Set the `NewestFlowFileFirstPrioritizer` priority on the connection after the merge (for demonstration).
-5. Send a test event and put in files (commands from the lab stand host, from the repository root):
-
-```bash
-curl -X POST -H 'Content-Type: application/json' \
-     -d '{"id":1,"type":"click"}' http://localhost:8081/events
-echo '{"id":10,"type":"file"}' > nifi/data/in/sample.json
-printf 'id,type\n2,view\n' > nifi/data/in/sample.csv
-```
-
-**Verification.** FlowFiles appear in the `json`/`csv` queues; the `source` attribute matches the source; the HTTP event goes to `json` with `mime.type=application/json`; the provenance events show a `ROUTE` event.
-
-**Mistakes.** `ListenHTTP` does not respond — the port is taken or not forwarded into the container (on the stand, port 8081 is forwarded only for the single NiFi); `ListFile` does not see the files — the NiFi user's permissions on the directory; `unmatched` keeps growing — mime.type/filename are not set (check the attributes through List queue). A frequent case: HTTP events go to `unmatched` because `ListenHTTP` does not carry the `Content-Type` header into `mime.type` — you need `HTTP Headers for Attributes` and the `UpdateAttribute` from the table above.
-
-**Reference solution:** `nifi/flows/lab2-multi-source-routing.json`.
+> The lab: [[labs/lab-2|Lab 2 — Several sources and routing]].
 
 ---
 
@@ -521,7 +436,7 @@ In 2.10.0, "the leniency of the JSON readers and the flexibility of the JSON Wri
 
 ### 1.3.7 Reference: Split processors, an introduction to QueryRecord and RecordPath
 
-This section is needed for Lab 3: in it you compare the Split approach with the Record approach, so it is important to understand **what exactly each Split processor does** and what can replace it. The description of the properties is based on the NiFi component references ([SplitText](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.9.2/org.apache.nifi.processors.standard.SplitText/index.html), [SplitRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.17.0/org.apache.nifi.processors.standard.SplitRecord/), [SplitJson](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.2.0/org.apache.nifi.processors.standard.SplitJson/index.html)); in your version, check the names and default values in the built-in documentation.
+This section is needed for [[labs/lab-3|Lab 3]]: in it you compare the Split approach with the Record approach, so it is important to understand **what exactly each Split processor does** and what can replace it. The description of the properties is based on the NiFi component references ([SplitText](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.9.2/org.apache.nifi.processors.standard.SplitText/index.html), [SplitRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.17.0/org.apache.nifi.processors.standard.SplitRecord/), [SplitJson](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.2.0/org.apache.nifi.processors.standard.SplitJson/index.html)); in your version, check the names and default values in the built-in documentation.
 
 #### The three Split processors: a comparison
 
@@ -635,76 +550,7 @@ A detailed treatment of RecordPath and its functions (`concat`, `format`, etc.) 
 
 ### Lab 3: replacing a Split-based flow with a Record-based one and comparing throughput
 
-> Step-by-step lab: [[labs/lab-3|Lab 3]].
-
-**Goal.** Quantitatively compare two variants of processing the same data set.
-
-**Source data.** `GenerateRecord` (the processor appeared in 1.20.0) creates a FlowFile with N random records according to a given schema. Or `GenerateFlowFile` with NDJSON text.
-
-**Two schemas** are needed. The generator schema (`Schema Text` of `GenerateRecord`, the Writer is `JsonRecordSetWriter` with `Output Grouping = One Line Per Object`): `currency` is declared as an enum, otherwise the generator produces random strings and the currency filter will not work:
-
-```json
-{"type": "record", "name": "GeneratedOrder", "fields": [
-  {"name": "order_id", "type": "string"},
-  {"name": "customer", "type": "string"},
-  {"name": "amount",   "type": "double"},
-  {"name": "currency", "type": {"type": "enum", "name": "Currency", "symbols": ["EUR", "USD", "GBP"]}}
-]}
-```
-
-The Reader schema (`JsonTreeReader`, `Use 'Schema Text' Property`) is the same, but `currency` is declared as a string: the SQL engine of `QueryRecord` (Apache Calcite) does not compare an enum with strings in `IN` / `NOT IN`:
-
-```json
-{"type": "record", "name": "Order", "fields": [
-  {"name": "order_id", "type": "string"},
-  {"name": "customer", "type": "string"},
-  {"name": "amount",   "type": "double"},
-  {"name": "currency", "type": "string"}
-]}
-```
-
-**Variant A (Split-based).**
-
-```text
-GenerateRecord ► SplitRecord(Records Per Split=1) ► EvaluateJsonPath ► RouteOnAttribute ► UpdateAttribute ► MergeContent ► LogAttribute
-```
-
-**Variant B (Record-based).**
-
-```text
-GenerateRecord ► QueryRecord ─ valid ─► UpdateRecord ► LogAttribute
-                              └ rejected ─► LogAttribute
-```
-
-QueryRecord, the dynamic property `valid`:
-
-```sql
-SELECT order_id, customer, amount, currency
-FROM FLOWFILE
-WHERE amount > 0 AND currency IN ('EUR', 'USD')
-```
-
-and `rejected`:
-
-```sql
-SELECT * FROM FLOWFILE WHERE amount <= 0 OR currency NOT IN ('EUR', 'USD')
-```
-
-**Measurement method.**
-
-1. The same input: for example, 100 FlowFiles of 100,000 records each (configured in `GenerateRecord`: *Number of Records*). Mind the scale: variant A turns such an input into ~10 million FlowFiles, which does not fit into the training heap (1–2 GB on the stand). On a laptop, start with 1 FlowFile of 10,000 records (*Run Once* on the generator) and increase the volume while watching the heap and back pressure.
-2. Freeze the initial conditions: clean queues, the same `Concurrent Tasks`.
-3. Run variant A and wait until all the data is processed; record: the processing time, the *Tasks/Time* values, *Bytes Read/Written*, the number of FlowFiles in the queues, heap and GC (System Diagnostics), and the number of provenance events.
-4. Stop, clear the queues, run variant B with the same input data; repeat the measurements.
-5. Repeat 3 times and take the median.
-
-**Expected behavior (qualitatively).** Variant B processes the data noticeably faster and with less load on the heap/GC; the number of provenance events and entries in the FlowFile Repository is orders of magnitude smaller. The absolute values depend on the hardware — **the numbers must be obtained in your environment**, not taken from a textbook.
-
-**Correctness check.** The sum of the records in `valid` and `rejected` = the input count; the `record.count` attributes (`QueryRecord` sets it on the output FlowFiles) match. For example, with 10,000 records on the input: `valid` 4910 + `rejected` 5090 (the `ROUTE` event of `QueryRecord` in provenance).
-
-**Common mistakes.** `QueryRecord` fails with an SQL error — the table name must be `FLOWFILE`; the field type did not match (decimal vs double) — set the schema explicitly; the error `Values passed to NOT IN operator must have compatible types` — the field is declared as an enum in the Reader schema, declare it as a string; in variant A, `MergeContent` waits for the required number of elements — set *Max Bin Age*. Identical processor names in variants A and B (for example, two `LogAttribute (valid)`) cause confusion when searching in provenance — give them different names.
-
-**Reference solution:** `nifi/flows/lab3-split-vs-record.json`.
+> The lab: [[labs/lab-3|Lab 3 — A Split flow versus a Record flow]].
 
 ---
 

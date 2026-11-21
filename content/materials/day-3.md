@@ -1,202 +1,200 @@
----
-title: "Day 3 — Production, Security, and Performance"
----
+# Apache NiFi — Engineering Study Notes. Day 3: Resilience, Security, Performance and Final Lab
 
-> Документ 3 из 3. Связанные документы: **Day 1** (`day-1.md`), **Day 2** (`day-2.md`). Обозначения ([2.x], [1.x], [dep], [rem], [проверить]) и принципы достоверности — в начале Day 1.
+> Document 3 of 3. Related documents: **Day 1** (`apache_nifi_day1_en.md`), **Day 2** (`apache_nifi_day2_en.md`). The notation ([2.x], [1.x], [dep], [rem], [verify]) and the principles of reliability are at the beginning of Day 1.
 
-## Содержание
+## Contents
 
 - [Block 3.1: Fault tolerance and error handling](#block-31-fault-tolerance-and-error-handling)
-  - [3.1.4 Эффективный перезапуск flow и минимизация ручного вмешательства](#314-эффективный-перезапуск-flow-и-минимизация-ручного-вмешательства) (расширено)
+  - [3.1.4 Restarting flows efficiently and minimizing manual intervention](#314-restarting-flows-efficiently-and-minimizing-manual-intervention) (expanded)
 - [Block 3.2: Monitoring, provenance and troubleshooting](#block-32-monitoring-provenance-and-troubleshooting)
-  - [Site-to-Site Reporting Tasks: подробно](#site-to-site-reporting-tasks-подробно) (расширено)
-  - [3.2.6 NiFi Settings: назначение вкладок](#326-nifi-settings-назначение-вкладок-general-management-controller-services-reporting-tasks-flow-analysis-rules-registry-clients-parameter-providers)
+  - [Site-to-Site Reporting Tasks: in detail](#site-to-site-reporting-tasks-in-detail) (expanded)
+  - [3.2.6 NiFi Settings: the purpose of the tabs](#326-nifi-settings-the-purpose-of-the-general-management-controller-services-reporting-tasks-flow-analysis-rules-registry-clients-and-parameter-providers-tabs)
 - [Block 3.3: Security and governance](#block-33-security-and-governance)
 - [Block 3.4: Performance tuning, hardware and storage](#block-34-performance-tuning-hardware-and-storage)
 - [Block 3.5: Final hands-on lab: end-to-end pipeline](#block-35-final-hands-on-lab-end-to-end-pipeline)
 - [Block 3.6: Course recap and next steps](#block-36-course-recap-and-next-steps)
-- [Приложение A: Лабораторный стенд (Docker Compose)](#приложение-a-лабораторный-стенд-docker-compose)
-- [Приложение B: Список источников и статус верификации](#приложение-b-список-источников-и-статус-верификации)
+- [Appendix A: The lab stand (Docker Compose)](#appendix-a-the-lab-stand-docker-compose)
+- [Appendix B: List of sources and verification status](#appendix-b-list-of-sources-and-verification-status)
 
 ---
 
 ## Block 3.1: Fault tolerance and error handling
 
-### 3.1.1 Проектирование устойчивых flow с минимальными узкими местами
+### 3.1.1 Designing resilient flows with minimal bottlenecks
 
-**Принципы.**
+**Principles.**
 
-1. **Каждая relationship обработана.** Для каждого процессора решите заранее: `success` — дальше; `failure`/`invalid`/`retry` — в отдельный путь; auto-terminate только осознанно (для `LogAttribute.success` и т. п.).
-2. **Разделяйте типы ошибок.** Временные (сеть, перегрузка приёмника: *retry*) и постоянные (данные некорректны: *dead-letter*). Повтор постоянной ошибки бессмысленен и создаёт петли.
-3. **Изолируйте точки сбоя.** Один медленный/нестабильный приёмник не должен останавливать остальные потоки: разделяйте приёмники по Process Group и очередям, используйте независимые очереди и back pressure для каждого.
-4. **Идемпотентность.** NiFi даёт at-least-once внутри и на входе/выходе; приёмники должны выдерживать повторы (UPSERT, ключ события, дедупликация).
-5. **Короткие транзакции.** Крупные FlowFile лучше разбивать на разумные пачки (десятки–сотни МБ), чтобы retry не перерабатывал гигабайты.
-6. **Наблюдаемость на ошибках.** Добавляйте в атрибуты причину ошибки и контекст (например, `error.stage`, `error.message`, `retry.count`), чтобы разбор DLQ был возможен без повторного прогона.
+1. **Every relationship is handled.** For each processor, decide in advance: `success` — onward; `failure`/`invalid`/`retry` — to a separate path; auto-terminate only deliberately (for `LogAttribute.success`, etc.).
+2. **Separate the types of errors.** Temporary ones (the network, an overloaded destination: *retry*) and permanent ones (the data is invalid: *dead-letter*). Retrying a permanent error is pointless and creates loops.
+3. **Isolate points of failure.** One slow/unstable destination must not stop the other flows: separate destinations by Process Group and queues, and use independent queues and back pressure for each.
+4. **Idempotency.** NiFi provides at-least-once internally and at the input/output; destinations must tolerate repeats (UPSERT, an event key, deduplication).
+5. **Short transactions.** It is better to split large FlowFiles into reasonable batches (tens to hundreds of MB) so that a retry does not reprocess gigabytes.
+6. **Observability on errors.** Add the cause of the error and context to the attributes (for example, `error.stage`, `error.message`, `retry.count`) so that DLQ analysis is possible without a rerun.
 
-### 3.1.2 Failure и retry: relationships, framework-level retry, RetryFlowFile
+### 3.1.2 Failure and retry: relationships, framework-level retry, RetryFlowFile
 
-**Framework-level retry (с 1.16.0).** Любую relationship процессора можно отметить как *Retry*: настройка в диалоге процессора, вкладка *Relationships*. Параметры: число попыток (*Number of Retry Attempts*), **Backoff Policy** (`Penalize` — штраф к FlowFile; `Yield` — пауза процессора), **Maximum Backoff Period**. Пока попытки не исчерпаны, FlowFile повторно обрабатывается тем же процессором, а после — уходит по relationship как обычно. Преимущество: нет петель в flow; недостаток — локальное решение на одном процессоре, без общего контекста.
+**Framework-level retry (since 1.16.0).** Any relationship of a processor can be marked as *Retry*: the setting is in the processor dialog, on the *Relationships* tab. The parameters are the number of attempts (*Number of Retry Attempts*), the **Backoff Policy** (`Penalize` — a penalty on the FlowFile; `Yield` — a pause of the processor), and the **Maximum Backoff Period**. While attempts are not exhausted, the FlowFile is reprocessed by the same processor, and afterwards it goes along the relationship as usual. Advantage: no loops in the flow; disadvantage — it is a local solution on a single processor, without shared context.
 
-**`RetryFlowFile`.** Процессор для явного управления повторами в flow ([описание компонента `nifi-standard-nar` в зеркале документации Snowflake Openflow](https://docs.snowflake.com/en/user-guide/data-integration/openflow/processors/retryflowfile); поведение счётчика и relationships подтверждено также реализацией в [MiNiFi C++](https://apache.googlesource.com/nifi-minifi-cpp/+/656fca6f2331fe43915ebf4c83a56265fcb4790d/extensions/standard-processors/processors/RetryFlowFile.cpp); на страницу компонента на nifi.apache.org для вашей версии сверьтесь отдельно). Он проверяет значение **счётчика попыток** (хранится в атрибуте FlowFile — *Retry Attribute*) относительно **Maximum Retries**: пока лимит не превышен, увеличивает счётчик и отправляет FlowFile в `retry`; когда превышен — в `retries_exceeded`.
+**`RetryFlowFile`.** A processor for explicit control of retries in a flow ([a description of the `nifi-standard-nar` component in the Snowflake Openflow documentation mirror](https://docs.snowflake.com/en/user-guide/data-integration/openflow/processors/retryflowfile); the behavior of the counter and relationships is also confirmed by the implementation in [MiNiFi C++](https://apache.googlesource.com/nifi-minifi-cpp/+/656fca6f2331fe43915ebf4c83a56265fcb4790d/extensions/standard-processors/processors/RetryFlowFile.cpp); check separately against the component page on nifi.apache.org for your version). It checks the value of the **attempt counter** (stored in a FlowFile attribute — the *Retry Attribute*) against **Maximum Retries**: while the limit is not exceeded, it increments the counter and sends the FlowFile to `retry`; when it is exceeded — to `retries_exceeded`.
 
 ```text
- PutDatabaseRecord ─ retry ──► RetryFlowFile ─ retry ──► (penalize ► обратно на PutDatabaseRecord)
+ PutDatabaseRecord ─ retry ──► RetryFlowFile ─ retry ──► (penalize ► back to PutDatabaseRecord)
         │                            │
-        │                            └ retries_exceeded ► [Dead-letter]   (НЕ возвращать на вход!)
+        │                            └ retries_exceeded ► [Dead-letter]   (do NOT return it to the input!)
         └ failure ──────────────────────────────────────► [Dead-letter]
 ```
 
-| Свойство | Назначение |
+| Property | Purpose |
 |---|---|
-| **Retry Attribute** | Имя атрибута-счётчика (по умолчанию `flowfile.retries` — **[проверить]**). Обновляется текущим числом попыток |
-| **Maximum Retries** | Сколько раз FlowFile можно повторить до `retries_exceeded` (по умолчанию `3` — **[проверить]**); значение может содержать Expression Language |
-| **Penalize Retries** | Если `true`, FlowFile штрафуется перед отправкой в `retry` (не относится к `retries_exceeded`) |
-| **Fail on Non-numerical Overwrite** | Если в *Retry Attribute* уже лежит не число: `false` — значение сбрасывается в `1`; `true` — FlowFile уходит в `failure` |
-| Динамические свойства | Любые атрибуты, которые нужно **добавить к FlowFile в `retries_exceeded`** (поддерживают EL), например `error.stage = retries_exceeded` |
+| **Retry Attribute** | The name of the counter attribute (`flowfile.retries` by default — **[verify]**). Updated with the current number of attempts |
+| **Maximum Retries** | How many times a FlowFile can be retried before `retries_exceeded` (`3` by default — **[verify]**); the value may contain Expression Language |
+| **Penalize Retries** | If `true`, the FlowFile is penalized before being sent to `retry` (does not apply to `retries_exceeded`) |
+| **Fail on Non-numerical Overwrite** | If the *Retry Attribute* already contains something that is not a number: `false` — the value is reset to `1`; `true` — the FlowFile goes to `failure` |
+| Dynamic properties | Any attributes that need to be **added to the FlowFile in `retries_exceeded`** (they support EL), for example `error.stage = retries_exceeded` |
 
 **Relationships.**
 
-| Relationship | Что значит | Куда соединять |
+| Relationship | Meaning | Where to connect |
 |---|---|---|
-| `retry` | Лимит не исчерпан | **Обратно на вход** процессора, который дал сбой: так создаётся ограниченная петля |
-| `retries_exceeded` | Лимит исчерпан | **В DLQ/обработку ошибок**, не возвращать на вход, иначе петля станет бесконечной |
-| `failure` | Счётчик не числовой и включён *Fail on Non-numerical Overwrite* (либо *Maximum Retries* не вычисляется в целое) | В обработку ошибок |
+| `retry` | The limit is not exhausted | **Back to the input** of the processor that failed: this creates a bounded loop |
+| `retries_exceeded` | The limit is exhausted | **To the DLQ/error handling**; do not return it to the input, otherwise the loop becomes endless |
+| `failure` | The counter is not numeric and *Fail on Non-numerical Overwrite* is on (or *Maximum Retries* does not evaluate to an integer) | To error handling |
 
-**Дополнительные атрибуты:** кроме счётчика, процессор пишет `<Retry Attribute>.uuid` — идентификатор процессора, который последним повторял FlowFile.
+**Additional attributes:** besides the counter, the processor writes `<Retry Attribute>.uuid` — the identifier of the processor that last retried the FlowFile.
 
-**Подводные камни.**
+**Pitfalls.**
 
-1. **Счётчик не обнуляется сам.** Если FlowFile успешно прошёл повтор и дальше попал в другой `RetryFlowFile` с тем же *Retry Attribute*, старое значение продолжит накапливаться. Удаляйте атрибут после успеха (`UpdateAttribute` → *Delete Attributes Expression*) или задавайте разные *Retry Attribute* для разных точек повтора.
-2. **Penalty** (по умолчанию `30 sec`) защищает приёмник от «шторма» повторов: пока FlowFile оштрафован, процессор его не берёт. Если **все** FlowFile в очереди оштрафованы, UI показывает это, и процессор не крутится вхолостую (улучшение 1.16.0).
-3. Не используйте `RetryFlowFile` для **ошибок данных** (`invalid`, `4xx`): повтор ничего не изменит.
+1. **The counter does not reset by itself.** If a FlowFile successfully passed a retry and then landed in another `RetryFlowFile` with the same *Retry Attribute*, the old value will keep accumulating. Delete the attribute after success (`UpdateAttribute` → *Delete Attributes Expression*) or set different *Retry Attribute* names for different retry points.
+2. **Penalty** (`30 sec` by default) protects the destination from a "storm" of retries: while a FlowFile is penalized, the processor does not take it. If **all** FlowFiles in the queue are penalized, the UI shows this, and the processor does not spin idly (an improvement in 1.16.0).
+3. Do not use `RetryFlowFile` for **data errors** (`invalid`, `4xx`): a retry will change nothing.
 
-**Что выбрать: framework retry или `RetryFlowFile`.**
+**What to choose: framework retry or `RetryFlowFile`.**
 
 | | Framework-level retry | `RetryFlowFile` |
 |---|---|---|
-| Где настраивается | В диалоге процессора, вкладка *Relationships* | Отдельный процессор в flow |
-| Лишние компоненты и петли | Нет | Да (петля `retry`) |
-| Backoff | `Penalize`/`Yield`, **Maximum Backoff Period** (нарастающая пауза) | Штраф фиксирован (Penalty Duration) |
-| Действия при исчерпании | FlowFile уходит по relationship как обычно | Отдельная relationship `retries_exceeded` с **дополнительными атрибутами** (динамические свойства) |
-| Контекст | Локальный, один процессор | Единый счётчик, видимый в атрибутах; можно использовать общий для нескольких шагов |
+| Where it is configured | In the processor dialog, on the *Relationships* tab | A separate processor in the flow |
+| Extra components and loops | No | Yes (the `retry` loop) |
+| Backoff | `Penalize`/`Yield`, **Maximum Backoff Period** (a growing pause) | The penalty is fixed (Penalty Duration) |
+| Actions on exhaustion | The FlowFile goes along the relationship as usual | A separate `retries_exceeded` relationship with **additional attributes** (dynamic properties) |
+| Context | Local, one processor | A single counter, visible in the attributes; it can be shared across several steps |
 
-Практическое правило: **framework retry — по умолчанию**; `RetryFlowFile` — когда нужен счётчик в атрибутах, общий лимит на цепочку шагов или явное обогащение FlowFile при исчерпании попыток.
+A practical rule: **framework retry by default**; `RetryFlowFile` — when you need a counter in the attributes, a shared limit for a chain of steps, or an explicit enrichment of the FlowFile when the attempts are exhausted.
 
-**Экспоненциальная пауза.** Для нарастающих задержек используйте framework retry с Backoff Policy и `Maximum Backoff Period`, либо `RetryFlowFile` + `UpdateAttribute` с вычислением штрафа.
+**Exponential backoff.** For growing delays, use framework retry with a Backoff Policy and `Maximum Backoff Period`, or `RetryFlowFile` + `UpdateAttribute` computing the penalty.
 
-**Когда не использовать retry.** Ошибки данных (нарушение схемы, `4xx` от API, `invalid`) — прямо в DLQ. Ошибки аутентификации — после исчерпания попыток сигнализировать оператору (bulletin/alert).
+**When not to use retry.** Data errors (a schema violation, `4xx` from an API, `invalid`) — straight to the DLQ. Authentication errors — after the attempts are exhausted, signal the operator (a bulletin/an alert).
 
-### 3.1.3 Сохранение работоспособности основного потока при заполнении failure-очередей
+### 3.1.3 Keeping the main flow running when failure queues fill up
 
-**Проблема.** Как указано в Block 1.2, процессор перестаёт планироваться, если **любая** его исходящая связь заполнена до порога back pressure. Поэтому очередь `failure`, в которую попадает «мусор» (например, из-за несоответствия схеме), со временем заполнится и **остановит весь основной поток**, хотя `success` работает.
+**The problem.** As stated in Block 1.2, a processor stops being scheduled if **any** of its outgoing connections is filled to the back pressure threshold. Therefore the `failure` queue, which receives "garbage" (for example, due to a schema mismatch), will eventually fill up and **stop the entire main flow**, even though `success` is working.
 
-**Решения (комбинируйте).**
+**Solutions (combine them).**
 
-| Приём | Суть | Риск/компромисс |
+| Technique | Essence | Risk/trade-off |
 |---|---|---|
-| **Сток с большой ёмкостью** | Соединить `failure` с процессором, который немедленно вытесняет данные на диск/в хранилище (`PutFile`, `PutS3Object`, `PublishKafka` в DLQ-топик) — очередь не копится | Нужно мониторить место на диске/в DLQ |
-| **Dead-letter топик/хранилище** | Централизованный DLQ с метаданными ошибки; повторная обработка по требованию | Дополнительная инфраструктура |
-| **Увеличенные пороги** на failure-связи | Выше порог back pressure (например, 100 000 / 10 GB) для запаса времени | Это отсрочка, а не решение |
-| **FlowFile Expiration** на failure-связи | Автоудаление через N часов | **Потеря данных**: допустимо только для некритичных/воспроизводимых данных |
-| **Раннее разделение** | `ValidateRecord`/`QueryRecord` отделяют невалидные записи *до* основной цепочки; плохие данные не мешают хорошим | Более сложная схема, но самая устойчивая |
-| **Алерты по размеру failure-очереди** | Мониторинг queued count/size | Требует настроенной системы мониторинга |
-| **Разные Process Group для ветвей** | Failure-путь изолирован и имеет собственные ресурсы | |
+| **A high-capacity sink** | Connect `failure` to a processor that immediately pushes data out to disk/storage (`PutFile`, `PutS3Object`, `PublishKafka` to a DLQ topic) — the queue does not accumulate | Disk space/the DLQ needs to be monitored |
+| **A dead-letter topic/store** | A centralized DLQ with error metadata; reprocessing on demand | Additional infrastructure |
+| **Raised thresholds** on the failure connection | A higher back pressure threshold (for example, 100,000 / 10 GB) to buy time | This is a delay, not a solution |
+| **FlowFile Expiration** on the failure connection | Automatic deletion after N hours | **Data loss**: acceptable only for non-critical/reproducible data |
+| **Early separation** | `ValidateRecord`/`QueryRecord` separate the invalid records *before* the main chain; bad data does not interfere with good data | A more complex design, but the most resilient |
+| **Alerts on the size of the failure queue** | Monitoring the queued count/size | Requires a configured monitoring system |
+| **Different Process Groups for the branches** | The failure path is isolated and has its own resources | |
 
-**Паттерн «Dead Letter» (типовая реализация).**
+**The "Dead Letter" pattern (a typical implementation).**
 
 ```text
-...► ValidateRecord ─ valid ─► основной поток
+...► ValidateRecord ─ valid ─► the main flow
           │ invalid / failure
           ▼
    UpdateAttribute:
       error.stage   = validate
       error.time    = ${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")}
-      error.reason  = ${validation.details:replaceNull('see bulletin')}   // атрибут заполняет ValidateRecord, если в нём задано Validation Details Attribute Name = validation.details
+      error.reason  = ${validation.details:replaceNull('see bulletin')}   // the attribute is filled by ValidateRecord if Validation Details Attribute Name = validation.details is set in it
       original.name = ${filename}
           ▼
-   PublishKafka (topic: dlq.<flow>)   или   PutFile /data/dlq/${error.stage}/${now():format('yyyyMMdd')}/${uuid}
+   PublishKafka (topic: dlq.<flow>)   or   PutFile /data/dlq/${error.stage}/${now():format('yyyyMMdd')}/${uuid}
 ```
 
-Хорошие практики DLQ: сохранять **исходный контент без изменений** + атрибуты ошибки (в заголовках Kafka или в сопроводительном JSON); ограничить срок хранения; завести процедуру *replay* (отдельный flow, читающий DLQ и подающий данные обратно после исправления причины); завести счётчики (`UpdateCounter`) и алерты на рост DLQ.
+DLQ best practices: keep the **original content unchanged** + the error attributes (in Kafka headers or in an accompanying JSON); limit the retention period; set up a *replay* procedure (a separate flow that reads the DLQ and feeds the data back after the cause is fixed); set up counters (`UpdateCounter`) and alerts on DLQ growth.
 
-### 3.1.4 Эффективный перезапуск flow и минимизация ручного вмешательства
+### 3.1.4 Restarting flows efficiently and minimizing manual intervention
 
-**Цель подраздела.** Научиться (1) останавливать и запускать NiFi и отдельные flow предсказуемо и без потери данных, (2) сократить время простоя при перезапуске, (3) автоматизировать типовые действия оператора и (4) строить flow так, чтобы большинство сбоев исчезало само, без вызова человека.
+**The goal of this subsection.** To learn (1) to stop and start NiFi and individual flows predictably and without data loss, (2) to reduce downtime on restart, (3) to automate the operator's typical actions, and (4) to build flows so that most failures disappear on their own, without calling a human.
 
-Связанные блоки: back pressure и очереди — Block 1.2; кластерные роли и offload — Block 1.4; backup/restore — 3.1.5; мониторинг и алерты — Block 3.2; sensitive key и безопасность — Block 3.3.
+Related blocks: back pressure and queues — Block 1.2; cluster roles and offload — Block 1.4; backup/restore — 3.1.5; monitoring and alerts — Block 3.2; the sensitive key and security — Block 3.3.
 
-#### 3.1.4.1 Что происходит при остановке и запуске NiFi
+#### 3.1.4.1 What happens when NiFi stops and starts
 
-**Остановка (`bin/nifi.sh stop`).**
+**Stopping (`bin/nifi.sh stop`).**
 
 ```text
 nifi.sh stop
-  └─► Bootstrap-процесс отправляет JVM команду остановки
-        └─► Flow Controller: прекращает планирование процессоров (новые onTrigger не стартуют)
-              └─► ожидание завершения активных потоков до nifi.flowcontroller.graceful.shutdown.period
-                    ├─ потоки завершились → commit сессий → checkpoint FlowFile Repository → выход JVM
-                    └─ не завершились → принудительное прерывание (termination), незавершённые сессии откатываются
-        └─► Bootstrap ждёт выхода JVM до graceful.shutdown.seconds (bootstrap.conf); затем завершает процесс принудительно
+  └─► The Bootstrap process sends the JVM a stop command
+        └─► Flow Controller: stops scheduling processors (new onTrigger calls do not start)
+              └─► waits for active threads to finish for up to nifi.flowcontroller.graceful.shutdown.period
+                    ├─ the threads finished → sessions commit → FlowFile Repository checkpoint → the JVM exits
+                    └─ they did not finish → forced interruption (termination), unfinished sessions are rolled back
+        └─► Bootstrap waits for the JVM to exit for up to graceful.shutdown.seconds (bootstrap.conf); then it kills the process
 ```
 
-Ключевые параметры:
+Key parameters:
 
-| Параметр | Файл | Значение по умолчанию | Смысл |
+| Parameter | File | Default value | Meaning |
 |---|---|---|---|
-| `nifi.flowcontroller.graceful.shutdown.period` | `nifi.properties` | `10 secs` | Сколько ждать завершения компонентов при остановке ([Administration Guide, исходник документации](https://github.com/apache/nifi/pull/11488/files)). В ветке main (сентябрь 2026, NIFI-16290) описание уточнено: это же значение ограничивает ожидание остановки компонентов перед принудительным прерыванием при **offload узла** ([коммит](https://mail-archive.com/commits@nifi.apache.org/msg46395.html)); **[проверить]**, в каком релизе это поведение доступно у вас |
-| `graceful.shutdown.seconds` | `bootstrap.conf` | `20` в документации NiFi Registry (для NiFi значение сверьте в своём `bootstrap.conf`) | Сколько секунд Bootstrap ждёт чистого завершения, после чего принудительно завершает процесс. Изменения `bootstrap.conf` вступают в силу только после остановки и запуска NiFi ([описание](https://docs.cloudera.com/HDPDocuments/HDF3/HDF-3.0.1/bk_administration/content/bootstrap_properties.html)) |
-| `nifi.flowcontroller.autoResumeState` | `nifi.properties` | `true` | Возвращать ли компоненты в прежнее состояние (Running/Stopped, Controller Services enabled/disabled) после рестарта ([Administration Guide](https://github.com/apache/nifi/pull/11488/files)). В кластере значение должно быть одинаковым на всех узлах |
+| `nifi.flowcontroller.graceful.shutdown.period` | `nifi.properties` | `10 secs` | How long to wait for components to finish on shutdown ([Administration Guide, the documentation source](https://github.com/apache/nifi/pull/11488/files)). In the main branch (September 2026, NIFI-16290) the description was clarified: the same value limits the wait for components to stop before a forced interruption during a **node offload** ([the commit](https://mail-archive.com/commits@nifi.apache.org/msg46395.html)); **[verify]** in which release this behavior is available to you |
+| `graceful.shutdown.seconds` | `bootstrap.conf` | `20` in the NiFi Registry documentation (for NiFi, check the value in your own `bootstrap.conf`) | How many seconds Bootstrap waits for a clean exit, after which it terminates the process by force. Changes to `bootstrap.conf` take effect only after NiFi is stopped and started ([description](https://docs.cloudera.com/HDPDocuments/HDF3/HDF-3.0.1/bk_administration/content/bootstrap_properties.html)) |
+| `nifi.flowcontroller.autoResumeState` | `nifi.properties` | `true` | Whether to return components to their previous state (Running/Stopped, Controller Services enabled/disabled) after a restart ([Administration Guide](https://github.com/apache/nifi/pull/11488/files)). In a cluster the value must be the same on all nodes |
 
-**Что это значит на практике.**
+**What this means in practice.**
 
-- 10 секунд — это **мало** для процессоров, выполняющих длинные операции (большой `PutDatabaseRecord`, `MergeRecord`, запись в сеть). Если за время ожидания поток не завершился, он прерывается; сессия откатывается, FlowFile возвращается в очередь, и операция будет **повторена** после старта. Для идемпотентных приёмников это безопасно, для неидемпотентных — источник дублей.
-- Поэтому для плановой остановки используйте **«мягкую» последовательность** (раздел 3.1.4.3): сначала остановить источники и дать конвейеру опустеть, и только потом останавливать JVM.
-- Если `graceful.shutdown.seconds` в Bootstrap меньше фактического времени остановки (большой heap, длительный checkpoint), Bootstrap завершит процесс принудительно. Увеличьте значение и согласуйте с таймаутом systemd/Kubernetes (см. 3.1.4.5).
+- 10 seconds is **little** for processors that perform long operations (a large `PutDatabaseRecord`, `MergeRecord`, a network write). If a thread did not finish during the wait, it is interrupted; the session is rolled back, the FlowFile returns to the queue, and the operation will be **repeated** after the start. For idempotent destinations this is safe; for non-idempotent ones it is a source of duplicates.
+- Therefore, for a planned stop use a **"soft" sequence** (section 3.1.4.3): first stop the sources and let the pipeline drain, and only then stop the JVM.
+- If `graceful.shutdown.seconds` in Bootstrap is smaller than the actual shutdown time (a large heap, a long checkpoint), Bootstrap will terminate the process by force. Increase the value and align it with the systemd/Kubernetes timeout (see 3.1.4.5).
 
-**Запуск.** Последовательность: загрузка NAR и расширений → чтение `flow.json.gz` → восстановление **FlowFile Repository** (чтение WAL и snapshot, восстановление очередей, swap-файлов) → индексация/восстановление **Provenance Repository** → инициализация **Content Repository** (проверка claims) → (в кластере) подключение к ZooKeeper, flow election, присоединение к кластеру → при `autoResumeState=true` включение Controller Services и запуск процессоров.
+**Starting.** The sequence: loading the NARs and extensions → reading `flow.json.gz` → restoring the **FlowFile Repository** (reading the WAL and snapshot, restoring the queues and swap files) → indexing/restoring the **Provenance Repository** → initializing the **Content Repository** (checking claims) → (in a cluster) connecting to ZooKeeper, flow election, joining the cluster → with `autoResumeState=true`, enabling Controller Services and starting processors.
 
-#### 3.1.4.2 Управление состоянием после перезапуска: `autoResumeState`
+#### 3.1.4.2 Managing state after a restart: `autoResumeState`
 
-`autoResumeState=true` (по умолчанию) — идеальный режим для **автономного восстановления**: после падения или планового рестарта flow сам возвращается в рабочее состояние, оператор не нужен. Именно это свойство реализует «самоподнятие» после сбоя питания, OOM-перезапуска или перезапуска контейнера.
+`autoResumeState=true` (the default) is the ideal mode for **autonomous recovery**: after a crash or a planned restart the flow returns to a working state by itself, and no operator is needed. This property is what implements the "self-recovery" after a power failure, an OOM restart, or a container restart.
 
-Но есть ситуации, когда автозапуск **вреден**:
+But there are situations in which auto-start is **harmful**:
 
-| Ситуация | Риск при autoResume = true | Что делать |
+| Situation | The risk with autoResume = true | What to do |
 |---|---|---|
-| Миграция/апгрейд (Block 2.4) | Недопереведённые компоненты стартуют, источники начинают потреблять, пока flow не проверен | Первый старт после апгрейда — с `autoResumeState=false`; проверить invalid/ghost-компоненты; затем запускать вручную/скриптом |
-| Восстановление из backup на «чужом» окружении | Процессоры начинают писать в **боевые** приёмники | Старт с `false`, заменить Parameter Context значения, затем запуск |
-| Расследование инцидента | Бесконтрольное повторное получение «ядовитых» данных | Старт с `false`, изучить очереди, затем запуск по группам |
-| Кластер: узлы с разными значениями | Часть узлов запускается, часть нет → путаница | Одинаковое значение на всех узлах (управлять через IaC) |
+| Migration/upgrade (Block 2.4) | Components that were not fully migrated start, and sources begin consuming before the flow has been checked | The first start after an upgrade — with `autoResumeState=false`; check the invalid/ghost components; then start manually/with a script |
+| Restoring from a backup on a "foreign" environment | The processors start writing to **production** destinations | Start with `false`, replace the Parameter Context values, then start |
+| Incident investigation | Uncontrolled repeated receipt of "poisonous" data | Start with `false`, examine the queues, then start group by group |
+| A cluster: nodes with different values | Some nodes start, some do not → confusion | The same value on all nodes (manage it through IaC) |
 
-Рекомендуемая схема: **в штатной эксплуатации `true`; на время работ и восстановления — временно `false`** через конфигурацию (при управлении конфигурацией через Ansible/Helm значение подставляется параметром окружения). После рестарта с `false` запускайте компоненты **скриптом** (раздел 3.1.4.4), в правильном порядке.
+The recommended scheme: **`true` in normal operation; `false` temporarily for the duration of work and recovery** through configuration (when configuration is managed through Ansible/Helm, the value is substituted by an environment parameter). After a restart with `false`, start the components **with a script** (section 3.1.4.4), in the right order.
 
-#### 3.1.4.3 Порядок остановки и запуска: от источников к стокам и обратно
+#### 3.1.4.3 The order of stopping and starting: from sources to sinks and back
 
-Принцип: **при остановке — сначала источники, затем остальные по ходу данных; при запуске — сначала стоки, потом источники.** Тогда в системе нет данных, которым «некуда идти», и нет всплеска повторов.
+The principle: **when stopping — sources first, then the rest in the direction of the data; when starting — sinks first, then sources.** Then there is no data in the system that has "nowhere to go", and there is no burst of retries.
 
-**Плановая остановка конвейера (runbook).**
+**A planned pipeline stop (a runbook).**
 
-1. Перейти в режим обслуживания: оповестить потребителей, при необходимости заморозить изменения flow (организационно).
-2. **Остановить источники**: `ConsumeKafka`, `Listen*`, `List*`, `GenerateFlowFile`, `QueryDatabaseTable*`. Для `ConsumeKafka` это приводит к фиксации offsets обработанных данных и к ребалансировке группы — запланируйте это заранее.
-3. **Дождаться дренирования очередей** по ходу данных: смотрите счётчики очередей и *Active Threads*; критерий — очереди пусты (или останутся только в failure/DLQ — они переживают рестарт). Не ждите вечно: задайте предел времени (например, 5–15 минут), после которого очередь допускается оставить на диске.
-4. **Остановить процессоры** (по группам, в порядке данных), затем **отключить Controller Services** (Disable) — это снимает соединения с БД и Kafka.
-5. Остановить NiFi (`bin/nifi.sh stop`), дождаться завершения процесса; убедиться по `nifi-bootstrap.log`/`nifi-app.log`, что остановка была корректной.
-6. Выполнить работы.
+1. Switch to maintenance mode: notify the consumers and, if necessary, freeze flow changes (organizationally).
+2. **Stop the sources**: `ConsumeKafka`, `Listen*`, `List*`, `GenerateFlowFile`, `QueryDatabaseTable*`. For `ConsumeKafka` this results in committing the offsets of the processed data and in a rebalance of the group — plan for this in advance.
+3. **Wait for the queues to drain** in the direction of the data: watch the queue counters and *Active Threads*; the criterion is that the queues are empty (or remain only in failure/DLQ — they survive a restart). Do not wait forever: set a time limit (for example, 5–15 minutes), after which a queue may be left on disk.
+4. **Stop the processors** (group by group, in data order), then **disable the Controller Services** (Disable) — this releases the connections to the database and Kafka.
+5. Stop NiFi (`bin/nifi.sh stop`) and wait for the process to finish; make sure from `nifi-bootstrap.log`/`nifi-app.log` that the shutdown was clean.
+6. Perform the work.
 
-**Плановый запуск.**
+**A planned start.**
 
-1. Запустить NiFi; дождаться доступности UI/API и завершения загрузки flow (на больших репозиториях запуск занимает минуты).
-2. Проверить: нет invalid/ghost-компонентов, Controller Services включены, bulletins отсутствуют (раздел «Чек-лист после запуска» ниже).
-3. Запустить **стоки и промежуточные звенья** (`Put*`, `InvokeHTTP`, `PublishKafka`), затем преобразования, затем **источники**.
-4. Наблюдать нагрузку 10–15 минут: очереди рассасываются, нет роста back pressure, нет всплеска ошибок.
+1. Start NiFi; wait for the UI/API to become available and for the flow load to finish (with large repositories the start takes minutes).
+2. Check: there are no invalid/ghost components, the Controller Services are enabled, and there are no bulletins (see the "Post-start checklist" section below).
+3. Start the **sinks and the intermediate stages** (`Put*`, `InvokeHTTP`, `PublishKafka`), then the transformations, then the **sources**.
+4. Watch the load for 10–15 minutes: the queues drain, there is no growth in back pressure, and no burst of errors.
 
-**Особый случай — очереди на диске.** Данные в очередях переживают рестарт. После запуска стоков накопленный backlog начнёт обрабатываться на полной скорости; приёмник должен быть готов к «пиковой» нагрузке. Для этого используйте `ControlRate` или временно уменьшите `Concurrent Tasks` на стоках.
+**A special case — queues on disk.** Data in the queues survives a restart. After the sinks start, the accumulated backlog will begin to be processed at full speed; the destination must be ready for a "peak" load. For this use `ControlRate` or temporarily reduce `Concurrent Tasks` on the sinks.
 
-#### 3.1.4.4 Автоматизация: REST API и скрипты вместо ручных кликов
+#### 3.1.4.4 Automation: the REST API and scripts instead of manual clicks
 
-Любое действие в UI — это вызов REST API (`/nifi-api`), поэтому типовые процедуры автоматизируются. Ниже — иллюстративные примеры; пути `POST /access/token`, `PUT /flow/process-groups/{id}` (запуск и остановка), `PUT /flow/process-groups/{id}/controller-services` (включение и выключение сервисов) и `GET /flow/process-groups/{id}/status` подтверждены описаниями REST API и клиентскими библиотеками; тела запросов и структуру ответов сверяйте с REST API вашей версии, особенно при использовании в production. Для безопасного окружения нужна аутентификация (токен, mTLS или OIDC client credentials — см. Block 3.3); **не храните пароли в скриптах**, используйте секрет-хранилище CI/оркестратора.
+Every action in the UI is a call to the REST API (`/nifi-api`), so typical procedures can be automated. Below are illustrative examples; the paths `POST /access/token`, `PUT /flow/process-groups/{id}` (start and stop), `PUT /flow/process-groups/{id}/controller-services` (enabling and disabling services), and `GET /flow/process-groups/{id}/status` are confirmed by REST API descriptions and client libraries; check the request bodies and the structure of the responses against the REST API of your version, especially when using them in production. A secure environment needs authentication (a token, mTLS, or OIDC client credentials — see Block 3.3); **do not keep passwords in scripts**, use the secret store of the CI/orchestrator.
 
-**Получить токен (Single User/LDAP) — пример для лаборатории.**
+**Getting a token (Single User/LDAP) — an example for a lab.**
 
 ```bash
 NIFI=https://nifi-1.example.com:8443/nifi-api
@@ -204,11 +202,11 @@ TOKEN=$(curl -s --cacert ca.pem -X POST "$NIFI/access/token" \
         -d "username=$NIFI_USER&password=$NIFI_PASS")
 ```
 
-**Остановить/запустить все компоненты Process Group.**
+**Stopping/starting all components of a Process Group.**
 
 ```bash
-PG_ID=<id группы>
-# STOP: отправить состояние STOPPED всем запланированным компонентам группы
+PG_ID=<group id>
+# STOP: send the STOPPED state to all scheduled components of the group
 curl -s --cacert ca.pem -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
      -X PUT "$NIFI/flow/process-groups/$PG_ID" \
      -d "{\"id\":\"$PG_ID\",\"state\":\"STOPPED\"}"
@@ -219,12 +217,12 @@ curl -s --cacert ca.pem -H "Authorization: Bearer $TOKEN" -H 'Content-Type: appl
      -d "{\"id\":\"$PG_ID\",\"state\":\"RUNNING\"}"
 ```
 
-**Включить Controller Services группы** — аналогичный `PUT` на ресурс `/flow/process-groups/{id}/controller-services` с `"state":"ENABLED"` (тело `{"id":"<id группы>","state":"ENABLED"}`).
+**Enabling the group's Controller Services** — a similar `PUT` to the resource `/flow/process-groups/{id}/controller-services` with `"state":"ENABLED"` (the body is `{"id":"<group id>","state":"ENABLED"}`).
 
-**Ожидание остановки (чтобы не запустить следующий шаг раньше времени).**
+**Waiting for the stop (so as not to start the next step too early).**
 
 ```bash
-# Ждём, пока в группе не останется активных потоков процессоров
+# We wait until no active processor threads remain in the group
 until [ "$(curl -s --cacert ca.pem -H "Authorization: Bearer $TOKEN" \
       "$NIFI/flow/process-groups/$PG_ID/status" \
       | jq '[.. | .activeThreadCount? // empty] | add')" = "0" ]; do
@@ -232,20 +230,20 @@ until [ "$(curl -s --cacert ca.pem -H "Authorization: Bearer $TOKEN" \
 done
 ```
 
-(Структура JSON статуса зависит от версии; идея — суммировать `activeThreadCount`.)
+(The structure of the status JSON depends on the version; the idea is to sum `activeThreadCount`.)
 
-**NiFi CLI (из NiFi Toolkit).** Содержит команды для управления Process Group и версиями flow (например, запуск/остановка группы, включение сервисов, смена версии, работа с Flow Registry Clients; в 2.1.0 добавлены команды управления Flow Registry Clients — [Release Notes 2.1.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). Перечень команд смотрите в [Toolkit Guide](https://nifi.apache.org/docs/nifi-docs/html/toolkit-guide.html).
+**The NiFi CLI (from the NiFi Toolkit).** It contains commands for managing Process Groups and flow versions (for example, starting/stopping a group, enabling services, changing a version, working with Flow Registry Clients; commands for managing Flow Registry Clients were added in 2.1.0 — [Release Notes 2.1.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). For the list of commands, see the [Toolkit Guide](https://nifi.apache.org/docs/nifi-docs/html/toolkit-guide.html).
 
-Автоматизация приносит три результата: воспроизводимость (одна и та же последовательность каждый раз), скорость (минуты вместо часов кликов) и возможность запускать процедуры по расписанию/из CI без человека.
+Automation brings three results: reproducibility (the same sequence every time), speed (minutes instead of hours of clicking), and the ability to run procedures on a schedule/from CI without a human.
 
-#### 3.1.4.5 Супервизор процесса: systemd и Kubernetes
+#### 3.1.4.5 The process supervisor: systemd and Kubernetes
 
-В NiFi 1.x Bootstrap умел отправлять уведомления о старте, остановке и **неожиданном падении** NiFi через Notification Services. В 2.x **Bootstrap Notification Services удалены** (2.0.0-M2, [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)), а Bootstrap переработан (мониторинг по HTTP, 2.0.0). Следовательно, **оповещение о падении и гарантированный перезапуск должен обеспечивать внешний супервизор и мониторинг**.
+In NiFi 1.x, Bootstrap could send notifications about the start, the stop, and an **unexpected crash** of NiFi through Notification Services. In 2.x **the Bootstrap Notification Services were removed** (2.0.0-M2, [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)), and Bootstrap was reworked (monitoring over HTTP, 2.0.0). Consequently, **crash notification and a guaranteed restart must be provided by an external supervisor and monitoring**.
 
-**systemd (Linux, одиночный узел/VM).**
+**systemd (Linux, a single node/VM).**
 
 ```ini
-# /etc/systemd/system/nifi.service  (иллюстрация; адаптируйте под вашу установку)
+# /etc/systemd/system/nifi.service  (an illustration; adapt it to your installation)
 [Unit]
 Description=Apache NiFi
 After=network-online.target
@@ -270,161 +268,161 @@ TimeoutStopSec=180
 WantedBy=multi-user.target
 ```
 
-Пояснения: `TimeoutStopSec` должен быть **больше**, чем время корректной остановки (graceful period + `graceful.shutdown.seconds`); `TimeoutStartSec` — достаточно большим для восстановления репозиториев; `LimitNOFILE` — большое число файловых дескрипторов (множество claim-файлов и соединений). Тип `forking`/`Restart` проверяйте на вашем дистрибутиве: `nifi.sh start` запускает демон, и поведение зависит от формы запуска (**[проверить]**; альтернатива — `nifi.sh run` с `Type=simple`).
+Notes: `TimeoutStopSec` must be **greater** than the time of a clean shutdown (the graceful period + `graceful.shutdown.seconds`); `TimeoutStartSec` — large enough for repository recovery; `LimitNOFILE` — a large number of file descriptors (many claim files and connections). Check the `forking`/`Restart` type on your distribution: `nifi.sh start` launches a daemon, and the behavior depends on the form of the launch (**[verify]**; the alternative is `nifi.sh run` with `Type=simple`).
 
 **Kubernetes.**
 
-- Используйте **StatefulSet** со стабильными идентичностями и persistent volumes для репозиториев; `terminationGracePeriodSeconds` — больше времени корректной остановки; `preStop` может запускать скрипт «мягкой» остановки (остановка источников → ожидание).
-- **Probes:** `startupProbe` с большим `failureThreshold` (запуск NiFi с крупными репозиториями — минуты), иначе kubelet будет убивать «ещё загружающийся» под; `livenessProbe` — не слишком агрессивный (GC-пауза не должна приводить к перезапуску); `readinessProbe` — по готовности API (**[проверить]** какие endpoints доступны без аутентификации в вашей конфигурации; часто используют TCP-проверку порта).
-- Рекомендуется **PodDisruptionBudget** (не более одного узла недоступно) и **rolling update по одному узлу** с ожиданием готовности.
-- В 2.x доступна **Kubernetes-based leader election** без ZooKeeper (Block 1.4).
+- Use a **StatefulSet** with stable identities and persistent volumes for the repositories; `terminationGracePeriodSeconds` — longer than the time of a clean shutdown; `preStop` can run a "soft" stop script (stop the sources → wait).
+- **Probes:** a `startupProbe` with a large `failureThreshold` (starting NiFi with large repositories takes minutes), otherwise the kubelet will kill a pod that is "still loading"; a `livenessProbe` that is not too aggressive (a GC pause must not lead to a restart); a `readinessProbe` — by API readiness (**[verify]** which endpoints are available without authentication in your configuration; a TCP port check is often used).
+- A **PodDisruptionBudget** (no more than one node unavailable) and a **rolling update one node at a time** with a wait for readiness are recommended.
+- In 2.x **Kubernetes-based leader election** is available without ZooKeeper (Block 1.4).
 
-#### 3.1.4.6 Rolling restart кластера без простоя
+#### 3.1.4.6 A cluster rolling restart without downtime
 
-Цель — обновить/перезапустить узлы по одному, чтобы кластер всё время обрабатывал данные.
+The goal is to update/restart the nodes one at a time so that the cluster keeps processing data the whole time.
 
-1. **Предусловия:** кластер здоров (все узлы CONNECTED, кворум ZooKeeper), нет невалидных компонентов; принято решение, что остаётся достаточная ёмкость при выводе одного узла.
-2. **Узел N → Disconnect** (UI: Cluster → Disconnect). Узел перестаёт получать запросы кластера, но продолжает работать.
-3. **Offload** (Cluster → Offload): узел останавливает приём новых данных у источников и **передаёт свои FlowFile** другим узлам через load balancing. Дождаться состояния OFFLOADED. Для успешного offload на связях должна быть возможна балансировка; FlowFile в связях с отключённой балансировкой могут «застрять» — перед offload проверьте. Offload ограничен по времени ожидания остановки компонентов (см. graceful period выше).
-4. **Остановить NiFi на узле**, выполнить работы (обновление, перезапуск ОС, смена конфигурации).
-5. **Запустить**, дождаться загрузки; узел **присоединяется (Reconnect)** и синхронизирует flow с кластером (с 1.16.0 — даже при существенно разном локальном flow, с сохранением backup своего). Если узел был offloaded — выполните *Connect*.
-6. **Проверка здоровья** перед следующим узлом: узел CONNECTED; нет invalid-компонентов; очередь сбалансирована; (для Kafka) нет всплеска ребалансировок и lag; метрики в норме.
-7. Повторить для остальных узлов. **Primary Node** и **Cluster Coordinator** при перезапуске перевыбираются — процессоры *Primary Node Only* (`List*`, `QueryDatabaseTable*`) переедут на новый узел, state берётся из cluster state.
+1. **Preconditions:** the cluster is healthy (all nodes CONNECTED, ZooKeeper quorum), there are no invalid components; a decision has been made that sufficient capacity remains when one node is taken out.
+2. **Node N → Disconnect** (UI: Cluster → Disconnect). The node stops receiving cluster requests but keeps running.
+3. **Offload** (Cluster → Offload): the node stops accepting new data from the sources and **hands its FlowFiles** to the other nodes through load balancing. Wait for the OFFLOADED state. For a successful offload, balancing must be possible on the connections; FlowFiles on connections with balancing disabled may get "stuck" — check this before the offload. The offload is limited by the wait time for components to stop (see the graceful period above).
+4. **Stop NiFi on the node** and perform the work (an update, an OS restart, a configuration change).
+5. **Start it** and wait for the load; the node **joins (Reconnect)** and synchronizes the flow with the cluster (since 1.16.0 — even with a substantially different local flow, keeping a backup of its own). If the node was offloaded, perform *Connect*.
+6. **A health check** before the next node: the node is CONNECTED; there are no invalid components; the queue is balanced; (for Kafka) there is no burst of rebalances and lag; the metrics are normal.
+7. Repeat for the remaining nodes. The **Primary Node** and the **Cluster Coordinator** are re-elected on restart — the *Primary Node Only* processors (`List*`, `QueryDatabaseTable*`) will move to a new node, and the state is taken from the cluster state.
 
-**Что ускоряет одновременный рестарт кластера.** При одновременном старте всех узлов происходит **flow election**: узлы ждут до `nifi.cluster.flow.election.max.wait.time` либо пока не наберётся `nifi.cluster.flow.election.max.candidates` кандидатов ([Migration Guidance 1.0→1.1](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). Если `max.candidates` равно числу узлов, выборы завершаются сразу после подключения всех узлов, а не по таймауту.
+**What speeds up a simultaneous cluster restart.** When all nodes start at the same time, a **flow election** takes place: the nodes wait for up to `nifi.cluster.flow.election.max.wait.time` or until `nifi.cluster.flow.election.max.candidates` candidates are collected ([Migration Guidance 1.0→1.1](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). If `max.candidates` equals the number of nodes, the election finishes immediately after all nodes have connected, rather than on a timeout.
 
-**Ограничения 2.x для TLS-кластера.** С 2.12.0 `nifi.cluster.node.address` и `nifi.cluster.load.balance.host` должны быть DNS-именами; после смены образов/адресов проверяйте это в первую очередь ([Migration Guidance 2.12.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+**2.x restrictions for a TLS cluster.** Since 2.12.0, `nifi.cluster.node.address` and `nifi.cluster.load.balance.host` must be DNS names; after changing images/addresses, check this first ([Migration Guidance 2.12.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
 
-#### 3.1.4.7 Что замедляет перезапуск и как это уменьшить
+#### 3.1.4.7 What slows down a restart and how to reduce it
 
-| Фактор | Почему замедляет | Мера |
+| Factor | Why it slows things down | Measure |
 |---|---|---|
-| Огромные очереди (миллионы FlowFile) | Чтение WAL/snapshot, восстановление swap-файлов | Держать очереди небольшими (back pressure, оперативный дренаж); решать причины накопления |
-| Большой FlowFile Repository / редкие checkpoints | Долгое воспроизведение журнала | Настроить `nifi.flowfile.repository.checkpoint.interval`; медленные диски → быстрые (NVMe для WAL) |
-| Крупный Provenance Repository | Восстановление индексов | Уменьшить срок/размер хранения; изолированный быстрый том (Block 3.4) |
-| Много Controller Services и «внешних» проверок | Включение сервисов ждёт подключения к БД/Kafka | Короткие таймауты подключения; доступность зависимостей перед стартом |
-| Flow election по таймауту | Ожидание `max.wait.time` | Установить `max.candidates` = числу узлов |
-| Медленная остановка (GC-паузы, большой heap) | Bootstrap убивает процесс → долгое восстановление после «грязного» выхода | Правильные timeout; корректная остановка источников до рестарта |
-| Грязный выход (`kill -9`, потеря питания) | Восстановление после неполных записей | Избегать; использовать `nifi.sh stop` |
+| Huge queues (millions of FlowFiles) | Reading the WAL/snapshot, restoring swap files | Keep queues small (back pressure, prompt draining); address the causes of accumulation |
+| A large FlowFile Repository / infrequent checkpoints | A long journal replay | Tune `nifi.flowfile.repository.checkpoint.interval`; slow disks → fast ones (NVMe for the WAL) |
+| A large Provenance Repository | Restoring the indexes | Reduce the retention period/size; an isolated fast volume (Block 3.4) |
+| Many Controller Services and "external" checks | Enabling services waits for connections to the database/Kafka | Short connection timeouts; dependencies available before the start |
+| Flow election by timeout | Waiting for `max.wait.time` | Set `max.candidates` = the number of nodes |
+| A slow shutdown (GC pauses, a large heap) | Bootstrap kills the process → a long recovery after a "dirty" exit | Correct timeouts; a clean stop of the sources before the restart |
+| A dirty exit (`kill -9`, a power loss) | Recovery after incomplete writes | Avoid it; use `nifi.sh stop` |
 
-#### 3.1.4.8 Самовосстановление на уровне flow: чтобы человек не понадобился
+#### 3.1.4.8 Self-recovery at the flow level: so that no human is needed
 
-Перезапуск процесса — крайняя мера. Большинство сбоев должно решаться **без перезапуска**, внутри flow:
+Restarting the process is a last resort. Most failures should be resolved **without a restart**, inside the flow:
 
-| Сбой | Автоматический механизм | Настройка |
+| Failure | The automatic mechanism | Configuration |
 |---|---|---|
-| Приёмник временно недоступен | Framework retry с backoff; `Yield Duration`; очередь + back pressure | Retry на relationships; адекватные таймауты |
-| Сбой отдельных данных | Маршрутизация в DLQ; основной поток не блокируется | Block 3.1.3 |
-| Потеря соединения с БД/Kafka | Контроллер-сервис/клиент переподключается; процессор повторяет `onTrigger` | Validation Query у DBCP, таймауты; Kafka client reconnect |
-| Процессор «завис» на внешнем вызове | Таймауты в процессоре (Connection/Read Timeout) | Всегда задавать явные таймауты |
-| Контроллер-сервис не включился (зависимость была недоступна) | Фреймворк периодически пробует включить сервис повторно (поведение зависит от версии — **[проверить]**); известны исправления сценариев «сервисы не стартуют после рестарта» ([Release Notes 1.28.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)) | Мониторинг состояния сервисов + алерт |
-| Падение JVM | Супервизор (systemd/Kubernetes) + `autoResumeState=true` + WAL | 3.1.4.5 |
-| Узел выпал из кластера | Автоматическое возвращение узла и синхронизация flow | Корректные heartbeat/таймауты, стабильная сеть |
-| Простой источника (нет данных) | `MonitorActivity` → алерт | Block 3.2 |
+| The destination is temporarily unavailable | Framework retry with backoff; `Yield Duration`; a queue + back pressure | Retry on relationships; adequate timeouts |
+| A failure of individual data | Routing to the DLQ; the main flow is not blocked | Block 3.1.3 |
+| A lost connection to the database/Kafka | The controller service/client reconnects; the processor repeats `onTrigger` | The Validation Query of DBCP, timeouts; Kafka client reconnect |
+| A processor "hung" on an external call | Timeouts in the processor (Connection/Read Timeout) | Always set explicit timeouts |
+| A controller service did not enable (a dependency was unavailable) | The framework periodically tries to enable the service again (the behavior depends on the version — **[verify]**); fixes are known for the "services do not start after a restart" scenarios ([Release Notes 1.28.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)) | Monitoring the state of the services + an alert |
+| A JVM crash | A supervisor (systemd/Kubernetes) + `autoResumeState=true` + the WAL | 3.1.4.5 |
+| A node dropped out of the cluster | The node automatically returns and the flow synchronizes | Correct heartbeat/timeouts, a stable network |
+| A source is idle (no data) | `MonitorActivity` → an alert | Block 3.2 |
 
-**Watchdog-flow (опционально).** Простой «страж» внутри NiFi или (предпочтительно) во внешнем оркестраторе: периодически читает статус через REST/Site-to-Site Reporting Tasks (см. подраздел «Site-to-Site Reporting Tasks» в Block 3.2), обнаруживает признаки зависания (*processor invalid*, очередь не уменьшается при активном приёмнике, `activeThreadCount > 0` слишком долго) и вызывает API (Stop → дождаться → Start) либо поднимает алерт. Рекомендации: (а) автоматические действия ограничивайте **числом попыток** и «охлаждением» (иначе будет бесконечный цикл рестартов); (б) вызовы API делайте из внешней системы с минимальными правами; (в) для критичных действий оставляйте подтверждение человеком.
+**A watchdog flow (optional).** A simple "guard" inside NiFi or (preferably) in an external orchestrator: it periodically reads the status through REST/Site-to-Site Reporting Tasks (see the subsection "Site-to-Site Reporting Tasks" in Block 3.2), detects signs of a hang (*processor invalid*, a queue that does not shrink with an active destination, `activeThreadCount > 0` for too long) and calls the API (Stop → wait → Start) or raises an alert. Recommendations: (a) limit automatic actions by the **number of attempts** and a "cooldown" (otherwise there will be an endless loop of restarts); (b) make API calls from an external system with minimal permissions; (c) for critical actions, leave confirmation to a human.
 
-**Принципы дизайна flow, снижающие ручное вмешательство:**
+**Flow design principles that reduce manual intervention:**
 
-1. Параметры окружения — в Parameter Contexts (смена значения не требует правки flow).
-2. Нет «петель без счётчика» (retry всегда ограничен).
-3. У каждой failure-ветки есть сток и алерт.
-4. Все внешние вызовы имеют таймауты.
-5. Приёмники идемпотентны → рестарт и повторы безопасны.
-6. Состояние хранится в state/в Kafka/в приёмнике, а не «в голове у оператора» (offset, `List*` state).
-7. Все операции (stop/start/clear/replay) описаны runbook-ом и автоматизированы.
+1. Environment parameters live in Parameter Contexts (changing a value does not require editing the flow).
+2. No "loops without a counter" (a retry is always bounded).
+3. Every failure branch has a sink and an alert.
+4. All external calls have timeouts.
+5. Destinations are idempotent → a restart and repeats are safe.
+6. State is kept in state/in Kafka/in the destination, not "in the operator's head" (offsets, `List*` state).
+7. All operations (stop/start/clear/replay) are described in a runbook and automated.
 
-#### 3.1.4.9 Чек-листы
+#### 3.1.4.9 Checklists
 
-**Перед плановым рестартом:** источники остановлены; очереди опустошены (или осознанно оставлены); Controller Services отключены; бэкап `conf/`, `state/local`, ключей сделан (3.1.5); есть план отката; окно согласовано.
+**Before a planned restart:** the sources are stopped; the queues are emptied (or deliberately left); the Controller Services are disabled; a backup of `conf/`, `state/local`, and the keys has been made (3.1.5); there is a rollback plan; the window is agreed.
 
-**После запуска (валидация, ≈10–15 минут):**
+**After the start (validation, ≈10–15 minutes):**
 
-- [ ] Все узлы CONNECTED, роли Coordinator/Primary выбраны.
-- [ ] Нет invalid/ghost-компонентов (UI: Summary; поиск `invalid`).
-- [ ] Все нужные Controller Services *Enabled*.
-- [ ] Bulletins ERROR отсутствуют (или объяснены).
-- [ ] Очереди рассасываются, нет заполненных back pressure.
-- [ ] Kafka: consumer group стабилизирована, lag не растёт.
-- [ ] Нет неожиданного роста DLQ.
-- [ ] Метрики heap/GC/диски в норме.
+- [ ] All nodes are CONNECTED, the Coordinator/Primary roles are elected.
+- [ ] There are no invalid/ghost components (UI: Summary; search for `invalid`).
+- [ ] All required Controller Services are *Enabled*.
+- [ ] There are no ERROR bulletins (or they are explained).
+- [ ] The queues are draining, there are no queues at back pressure.
+- [ ] Kafka: the consumer group has stabilized, the lag is not growing.
+- [ ] There is no unexpected growth of the DLQ.
+- [ ] The heap/GC/disk metrics are normal.
 
-#### 3.1.4.10 Типичные проблемы после рестарта
+#### 3.1.4.10 Common problems after a restart
 
-| Симптом | Вероятная причина | Решение |
+| Symptom | Probable cause | Solution |
 |---|---|---|
-| После старта все процессоры остановлены | `autoResumeState=false` или flow загружен «без состояния» | Запустить скриптом/вручную; вернуть `true` после работ |
-| Узел не присоединяется к кластеру | Разные `nifi.sensitive.props.key`; DNS/TLS (SAN, 2.12+); недоступен ZooKeeper | Сверить ключ, сертификаты, `nifi.cluster.*`; логи `nifi-app.log` |
-| Controller Service не включается | Недоступна БД/Kafka; неверные параметры | Проверить зависимость; Disable → Enable |
-| Процессор `invalid` после рестарта | Внешняя проверка (например, Kafka topic) не проходит | Проверить доступность и права; Verify в UI |
-| Долгий старт | Крупные очереди/репозитории | См. 3.1.4.7 |
-| Дубли в приёмнике после рестарта | At-least-once: прерванные операции повторены | Идемпотентность приёмника |
-| Повторный листинг файлов/таблиц | Потерян/очищен state | Восстановить `state/local` или принять повторную загрузку |
-| Всплеск ребалансировок Kafka | Перезапуск потребителей | Staggered restart (по одному узлу), нужная версия ≥ 2.8.0 |
-| Узел 2.x не стартует после отката с 2.14 | Новый формат local state | Восстановить `state/local` из backup (Block 2.4) |
+| After the start all processors are stopped | `autoResumeState=false`, or the flow was loaded "without state" | Start them with a script/manually; return `true` after the work |
+| A node does not join the cluster | Different `nifi.sensitive.props.key`; DNS/TLS (SAN, 2.12+); ZooKeeper is unavailable | Check the key, certificates, `nifi.cluster.*`; the `nifi-app.log` logs |
+| A Controller Service does not enable | The database/Kafka is unavailable; wrong parameters | Check the dependency; Disable → Enable |
+| A processor is `invalid` after a restart | An external check (for example, a Kafka topic) does not pass | Check availability and permissions; Verify in the UI |
+| A slow start | Large queues/repositories | See 3.1.4.7 |
+| Duplicates at the destination after a restart | At-least-once: interrupted operations are repeated | Destination idempotency |
+| Repeated listing of files/tables | The state was lost/cleared | Restore `state/local` or accept a reload |
+| A burst of Kafka rebalances | A restart of the consumers | A staggered restart (one node at a time), the required version ≥ 2.8.0 |
+| A 2.x node does not start after a rollback from 2.14 | The new local state format | Restore `state/local` from the backup (Block 2.4) |
 
-#### Mini-lab 3.1.4: учебный рестарт под нагрузкой
+#### Mini-lab 3.1.4: a training restart under load
 
-**Цель.** Убедиться, что конвейер переживает плановый и аварийный рестарт без потерь, а повторы допустимы.
+**Goal.** Make sure the pipeline survives a planned and an emergency restart without losses, and that repeats are acceptable.
 
-**Шаги.**
+**Steps.**
 
-1. Запустите конвейер из Lab 7 или Block 3.5 с нагрузкой.
-2. **Плановый рестарт:** выполните runbook 3.1.4.3 (остановить источники → дренаж → остановка → запуск → стоки → источники). Замерьте время остановки/запуска.
-3. **Аварийный рестарт:** отправьте `kill -9` процессу JVM NiFi (**только в лаборатории**). Наблюдайте: супервизор поднимает NiFi, при `autoResumeState=true` flow стартует сам.
-4. Сравните число записей на входе и в приёмнике; посчитайте дубли (ключ события).
-5. Повторите с `autoResumeState=false` и запустите flow скриптом из 3.1.4.4.
-6. Сформулируйте выводы: сколько дублей допустимо; сколько времени занял восстановление; что автоматизировать.
+1. Run the pipeline from Lab 7 or Block 3.5 with load.
+2. **A planned restart:** follow runbook 3.1.4.3 (stop the sources → drain → stop → start → sinks → sources). Measure the stop/start time.
+3. **An emergency restart:** send `kill -9` to the NiFi JVM process (**in a lab only**). Observe: the supervisor brings NiFi back up, and with `autoResumeState=true` the flow starts by itself.
+4. Compare the number of records at the input and at the destination; count the duplicates (the event key).
+5. Repeat with `autoResumeState=false` and start the flow with the script from 3.1.4.4.
+6. Formulate conclusions: how many duplicates are acceptable; how long the recovery took; what to automate.
 
-**Проверка.** Нет потери данных; дубли обнаружены и обработаны приёмником (UPSERT/ключ); после рестарта нет invalid-компонентов; время восстановления зафиксировано.
+**Verification.** There is no data loss; duplicates were detected and handled by the destination (UPSERT/a key); after the restart there are no invalid components; the recovery time is recorded.
 
-### 3.1.5 Backup и restore: конфигурация, определения flow, ключи
+### 3.1.5 Backup and restore: configuration, flow definitions, keys
 
-| Что | Где | Зачем | Периодичность |
+| What | Where | Why | Frequency |
 |---|---|---|---|
-| `conf/flow.json.gz` | `NIFI_HOME/conf/` | Текущий flow | Регулярно + перед изменениями; NiFi хранит версии в `conf/archive/` |
-| Версии flow в Registry (Git) | Git-репозиторий | Основной механизм отката логики | Каждое изменение (commit) |
-| `nifi.properties`, `bootstrap.conf`, `logback.xml`, `state-management.xml` | `conf/` | Конфигурация узла | При изменении (под управлением CM/IaC) |
-| `authorizers.xml`, `users.xml`, `authorizations.xml`, `login-identity-providers.xml` | `conf/` | Пользователи, группы, политики | Регулярно |
-| **`nifi.sensitive.props.key`** | `nifi.properties` / секрет-хранилище | Без него невозможно расшифровать sensitive-значения в flow | Хранить отдельно и надёжно |
-| Сертификаты и ключи (keystore/truststore/PEM) | Файловая система/секрет-хранилище | TLS | По процедуре PKI |
-| `state/local` и cluster state (ZooKeeper) | `state/`, ZooKeeper | Позиции `List*`, инкрементальные выгрузки | Перед апгрейдами и регулярно |
-| Репозитории (FlowFile/Content/Provenance) | Тома данных | Данные «в полёте»; provenance | Снимки томов при плановых работах (на горячую согласованный backup нетривиален) |
-| `database_repository` | Каталог | История изменений flow | По необходимости |
+| `conf/flow.json.gz` | `NIFI_HOME/conf/` | The current flow | Regularly + before changes; NiFi keeps versions in `conf/archive/` |
+| Flow versions in the Registry (Git) | A Git repository | The main mechanism for rolling back logic | Every change (a commit) |
+| `nifi.properties`, `bootstrap.conf`, `logback.xml`, `state-management.xml` | `conf/` | The node configuration | On change (under CM/IaC control) |
+| `authorizers.xml`, `users.xml`, `authorizations.xml`, `login-identity-providers.xml` | `conf/` | Users, groups, policies | Regularly |
+| **`nifi.sensitive.props.key`** | `nifi.properties` / a secret store | Without it the sensitive values in the flow cannot be decrypted | Store it separately and reliably |
+| Certificates and keys (keystore/truststore/PEM) | The file system/a secret store | TLS | Per the PKI procedure |
+| `state/local` and the cluster state (ZooKeeper) | `state/`, ZooKeeper | The `List*` positions, incremental extractions | Before upgrades and regularly |
+| Repositories (FlowFile/Content/Provenance) | Data volumes | Data "in flight"; provenance | Volume snapshots during planned work (a consistent hot backup is non-trivial) |
+| `database_repository` | A directory | The flow change history | As needed |
 
-**Замечание.** Backup репозиториев «на горячую» файловым копированием может быть несогласованным; для согласованного снимка остановите NiFi или используйте снимки на уровне блочных устройств с учётом связанных репозиториев. В большинстве сценариев **данные в полёте считаются повторно получаемыми** (из Kafka, файлов), а backup концентрируется на flow, конфигурации, ключах и state.
+**Note.** A "hot" backup of the repositories by file copying may be inconsistent; for a consistent snapshot, stop NiFi or use block-device-level snapshots that take the related repositories into account. In most scenarios, **data in flight is considered re-obtainable** (from Kafka, files), and the backup concentrates on the flow, the configuration, the keys, and the state.
 
-**Restore (последовательность).** 1) Установить ту же (или совместимую) версию NiFi; 2) вернуть `conf/` и ключи; 3) убедиться, что `nifi.sensitive.props.key` совпадает; 4) вернуть state (при необходимости); 5) запустить; 6) проверить валидность компонентов; 7) включить источники.
+**Restore (the sequence).** 1) Install the same (or a compatible) NiFi version; 2) restore `conf/` and the keys; 3) make sure `nifi.sensitive.props.key` matches; 4) restore the state (if necessary); 5) start; 6) check the validity of the components; 7) enable the sources.
 
-В 2.12.0 добавлена фреймворковая абстракция **PropertyEncryptionProvider** для шифрования свойств ([Release Notes 2.12.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); при её использовании ключи провайдера также входят в состав backup.
+In 2.12.0 a framework abstraction **PropertyEncryptionProvider** for encrypting properties was added ([Release Notes 2.12.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); when it is used, the provider's keys also become part of the backup.
 
-### Lab 7: flow с retry и обработкой ошибок
+### Lab 7: a flow with retry and error handling
 
-**Цель.** Построить flow, который переживает временные сбои приёмника и не блокируется «плохими» данными.
+**Goal.** Build a flow that survives temporary failures of the destination and does not get blocked by "bad" data.
 
-**Архитектура.**
+**Architecture.**
 
 ```text
 GenerateRecord ► ValidateRecord ─ invalid ─► [DLQ group]
                      │ valid
                      ▼
-              InvokeHTTP (endpoint с имитацией сбоев)
+              InvokeHTTP (an endpoint that simulates failures)
                  ├ Original (2xx) ► PutFile #{ok.dir}
                  ├ Response ► LogAttribute
                  ├ Retry ──► RetryFlowFile ─ retry ► (penalize) ► InvokeHTTP
                  │                 └ retries_exceeded ► [DLQ group]
                  ├ No Retry ───────────────────────────────► [DLQ group]
-                 └ Failure ► RetryFlowFile (тот же)
-[DLQ group]: UpdateAttribute (error.*) ► PutFile #{dlq.dir}/${error.stage} (с большим порогом back pressure)
+                 └ Failure ► RetryFlowFile (the same one)
+[DLQ group]: UpdateAttribute (error.*) ► PutFile #{dlq.dir}/${error.stage} (with a high back pressure threshold)
 ```
 
-`Original` — исходный FlowFile запроса после ответа 2xx (именно его логично складывать в `ok`); `Response` — тело ответа (здесь `{}`).
+`Original` is the source FlowFile of the request after a 2xx response (it is the one that makes sense to put into `ok`); `Response` is the response body (here `{}`).
 
-Parameter Context `lab7-params` (стенд): `flaky.url=http://flaky:9099/events`, `ok.dir=/opt/nifi/data/ok`, `dlq.dir=/opt/nifi/data/dlq` (на хосте — `nifi/data/ok`, `nifi/data/dlq`).
+The Parameter Context `lab7-params` (the stand): `flaky.url=http://flaky:9099/events`, `ok.dir=/opt/nifi/data/ok`, `dlq.dir=/opt/nifi/data/dlq` (on the host — `nifi/data/ok`, `nifi/data/dlq`).
 
-**Источник данных с невалидными записями.** `GenerateRecord` выдаёт записи строго по своей схеме, поэтому без подготовки ветка `invalid` пуста. Объявите в схеме генератора поля как `["null", …]` и задайте `Nullable Fields = true`, `Null Value Percentage = 5`, а в `ValidateRecord` (Schema Access Strategy `Use 'Schema Text' Property`) проверяйте по строгой схеме, где все поля обязательны: записи с `null` уйдут в `invalid`.
+**A data source with invalid records.** `GenerateRecord` produces records strictly according to its schema, so without preparation the `invalid` branch is empty. Declare the fields in the generator schema as `["null", …]` and set `Nullable Fields = true`, `Null Value Percentage = 5`, and in `ValidateRecord` (Schema Access Strategy `Use 'Schema Text' Property`) validate against a strict schema in which all fields are required: records with `null` will go to `invalid`.
 
-**Имитация нестабильного API.** На стенде сервис уже запущен: контейнер `flaky` (`make lab-services`, код — `lab-services/flaky.py`), адрес из NiFi `http://flaky:9099/events`. Без стенда:
+**Simulating an unstable API.** On the stand the service is already running: the container `flaky` (`make lab-services`, the code is `lab-services/flaky.py`), the address from NiFi is `http://flaky:9099/events`. Without the stand:
 
 ```bash
 python3 - <<'EOF'
@@ -440,239 +438,239 @@ HTTPServer(('0.0.0.0', 9099), H).serve_forever()
 EOF
 ```
 
-**Конфигурация.**
+**Configuration.**
 
-| Компонент | Настройка |
+| Component | Setting |
 |---|---|
-| `GenerateRecord` | Schema Text — схема с полями `["null", …]`; Number of Records `5`; Nullable Fields `true`; Null Value Percentage `5`; Run Schedule `2 sec` |
-| `ValidateRecord` | Schema Access Strategy `Use 'Schema Text' Property` — строгая схема (все поля обязательны); Strict Type Checking `true`; Validation Details Attribute Name `validation.details` |
-| `InvokeHTTP` | URL `#{flaky.url}`; POST; Connection/Read Timeout — по `5 sec`; Concurrent Tasks `2` |
-| `RetryFlowFile` | Maximum Retries `3`; Penalize Retries `true`; Retry Attribute — по умолчанию; динамическое свойство `error.stage` = `retries_exceeded`. Значение штрафа — *Penalty Duration* на вкладке Settings (например, `10 sec`) |
-| Connection `...► DLQ` | Back Pressure Object Threshold `100000`, Size `10 GB` |
-| `UpdateAttribute` (перед DLQ) | `error.stage` = `validation` / `http-${invokehttp.status.code}` / `retries-exceeded` (по пути ошибки); `filename` = `${uuid}.json` |
-| `PutFile` (DLQ) | Directory `#{dlq.dir}/${error.stage}`; Conflict Resolution `replace` (имена по `${uuid}`) |
+| `GenerateRecord` | Schema Text — a schema with `["null", …]` fields; Number of Records `5`; Nullable Fields `true`; Null Value Percentage `5`; Run Schedule `2 sec` |
+| `ValidateRecord` | Schema Access Strategy `Use 'Schema Text' Property` — a strict schema (all fields required); Strict Type Checking `true`; Validation Details Attribute Name `validation.details` |
+| `InvokeHTTP` | URL `#{flaky.url}`; POST; Connection/Read Timeout — `5 sec` each; Concurrent Tasks `2` |
+| `RetryFlowFile` | Maximum Retries `3`; Penalize Retries `true`; Retry Attribute — the default; the dynamic property `error.stage` = `retries_exceeded`. The penalty value is *Penalty Duration* on the Settings tab (for example, `10 sec`) |
+| The connection `...► DLQ` | Back Pressure Object Threshold `100000`, Size `10 GB` |
+| `UpdateAttribute` (before the DLQ) | `error.stage` = `validation` / `http-${invokehttp.status.code}` / `retries-exceeded` (depending on the error path); `filename` = `${uuid}.json` |
+| `PutFile` (DLQ) | Directory `#{dlq.dir}/${error.stage}`; Conflict Resolution `replace` (names by `${uuid}`) |
 
-**Проверка** (с хоста стенда):
+**Verification** (from the stand host):
 
-- Через несколько минут большая часть FlowFile в `nifi/data/ok` (`ls nifi/data/ok | wc -l`); `400`-ответы — в `nifi/data/dlq/http-400`, невалидные записи — в `nifi/data/dlq/validation`; ответы `503` проходят через `RetryFlowFile` (в очереди `InvokeHTTP → RetryFlowFile` видны FlowFile со штрафом).
-- `retries_exceeded` при работающем `flaky` почти не встречается: нужно четыре ответа `503` подряд (~1 %). Остановите сервис — `docker stop flaky`: запросы уходят в `Failure`, после 3 повторов со штрафом появляется `nifi/data/dlq/retries-exceeded`, очередь перед `InvokeHTTP` растёт, затем срабатывает back pressure; после `docker start flaky` очередь рассасывается *без вмешательства*.
-- Проверьте провенанс: FlowFile с несколькими попытками имеет цепочку событий `ROUTE`/`SEND`; атрибут `flowfile.retries` показывает число попыток.
+- After a few minutes most FlowFiles are in `nifi/data/ok` (`ls nifi/data/ok | wc -l`); `400` responses — in `nifi/data/dlq/http-400`, invalid records — in `nifi/data/dlq/validation`; `503` responses pass through `RetryFlowFile` (FlowFiles with a penalty are visible in the `InvokeHTTP → RetryFlowFile` queue).
+- `retries_exceeded` almost never occurs while `flaky` is running: four `503` responses in a row are needed (~1%). Stop the service — `docker stop flaky`: requests go to `Failure`, after 3 retries with a penalty `nifi/data/dlq/retries-exceeded` appears, the queue before `InvokeHTTP` grows, and then back pressure kicks in; after `docker start flaky` the queue drains *without intervention*.
+- Check provenance: a FlowFile with several attempts has a chain of `ROUTE`/`SEND` events; the `flowfile.retries` attribute shows the number of attempts.
 
-**Ошибки и диагностика.** Петля без счётчика (retry → тот же процессор, без `RetryFlowFile`) — бесконечные повторы; очередь `Failure` не пуста и блокирует источник — её нужно вывести в сток; DLQ-директория заполняет диск — добавить мониторинг (`MonitorDiskUsage`) и очистку; ветка `invalid` всегда пуста — генератор выдаёт только валидные по своей схеме записи (см. «Источник данных с невалидными записями»).
+**Mistakes and diagnostics.** A loop without a counter (retry → the same processor, without `RetryFlowFile`) — endless retries; the `Failure` queue is not empty and blocks the source — it must be routed to a sink; the DLQ directory fills the disk — add monitoring (`MonitorDiskUsage`) and cleanup; the `invalid` branch is always empty — the generator produces only records that are valid according to its own schema (see "A data source with invalid records").
 
-**Эталонное решение:** `nifi/flows/lab7-retry-errors.json`.
+**Reference solution:** `nifi/flows/lab7-retry-errors.json`.
 
 ---
 
 ## Block 3.2: Monitoring, provenance and troubleshooting
 
-### 3.2.1 NiFi UI, метрики, Provenance, bulletins
+### 3.2.1 The NiFi UI, metrics, Provenance, bulletins
 
-**UI.**
+**The UI.**
 
-| Инструмент | Что показывает |
+| Tool | What it shows |
 |---|---|
-| Canvas: счётчики на процессорах и связях | In/Out, Read/Write, Tasks/Time (CPU-время), размеры очередей, индикатор back pressure |
-| **Status History** | Графики метрик компонента во времени (в т. ч. на уровне кластера по узлам) |
-| **Summary** (глобальное меню) | Сводные таблицы по процессорам, связям, портам, Process Group; сортировка по Tasks/Time и т. п. |
-| **Bulletin Board** | Все bulletins (с уровнем, источником, узлом); в 2.7.0 добавлены stack trace и очистка |
-| **Counters** | Пользовательские счётчики (`UpdateCounter`) |
-| **System Diagnostics** | Heap, GC, потоки, размеры репозиториев, нагрузка |
-| **Cluster** | Узлы, роли, heartbeat, нагрузка по узлам |
-| **Flow Configuration History** | Аудит изменений (Block 3.3) |
-| **Data Provenance** | Поиск и визуализация событий |
+| The canvas: counters on processors and connections | In/Out, Read/Write, Tasks/Time (CPU time), queue sizes, the back pressure indicator |
+| **Status History** | Graphs of a component's metrics over time (including at the cluster level by node) |
+| **Summary** (the global menu) | Summary tables by processors, connections, ports, Process Groups; sorting by Tasks/Time, etc. |
+| **Bulletin Board** | All bulletins (with the level, source, node); in 2.7.0 a stack trace and clearing were added |
+| **Counters** | User counters (`UpdateCounter`) |
+| **System Diagnostics** | Heap, GC, threads, repository sizes, load |
+| **Cluster** | Nodes, roles, heartbeat, load by node |
+| **Flow Configuration History** | An audit of changes (Block 3.3) |
+| **Data Provenance** | Search and visualization of events |
 
-**Provenance Visualizer (Lineage graph).** Для выбранного FlowFile показывает граф событий: `RECEIVE`/`CREATE` → `ROUTE`, `CONTENT_MODIFIED`, `CLONE`/`FORK`/`JOIN`, `SEND` → `DROP`. Из каждого события доступны атрибуты до/после, **контент до/после** (если не истёк срок хранения в Content Repository/archive и есть права на данные), возможность **Replay** (повторная отправка FlowFile в точку события). В 2.8.0 в UI lineage рядом с узлом показывается тип компонента ([Release Notes 2.8.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
+**The Provenance Visualizer (the Lineage graph).** For a selected FlowFile it shows a graph of events: `RECEIVE`/`CREATE` → `ROUTE`, `CONTENT_MODIFIED`, `CLONE`/`FORK`/`JOIN`, `SEND` → `DROP`. For each event the following are available: attributes before/after, the **content before/after** (if the retention period in the Content Repository/archive has not expired and you have permission for the data), and the ability to **Replay** (resending the FlowFile at the point of the event). In 2.8.0 the lineage UI shows the component type next to the node ([Release Notes 2.8.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 
-Основные типы событий: `RECEIVE`, `FETCH`, `CREATE`, `SEND`, `ROUTE`, `CLONE`, `FORK`, `JOIN`, `CONTENT_MODIFIED`, `ATTRIBUTES_MODIFIED`, `DROP`, `EXPIRE`, `REPLAY`, `DOWNLOAD`.
+The main event types: `RECEIVE`, `FETCH`, `CREATE`, `SEND`, `ROUTE`, `CLONE`, `FORK`, `JOIN`, `CONTENT_MODIFIED`, `ATTRIBUTES_MODIFIED`, `DROP`, `EXPIRE`, `REPLAY`, `DOWNLOAD`.
 
-**Метрики для внешнего мониторинга.**
+**Metrics for external monitoring.**
 
-- **Prometheus:** REST-эндпоинт метрик (с 1.12.0, [Release Notes 1.12.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes); `/nifi-api/flow/metrics/prometheus`) и `PrometheusReportingTask`. В 2.13.0 добавлены метрики `cluster_is_primary_node` и `cluster_is_cluster_coordinator`; в 2.12.0 из `cluster_connected_node_count` удалена метка `connected_nodes` ([Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
-- **Site-to-Site Reporting Tasks:** отправка статусов, bulletins и метрик в NiFi-получатель (`SiteToSiteStatusReportingTask`, `SiteToSiteBulletinReportingTask`, `SiteToSiteMetricsReportingTask`) — подробно в подразделе «Site-to-Site Reporting Tasks: подробно» ниже.
-- **Ключевые метрики для алертов:** размер/число FlowFile в очередях и признак back pressure; возраст старейшего FlowFile в очереди; процент использования heap и время GC; заполнение репозиториев (`MonitorDiskUsage`); число активных потоков; число ошибок (bulletins ERROR); узлы CONNECTED; lag consumer group Kafka (во внешней системе); время с последней активности (`MonitorActivity`).
+- **Prometheus:** a REST metrics endpoint (since 1.12.0, [Release Notes 1.12.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes); `/nifi-api/flow/metrics/prometheus`) and `PrometheusReportingTask`. In 2.13.0 the metrics `cluster_is_primary_node` and `cluster_is_cluster_coordinator` were added; in 2.12.0 the `connected_nodes` label was removed from `cluster_connected_node_count` ([Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+- **Site-to-Site Reporting Tasks:** sending statuses, bulletins, and metrics to a receiving NiFi (`SiteToSiteStatusReportingTask`, `SiteToSiteBulletinReportingTask`, `SiteToSiteMetricsReportingTask`) — in detail in the subsection "Site-to-Site Reporting Tasks: in detail" below.
+- **Key metrics for alerts:** the size/number of FlowFiles in queues and the back pressure indicator; the age of the oldest FlowFile in a queue; heap usage percentage and GC time; repository fill levels (`MonitorDiskUsage`); the number of active threads; the number of errors (ERROR bulletins); CONNECTED nodes; the Kafka consumer group lag (in an external system); the time since the last activity (`MonitorActivity`).
 
-**Логи.**
+**Logs.**
 
-| Файл | Содержимое |
+| File | Contents |
 |---|---|
-| `nifi-app.log` | Основной лог приложения и процессоров |
-| `nifi-bootstrap.log` | Запуск/остановка/перезапуск JVM |
-| `nifi-user.log` | Действия пользователей, запросы авторизации |
-| `nifi-request.log` | HTTP-запросы (с 1.16.0) |
-| `nifi-deprecation.log` | Предупреждения об использовании deprecated-компонентов (с 1.18.0) |
+| `nifi-app.log` | The main log of the application and the processors |
+| `nifi-bootstrap.log` | JVM start/stop/restart |
+| `nifi-user.log` | User actions, authorization requests |
+| `nifi-request.log` | HTTP requests (since 1.16.0) |
+| `nifi-deprecation.log` | Warnings about the use of deprecated components (since 1.18.0) |
 
-#### Site-to-Site Reporting Tasks: подробно
+#### Site-to-Site Reporting Tasks: in detail
 
-Подраздел раскрывает пункт «отправка статусов и bulletins самому NiFi/другим системам» (`SiteToSiteStatusReportingTask`, `SiteToSiteBulletinReportingTask`, `SiteToSiteMetricsReportingTask`). Все три задачи входят в бандл `nifi-site-to-site-reporting-nar` и присутствуют в документации 2.x (например, 2.10.0 — [справочник](https://nifi.incubator.apache.org/components/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask)). Описание свойств ниже основано на справочниках компонентов (версии 1.27–1.28 и 2.0.0-M2/M3, [Status](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask), [Metrics](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask)); точные имена и значения по умолчанию в вашей версии проверьте во встроенной документации (**[проверить]**).
+This subsection expands on the item "sending statuses and bulletins to NiFi itself/to other systems" (`SiteToSiteStatusReportingTask`, `SiteToSiteBulletinReportingTask`, `SiteToSiteMetricsReportingTask`). All three tasks are part of the `nifi-site-to-site-reporting-nar` bundle and are present in the 2.x documentation (for example, 2.10.0 — [the reference](https://nifi.incubator.apache.org/components/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask)). The description of the properties below is based on the component references (versions 1.27–1.28 and 2.0.0-M2/M3, [Status](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask), [Metrics](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask)); check the exact names and default values in your version in the built-in documentation (**[verify]**).
 
-##### Зачем это нужно
+##### Why this is needed
 
-UI NiFi показывает статус «здесь и сейчас» и короткую историю (Status History). Этого недостаточно для эксплуатации: нужны **долгосрочные тренды, алерты и корреляция с другими системами**. Есть два подхода:
+The NiFi UI shows the status "here and now" and a short history (Status History). This is not enough for operations: you need **long-term trends, alerts, and correlation with other systems**. There are two approaches:
 
-| Подход | Суть | Когда выбирать |
+| Approach | Essence | When to choose it |
 |---|---|---|
-| **Pull** (Prometheus, REST API) | Внешняя система сама опрашивает NiFi | Уже есть Prometheus/Grafana; нужны метрики узла и JVM |
-| **Push через Site-to-Site Reporting Tasks** | NiFi сам формирует записи о статусе/bulletins/метриках и отправляет **в Input Port другого (или того же) NiFi**, где они обрабатываются обычным flow | Нужно обработать данные мониторинга средствами NiFi (фильтрация, обогащение, маршрутизация в Splunk, Kafka, БД, e-mail, чат); нет возможности ставить Prometheus; нужны события bulletins как поток |
+| **Pull** (Prometheus, the REST API) | An external system polls NiFi itself | Prometheus/Grafana is already in place; node and JVM metrics are needed |
+| **Push through Site-to-Site Reporting Tasks** | NiFi itself forms records about status/bulletins/metrics and sends them **to an Input Port of another (or the same) NiFi**, where they are processed by an ordinary flow | You need to process monitoring data with NiFi tools (filtering, enrichment, routing to Splunk, Kafka, a database, e-mail, chat); there is no way to install Prometheus; bulletin events are needed as a stream |
 
-Сильная сторона push-подхода: данные мониторинга — это обычные **записи (records)**, а значит, к ним применимы всё, что вы уже знаете из Day 1–2: `QueryRecord`, `PartitionRecord`, `PutSplunk`, `PublishKafka`, DLQ, back pressure.
+The strength of the push approach: monitoring data is ordinary **records**, which means that everything you already know from Day 1–2 applies to it: `QueryRecord`, `PartitionRecord`, `PutSplunk`, `PublishKafka`, the DLQ, back pressure.
 
-##### Что такое Site-to-Site (S2S)
+##### What Site-to-Site (S2S) is
 
-**Site-to-Site** — встроенный протокол передачи FlowFile между экземплярами NiFi (и из MiNiFi/клиентских библиотек). Принимающая сторона публикует **Remote Input Port** (Input Port корневой группы); отправляющая — подключается по URL NiFi и пишет в порт по имени. Два транспорта (свойство *Transport Protocol*): `RAW` (сокет; значение по умолчанию) и `HTTP` (удобен через прокси/балансировщики). S2S поддерживает сжатие, батчи и распределение между узлами кластера-получателя: **адрес в Destination URL используется только для установления соединения, а сами данные балансируются по всем узлам целевого кластера** ([справочник Status](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/2.0.0-M3/org.apache.nifi.reporting.SiteToSiteStatusReportingTask/index.html)).
+**Site-to-Site** is a built-in protocol for transferring FlowFiles between NiFi instances (and from MiNiFi/client libraries). The receiving side publishes a **Remote Input Port** (an Input Port of the root group); the sending side connects by the NiFi URL and writes into the port by name. Two transports (the *Transport Protocol* property): `RAW` (a socket; the default) and `HTTP` (convenient through proxies/load balancers). S2S supports compression, batches, and distribution across the nodes of the receiving cluster: **the address in the Destination URL is used only to establish the connection, while the data itself is balanced across all nodes of the target cluster** ([the Status reference](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/2.0.0-M3/org.apache.nifi.reporting.SiteToSiteStatusReportingTask/index.html)).
 
-##### Архитектура
+##### Architecture
 
 ```text
- Узел NiFi (источник мониторинга)                                       Узел/кластер NiFi (приёмник мониторинга)
+ A NiFi node (the monitoring source)                                    A NiFi node/cluster (the monitoring receiver)
 ┌──────────────────────────────────────┐   S2S (RAW|HTTP, TLS, compress)  ┌─────────────────────────────────────────────┐
-│ Reporting Tasks (запуск по расписанию)│ ───────────────────────────────► │ Input Port "monitoring-in" (root group)     │
-│  • SiteToSiteStatusReportingTask      │  записи JSON/Avro (Record Writer) │   │                                         │
+│ Reporting Tasks (run on a schedule)  │ ───────────────────────────────► │ Input Port "monitoring-in" (root group)     │
+│  • SiteToSiteStatusReportingTask      │  JSON/Avro records (Record Writer)│   │                                         │
 │  • SiteToSiteBulletinReportingTask    │                                   │   ▼                                         │
-│  • SiteToSiteMetricsReportingTask     │                                   │ Flow обработки мониторинга:                 │
-└──────────────────────────────────────┘                                   │  RouteOnAttribute / QueryRecord ─► алерты   │
+│  • SiteToSiteMetricsReportingTask     │                                   │ A monitoring-processing flow:               │
+└──────────────────────────────────────┘                                   │  RouteOnAttribute / QueryRecord ─► alerts   │
                                                                            │  ─► PutSplunk / PublishKafka / PutDatabase… │
                                                                            └─────────────────────────────────────────────┘
 ```
 
-Варианты размещения приёмника:
+Options for placing the receiver:
 
-1. **Тот же NiFi/кластер** (Destination URL указывает на себя). Просто в настройке, но **мониторинг умирает вместе с системой**: если NiFi остановлен, алерта не будет.
-2. **Отдельный «monitoring» NiFi** (малый кластер/инстанс). Рекомендуемый вариант для production: сбои основного кластера не мешают алертам. Ограничение — нужно эксплуатировать ещё один экземпляр.
-3. **Несколько приёмников** — отдельные задачи для разных получателей (например, безопасность и эксплуатация).
+1. **The same NiFi/cluster** (the Destination URL points to itself). Simple to set up, but **monitoring dies together with the system**: if NiFi is stopped, there will be no alert.
+2. **A separate "monitoring" NiFi** (a small cluster/instance). The recommended option for production: failures of the main cluster do not interfere with alerts. The limitation is that one more instance has to be operated.
+3. **Several receivers** — separate tasks for different recipients (for example, security and operations).
 
-##### Общие свойства всех трёх задач
+##### Properties common to all three tasks
 
-| Свойство | Назначение | Значение по умолчанию / примечания |
+| Property | Purpose | Default value / notes |
 |---|---|---|
-| **Destination URL** | URL NiFi-получателя (для кластера — список адресов через запятую, формат `http(s)://host:port/nifi`) | Используется только для первоначального соединения; данные балансируются по узлам получателя |
-| **Input Port Name** | Имя Input Port получателя | Должно совпадать точно |
-| **SSL Context Service** | TLS-настройки при отправке | Если не задан, соединение **не защищено**; в production задавайте всегда |
-| **Instance URL** | URL этого экземпляра, помещаемый в Content URI события | По умолчанию `http://${hostname(true)}:8080/nifi` — **для HTTPS-развёртывания (порт 8443) обязательно поправьте** |
-| **Compress Events** | Сжатие данных при передаче | `true` |
-| **Communications Timeout** | Сколько ждать ответа получателя | `30 secs` |
-| **Batch Size** | Максимум записей в одной пачке (у Status/Bulletin) | `1000` |
-| **Transport Protocol** | `RAW` или `HTTP` | `RAW` |
-| HTTP Proxy hostname/port/username/password | Прокси для режима `HTTP` | Пароль — sensitive |
-| **Record Writer** | Controller Service для сериализации записей | Например, `JsonRecordSetWriter` (для Status/Bulletin обязателен; для Metrics — при формате `Record Format`) |
-| **Include Null Values** | Выводить ли поля со значением `null` | `false` |
-| **Platform** | Значение поля `platform` в записях | `nifi`; удобно задавать «окружение/кластер» (`prod-eu`, `test`) для разделения потоков в приёмнике |
+| **Destination URL** | The URL of the receiving NiFi (for a cluster — a comma-separated list of addresses, in the format `http(s)://host:port/nifi`) | Used only for the initial connection; the data is balanced across the receiver's nodes |
+| **Input Port Name** | The name of the receiver's Input Port | Must match exactly |
+| **SSL Context Service** | TLS settings for sending | If not set, the connection is **not secured**; always set it in production |
+| **Instance URL** | The URL of this instance, placed in the Content URI of the event | By default `http://${hostname(true)}:8080/nifi` — **for an HTTPS deployment (port 8443) be sure to correct it** |
+| **Compress Events** | Compression of the data during transfer | `true` |
+| **Communications Timeout** | How long to wait for the receiver's response | `30 secs` |
+| **Batch Size** | The maximum number of records in one batch (for Status/Bulletin) | `1000` |
+| **Transport Protocol** | `RAW` or `HTTP` | `RAW` |
+| HTTP Proxy hostname/port/username/password | A proxy for `HTTP` mode | The password is sensitive |
+| **Record Writer** | A Controller Service for serializing records | For example, `JsonRecordSetWriter` (mandatory for Status/Bulletin; for Metrics — with the `Record Format`) |
+| **Include Null Values** | Whether to output fields with the value `null` | `false` |
+| **Platform** | The value of the `platform` field in the records | `nifi`; it is convenient to set an "environment/cluster" (`prod-eu`, `test`) to separate flows at the receiver |
 
-Свойства с Expression Language вычисляются по **переменным окружения/системным свойствам** (scope *Environment*; в 1.x — Variable Registry, удалён в 2.0). Отдельное замечание: reporting tasks создаются на уровне контроллера (Global menu → Controller Settings → Reporting Tasks), а не внутри Process Group — **Parameter Contexts к ним неприменимы** (**[проверить]**), поэтому значения окружения подставляйте через конфигурацию задачи или через EL/переменные окружения.
+Properties with Expression Language are evaluated against **environment variables/system properties** (the *Environment* scope; in 1.x — the Variable Registry, removed in 2.0). A separate note: reporting tasks are created at the controller level (Global menu → Controller Settings → Reporting Tasks), not inside a Process Group — **Parameter Contexts are not applicable to them** (**[verify]**), so substitute environment values through the task configuration or through EL/environment variables.
 
 ##### SiteToSiteStatusReportingTask
 
-**Что отправляет:** периодические «снимки» статуса компонентов: процессоров, Process Group (в т. ч. корневой), Remote Process Group, связей (Connection), входных/выходных портов. Каждая запись — один компонент в один момент времени.
+**What it sends:** periodic "snapshots" of the status of components: processors, Process Groups (including the root one), Remote Process Groups, connections, and input/output ports. Each record is one component at one moment in time.
 
-**Фильтры (чтобы не слать лишнее):**
+**Filters (so as not to send the unnecessary):**
 
-| Свойство | По умолчанию | Назначение |
+| Property | Default | Purpose |
 |---|---|---|
-| Component Type Filter Regex | `(Processor|ProcessGroup|RemoteProcessGroup|RootProcessGroup|Connection|InputPort|OutputPort)` | Какие типы компонентов отправлять. Например, `(Processor|Connection)` — только процессоры и очереди |
-| Component Name Filter Regex | `.*` | Фильтр по имени компонента |
+| Component Type Filter Regex | `(Processor|ProcessGroup|RemoteProcessGroup|RootProcessGroup|Connection|InputPort|OutputPort)` | Which component types to send. For example, `(Processor|Connection)` — only processors and queues |
+| Component Name Filter Regex | `.*` | A filter by component name |
 
-Важно: фильтры образуют пересечение (запись должна подходить под оба); при этом все Process Group обходятся рекурсивно независимо от того, подходит ли сама группа под фильтр ([справочник](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.27.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask/index.html)).
+Important: the filters form an intersection (a record must match both); at the same time, all Process Groups are traversed recursively regardless of whether the group itself matches the component filters ([the reference](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.27.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask/index.html)).
 
-**Поля записи (выдержка из схемы, [additionalDetails](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.27.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask/additionalDetails.html)):**
+**The record fields (an excerpt from the schema, [additionalDetails](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.27.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask/additionalDetails.html)):**
 
-| Группа | Поля |
+| Group | Fields |
 |---|---|
-| Идентификация | `statusId`, `timestamp`, `timestampMillis`, `actorHostname`, `componentType`, `componentName`, `componentId`, `parentId`, `parentName`, `parentPath`, `platform`, `application` |
-| Объёмы | `bytesRead`, `bytesWritten`, `inputCount`, `inputBytes`, `outputCount`, `outputBytes`, `bytesTransferred`, `flowFilesTransferred` |
-| Очереди/back pressure | `queuedCount`, `queuedBytes`, `maxQueuedCount`, `maxQueuedBytes`, `backPressureObjectThreshold`, `backPressureBytesThreshold`, `backPressureDataSizeThreshold`, `isBackPressureEnabled` |
-| Процессоры | `processorType`, `runStatus`, `averageLineageDurationMS`, `terminatedThreadCount`, `counters` (map) |
+| Identification | `statusId`, `timestamp`, `timestampMillis`, `actorHostname`, `componentType`, `componentName`, `componentId`, `parentId`, `parentName`, `parentPath`, `platform`, `application` |
+| Volumes | `bytesRead`, `bytesWritten`, `inputCount`, `inputBytes`, `outputCount`, `outputBytes`, `bytesTransferred`, `flowFilesTransferred` |
+| Queues/back pressure | `queuedCount`, `queuedBytes`, `maxQueuedCount`, `maxQueuedBytes`, `backPressureObjectThreshold`, `backPressureBytesThreshold`, `backPressureDataSizeThreshold`, `isBackPressureEnabled` |
+| Processors | `processorType`, `runStatus`, `averageLineageDurationMS`, `terminatedThreadCount`, `counters` (a map) |
 | Remote Process Group | `activeRemotePortCount`, `inactiveRemotePortCount`, `transmissionStatus`, `targetURI` |
 
-**Практическое применение:**
+**Practical use:**
 
-- *Долгосрочные тренды* пропускной способности каждого процессора и размера очередей (в UI хранится ограниченная история).
-- *Раннее обнаружение back pressure*: условие `isBackPressureEnabled = 'true'` (в схеме поле строкового типа).
-- *Обнаружение остановленных/невалидных компонентов*: `runStatus` отличен от ожидаемого (`Running`).
-- *Отчёты о загрузке по Process Group/командам*.
+- *Long-term trends* of the throughput of each processor and of queue sizes (the UI keeps only a limited history).
+- *Early detection of back pressure*: the condition `isBackPressureEnabled = 'true'` (in the schema the field is of a string type).
+- *Detecting stopped/invalid components*: `runStatus` differs from the expected one (`Running`).
+- *Load reports by Process Group/team*.
 
 ##### SiteToSiteBulletinReportingTask
 
-**Что отправляет:** bulletins (ERROR/WARN/INFO) со всех компонентов — как поток событий. Это даёт то, чего нет у метрик: **текст причины ошибки**.
+**What it sends:** bulletins (ERROR/WARN/INFO) from all components — as an event stream. This gives what metrics do not: **the text of the cause of the error**.
 
-Свойства — общие (см. таблицу выше): Destination URL, Input Port Name, SSL Context Service, Instance URL, Compress Events, Communications Timeout, Batch Size, Transport Protocol, Record Writer, Include Null Values, Platform.
+The properties are the common ones (see the table above): Destination URL, Input Port Name, SSL Context Service, Instance URL, Compress Events, Communications Timeout, Batch Size, Transport Protocol, Record Writer, Include Null Values, Platform.
 
-**Поля записи** (схема из [справочника задачи](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.7.1/org.apache.nifi.reporting.SiteToSiteBulletinReportingTask/additionalDetails.html)): `objectId`, `platform`, `bulletinId`, `bulletinCategory`, `bulletinGroupId`, `bulletinGroupName`, `bulletinGroupPath`, `bulletinLevel`, `bulletinMessage`, `bulletinNodeAddress`, `bulletinNodeId`, `bulletinSourceId`, `bulletinSourceName`, `bulletinSourceType`, `bulletinTimestamp` (формат `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`), `bulletinFlowFileUuid`.
+**The record fields** (the schema from the [task reference](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.7.1/org.apache.nifi.reporting.SiteToSiteBulletinReportingTask/additionalDetails.html)): `objectId`, `platform`, `bulletinId`, `bulletinCategory`, `bulletinGroupId`, `bulletinGroupName`, `bulletinGroupPath`, `bulletinLevel`, `bulletinMessage`, `bulletinNodeAddress`, `bulletinNodeId`, `bulletinSourceId`, `bulletinSourceName`, `bulletinSourceType`, `bulletinTimestamp` (the format `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`), `bulletinFlowFileUuid`.
 
-**Практическое применение:**
+**Practical use:**
 
-- Алерты на `ERROR` с текстом причины и именем компонента.
-- Корреляция сбоев по времени с инцидентами во внешних системах.
-- Аудит «шума»: какие компоненты чаще всего пишут ошибки.
+- Alerts on `ERROR` with the cause text and the component name.
+- Correlating failures in time with incidents in external systems.
+- Auditing the "noise": which components write errors most often.
 
-**Особенность (подтверждено справочником задачи).** Хранится не более **5 bulletins на компонент и 10 на уровне контроллера, не дольше 5 минут**; если задача запускается недостаточно часто, часть bulletins не будет отправлена. Поэтому **интервал запуска должен быть заметно меньше 5 минут** (в примере ниже — 30 секунд), а при большом числе ошибок на одном компоненте часть сообщений теряется в любом случае.
+**A peculiarity (confirmed by the task reference).** No more than **5 bulletins per component and 10 at the controller level are kept, for no longer than 5 minutes**; if the task is not run often enough, some bulletins will not be sent. Therefore **the run interval must be noticeably shorter than 5 minutes** (in the example below — 30 seconds), and when there are many errors on one component, some messages are lost in any case.
 
 ##### SiteToSiteMetricsReportingTask
 
-**Что отправляет:** метрики **узла NiFi и JVM** — те же, что собирал Ambari Reporting Task: загрузка CPU/load average, число ядер, число FlowFile и байт в очередях, объёмы за последние 5 минут, число активных потоков, суммарное время задач, метрики JVM (uptime, heap, GC, состояния потоков, файловые дескрипторы и пр.).
+**What it sends:** the metrics of the **NiFi node and the JVM** — the same ones the Ambari Reporting Task used to collect: CPU load/load average, the number of cores, the number of FlowFiles and bytes in queues, volumes over the last 5 minutes, the number of active threads, the total task time, JVM metrics (uptime, heap, GC, thread states, file descriptors, etc.).
 
-Дополнительные свойства:
+Additional properties:
 
-| Свойство | По умолчанию | Назначение |
+| Property | Default | Purpose |
 |---|---|---|
-| **Output Format** (`s2s-metrics-format`) | `Ambari Format` | `Ambari Format` — JSON в формате Ambari Metrics API с динамическими ключами (для обработки рекомендуется Jolt-преобразование, пример есть в документации); `Record Format` — записи через Record Writer с фиксированной схемой |
-| **Hostname** (`s2s-metrics-hostname`) | `${hostname(true)}` | Имя хоста, включаемое в метрики |
-| **Application ID** (`s2s-metrics-application-id`) | `nifi` | Идентификатор приложения в метриках |
+| **Output Format** (`s2s-metrics-format`) | `Ambari Format` | `Ambari Format` — JSON in the Ambari Metrics API format with dynamic keys (a Jolt transformation is recommended for processing; there is an example in the documentation); `Record Format` — records through a Record Writer with a fixed schema |
+| **Hostname** (`s2s-metrics-hostname`) | `${hostname(true)}` | The host name included in the metrics |
+| **Application ID** (`s2s-metrics-application-id`) | `nifi` | The application identifier in the metrics |
 
-В `Record Format` схема содержит поля вида: `appid`, `instanceid`, `hostname`, `timestamp`, `loadAverage1min`, `availableCores`, `FlowFilesReceivedLast5Minutes`, `BytesReceivedLast5Minutes`, `FlowFilesSentLast5Minutes`, `BytesSentLast5Minutes`, `FlowFilesQueued`, `BytesQueued`, `BytesReadLast5Minutes`, `BytesWrittenLast5Minutes`, `ActiveThreads`, `TotalTaskDurationSeconds`, `jvmuptime`, `jvmheap_used`, `jvmheap_usage`, `jvmnon_heap_usage`, `jvmthread_states*` и др. ([additionalDetails](https://nifi.incubator.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask/additionalDetails.html)).
+In the `Record Format` the schema contains fields such as: `appid`, `instanceid`, `hostname`, `timestamp`, `loadAverage1min`, `availableCores`, `FlowFilesReceivedLast5Minutes`, `BytesReceivedLast5Minutes`, `FlowFilesSentLast5Minutes`, `BytesSentLast5Minutes`, `FlowFilesQueued`, `BytesQueued`, `BytesReadLast5Minutes`, `BytesWrittenLast5Minutes`, `ActiveThreads`, `TotalTaskDurationSeconds`, `jvmuptime`, `jvmheap_used`, `jvmheap_usage`, `jvmnon_heap_usage`, `jvmthread_states*`, and others ([additionalDetails](https://nifi.incubator.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask/additionalDetails.html)).
 
-**Рекомендация:** для новых проектов используйте `Record Format` (проще обрабатывать `QueryRecord`-ом и отправлять в хранилища), а `Ambari Format` оставляйте только при необходимости совместимости.
+**Recommendation:** for new projects use the `Record Format` (it is easier to process with `QueryRecord` and to send to storage systems), and keep the `Ambari Format` only when compatibility is needed.
 
-##### Сравнение трёх задач
+##### A comparison of the three tasks
 
-| Аспект | Status | Bulletin | Metrics |
+| Aspect | Status | Bulletin | Metrics |
 |---|---|---|---|
-| Единица записи | Один компонент (процессор/очередь/группа/порт) | Одно сообщение bulletin | Один набор метрик узла |
-| Уровень детализации | По компонентам flow | По событиям ошибок | По узлу и JVM |
-| Типовой вопрос | Где растёт очередь? Что остановлено? | Что сломалось и почему? | Хватает ли heap/CPU? Нет ли утечки потоков? |
-| Объём данных | Большой (пропорционален числу компонентов × частота) | Зависит от числа ошибок | Небольшой |
-| Алерт-кейс | Back pressure, невалидные/остановленные компоненты | Рост ERROR | Heap > порога, GC, потоки |
-| Дополнительно | Фильтры по типу/имени | — | Формат Ambari/Record |
+| The unit of a record | One component (a processor/queue/group/port) | One bulletin message | One set of node metrics |
+| Level of detail | By flow components | By error events | By node and JVM |
+| A typical question | Where is a queue growing? What is stopped? | What broke and why? | Is there enough heap/CPU? Is there a thread leak? |
+| Data volume | Large (proportional to the number of components × the frequency) | Depends on the number of errors | Small |
+| An alert case | Back pressure, invalid/stopped components | Growth of ERROR | Heap > a threshold, GC, threads |
+| Additionally | Filters by type/name | — | The Ambari/Record format |
 
-(В бандле есть также `SiteToSiteProvenanceReportingTask` — отправка событий provenance; в программе курса не рассматривается.)
+(The bundle also contains `SiteToSiteProvenanceReportingTask` — sending provenance events; it is not covered in the course agenda.)
 
-##### Настройка получателя
+##### Configuring the receiver
 
-1. **Input Port в корневой Process Group** получателя (S2S принимает только порты корневой группы): имя совпадает с *Input Port Name* в задаче (например, `monitoring-in`). Порт нужно **запустить**.
-2. **Конфигурация S2S в `nifi.properties`** получателя (имена подтверждены примером реальной конфигурации 2.x и документацией портов): `nifi.remote.input.host`, `nifi.remote.input.secure=true`, `nifi.remote.input.socket.port` (для RAW), `nifi.remote.input.http.enabled=true` (для HTTP). Порт RAW должен быть доступен по сети.
-3. **Права доступа (в защищённом режиме):** идентичности отправляющих узлов (DN сертификатов) должны иметь глобальную политику **retrieve site-to-site details** и политику **receive data via site-to-site** на Input Port. Без них задача получит отказ в авторизации (bulletin на задаче).
-4. **TLS:** отправитель использует *SSL Context Service* с сертификатом, которому доверяет получатель; получатель — с сертификатом, которому доверяет отправитель. Для кластера-получателя адреса узлов должны соответствовать SAN сертификатов (Block 1.4).
-5. В 2.x: `StandardRestrictedSSLContextService` в таких задачах задаёт ограничения протоколов; примечание — с 2.7.0 он **[dep]** в пользу базового `SSLContextService` (см. [Migration Guidance 2.7.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)); проверьте, какой тип предлагает UI вашей версии.
+1. **An Input Port in the root Process Group** of the receiver (S2S accepts only ports of the root group): the name matches the *Input Port Name* in the task (for example, `monitoring-in`). The port must be **started**.
+2. **The S2S configuration in the receiver's `nifi.properties`** (the names are confirmed by an example of a real 2.x configuration and the port documentation): `nifi.remote.input.host`, `nifi.remote.input.secure=true`, `nifi.remote.input.socket.port` (for RAW), `nifi.remote.input.http.enabled=true` (for HTTP). The RAW port must be reachable over the network.
+3. **Access permissions (in secure mode):** the identities of the sending nodes (the certificate DNs) must have the global policy **retrieve site-to-site details** and the policy **receive data via site-to-site** on the Input Port. Without them the task will get an authorization denial (a bulletin on the task).
+4. **TLS:** the sender uses an *SSL Context Service* with a certificate that the receiver trusts; the receiver — with a certificate that the sender trusts. For a receiving cluster, the node addresses must match the certificates' SANs (Block 1.4).
+5. In 2.x: `StandardRestrictedSSLContextService` in such tasks sets protocol restrictions; a note — since 2.7.0 it is **[dep]** in favor of the base `SSLContextService` (see [Migration Guidance 2.7.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)); check which type the UI of your version offers.
 
-##### Пошаговая настройка (на примере Status + Bulletin → Splunk)
+##### Step-by-step configuration (using Status + Bulletin → Splunk as an example)
 
-**1) Получатель (monitoring NiFi).**
+**1) The receiver (the monitoring NiFi).**
 
 ```text
 Input Port "monitoring-in"  (root group, Running)
    │
    ▼
-UpdateAttribute:  schema/тип потока  (опционально; можно различать по полям записи)
+UpdateAttribute:  schema/the flow type  (optional; they can be distinguished by record fields)
    │
    ▼
-PartitionRecord ── по полю componentType/bulletinLevel (опционально)
+PartitionRecord ── by the field componentType/bulletinLevel (optional)
    │
-   ├─► QueryRecord "alerts"  : фильтр критичных записей ─► alert-цепочка
-   └─► MergeRecord (NDJSON) ─► PutSplunk / InvokeHTTP→HEC  (долгосрочное хранение/тренды)
+   ├─► QueryRecord "alerts"  : a filter for critical records ─► the alert chain
+   └─► MergeRecord (NDJSON) ─► PutSplunk / InvokeHTTP→HEC  (long-term storage/trends)
 ```
 
-**2) Отправитель (боевой NiFi): Global menu → Controller Settings → Reporting Tasks → «+».**
+**2) The sender (the production NiFi): Global menu → Controller Settings → Reporting Tasks → "+".**
 
-| Задача | Ключевые настройки |
+| Task | Key settings |
 |---|---|
-| `SiteToSiteStatusReportingTask` | Destination URL `https://monitor.example.com:8443/nifi`; Input Port Name `monitoring-in`; SSL Context Service — сервис с клиентским сертификатом; Instance URL `https://${hostname(true)}:8443/nifi`; Record Writer `JsonRecordSetWriter` (NDJSON, без Pretty Print); Platform `prod-eu`; Component Type Filter Regex `(Processor|Connection)`; Run Schedule `1 min` |
-| `SiteToSiteBulletinReportingTask` | Те же Destination/Input Port/SSL; Record Writer `JsonRecordSetWriter`; Platform `prod-eu`; Run Schedule `30 sec` |
+| `SiteToSiteStatusReportingTask` | Destination URL `https://monitor.example.com:8443/nifi`; Input Port Name `monitoring-in`; SSL Context Service — a service with a client certificate; Instance URL `https://${hostname(true)}:8443/nifi`; Record Writer `JsonRecordSetWriter` (NDJSON, without Pretty Print); Platform `prod-eu`; Component Type Filter Regex `(Processor|Connection)`; Run Schedule `1 min` |
+| `SiteToSiteBulletinReportingTask` | The same Destination/Input Port/SSL; Record Writer `JsonRecordSetWriter`; Platform `prod-eu`; Run Schedule `30 sec` |
 | `SiteToSiteMetricsReportingTask` | Output Format `Record Format`; Record Writer `JsonRecordSetWriter`; Hostname `${hostname(true)}`; Application ID `nifi-prod`; Run Schedule `1 min` |
 
-Запустите задачи (кнопка *Start*). Для всех трёх можно использовать один Input Port и различать типы по полям (`componentType` / `bulletinLevel` / `appid`). Если приёмник один, а потоков много, заведите **разные порты** (`monitoring-status-in`, `monitoring-bulletin-in`, `monitoring-metrics-in`) — проще настраивать Reader'ы и права.
+Start the tasks (the *Start* button). For all three you can use one Input Port and distinguish the types by fields (`componentType` / `bulletinLevel` / `appid`). If there is one receiver but many flows, create **different ports** (`monitoring-status-in`, `monitoring-bulletin-in`, `monitoring-metrics-in`) — it is easier to configure the Readers and permissions.
 
-**3) Примеры SQL для `QueryRecord` на приёмнике.**
+**3) SQL examples for `QueryRecord` at the receiver.**
 
-Bulletins уровня ERROR/WARN (динамическое свойство `alerts`):
+ERROR/WARN-level bulletins (the dynamic property `alerts`):
 
 ```sql
 SELECT bulletinNodeAddress, bulletinGroupName, bulletinSourceName, bulletinLevel, bulletinMessage, bulletinTimestamp
@@ -680,7 +678,7 @@ FROM FLOWFILE
 WHERE bulletinLevel IN ('ERROR', 'WARN')
 ```
 
-Очереди с включённым back pressure (из Status):
+Queues with back pressure on (from Status):
 
 ```sql
 SELECT actorHostname, componentName, parentName, backPressureObjectThreshold, isBackPressureEnabled
@@ -688,7 +686,7 @@ FROM FLOWFILE
 WHERE componentType = 'Connection' AND isBackPressureEnabled = 'true'
 ```
 
-Остановленные/невалидные процессоры (значения `runStatus` проверьте на вашей версии):
+Stopped/invalid processors (check the `runStatus` values on your version):
 
 ```sql
 SELECT actorHostname, componentName, parentName, runStatus
@@ -696,7 +694,7 @@ FROM FLOWFILE
 WHERE componentType = 'Processor' AND runStatus <> 'Running'
 ```
 
-Heap выше порога (Metrics, Record Format):
+Heap above a threshold (Metrics, Record Format):
 
 ```sql
 SELECT hostname, timestamp, jvmheap_usage, FlowFilesQueued, ActiveThreads
@@ -704,604 +702,604 @@ FROM FLOWFILE
 WHERE jvmheap_usage > 0.85
 ```
 
-(Для SQL нужен Reader со схемой, соответствующей входным данным. Для записей S2S проще всего использовать `JsonTreeReader` с **Schema Access Strategy = Infer Schema** на лабораторном стенде и **явную схему** в production — по Block 1.3.)
+(SQL needs a Reader with a schema matching the input data. For S2S records, the simplest is to use `JsonTreeReader` with **Schema Access Strategy = Infer Schema** on the lab stand and an **explicit schema** in production — per Block 1.3.)
 
-**4) Подавление «шторма алертов».** Один и тот же сбой будет приходить в каждой пачке. Фильтруйте повторы: `PartitionRecord` по ключу (например, `bulletinSourceId`) → `DetectDuplicate` (Cache Entry Identifier = `${bulletinSourceId}`; *Age Off Duration* `15 min`) → только `non-duplicate` ведёт в уведомление. Для кластерного приёмника используйте распределённый cache-сервис (в 2.x сервисы называются `MapCacheServer`/`MapCacheClientService`, см. Block 2.4).
+**4) Suppressing an "alert storm".** The same failure will arrive in every batch. Filter the repeats: `PartitionRecord` by a key (for example, `bulletinSourceId`) → `DetectDuplicate` (Cache Entry Identifier = `${bulletinSourceId}`; *Age Off Duration* `15 min`) → only `non-duplicate` leads to a notification. For a cluster receiver, use a distributed cache service (in 2.x the services are called `MapCacheServer`/`MapCacheClientService`, see Block 2.4).
 
-**5) Доставка алертов.** `PutEmail`, `InvokeHTTP` в Slack/Teams/PagerDuty/Opsgenie, `PublishKafka` в топик `alerts`, `PutSplunk`/HEC. Всегда добавляйте контекст: `platform`, `actorHostname`/`bulletinNodeAddress`, имя группы, ссылка на компонент (`Instance URL` + `?processGroupId=...&componentIds=...`).
+**5) Delivering alerts.** `PutEmail`, `InvokeHTTP` to Slack/Teams/PagerDuty/Opsgenie, `PublishKafka` to an `alerts` topic, `PutSplunk`/HEC. Always add context: `platform`, `actorHostname`/`bulletinNodeAddress`, the group name, a link to the component (`Instance URL` + `?processGroupId=...&componentIds=...`).
 
-##### Производительность и ёмкость
+##### Performance and capacity
 
-- **Частота.** Status — раз в 1–5 минут (а не в секунды); Bulletin — 15–60 секунд; Metrics — 1 минута. Чем чаще, тем больше нагрузка на отправителя, сеть и приёмник.
-- **Объём Status** пропорционален числу компонентов: 1000 компонентов × 1 раз/мин × 1 КБ ≈ 1 МБ/мин на узел — для кластера умножьте на число узлов. Ограничивайте `Component Type Filter Regex` и `Component Name Filter Regex`.
-- **Сжатие** (`Compress Events=true`) снижает сеть, но добавляет CPU.
-- **Batch Size** влияет на размер пачек и число обращений.
-- **Приёмник** должен справляться с пиками (после простоя связи отправитель может послать накопленное).
+- **Frequency.** Status — once every 1–5 minutes (not seconds); Bulletin — 15–60 seconds; Metrics — 1 minute. The more often, the greater the load on the sender, the network, and the receiver.
+- **The Status volume** is proportional to the number of components: 1,000 components × 1 time/min × 1 KB ≈ 1 MB/min per node — for a cluster, multiply by the number of nodes. Limit `Component Type Filter Regex` and `Component Name Filter Regex`.
+- **Compression** (`Compress Events=true`) reduces network traffic but adds CPU.
+- **Batch Size** affects the size of batches and the number of calls.
+- **The receiver** must cope with peaks (after a connection outage the sender may send what has accumulated).
 
-##### Надёжность и подводные камни
+##### Reliability and pitfalls
 
-| Проблема | Причина | Решение |
+| Problem | Cause | Solution |
 |---|---|---|
-| Данные мониторинга не приходят | Порт не запущен/имя не совпадает; нет политик; сеть/TLS | Проверить Input Port, policies *retrieve site-to-site details* / *receive data via site-to-site*, bulletins на самой Reporting Task |
-| Ошибка TLS/handshake | Недоверенный сертификат; SAN не соответствует хосту | Truststore/SAN; для кластера-получателя — DNS-имена (с 2.12.0) |
-| Ссылки в событиях ведут на `:8080` | Не изменён *Instance URL* | Указать актуальный HTTPS URL |
-| Пропуски в данных | Нет очереди на стороне reporting task: если получатель недоступен, данные за период могут быть потеряны (**[проверить]** поведение вашей версии) | Не использовать S2S-мониторинг как единственный источник алерта; дублировать критичные алерты через Prometheus/внешний health-check |
-| **Петля обратной связи** | Мониторинг-flow сам попадает в Status (генерирует записи о собственных компонентах) на том же NiFi | Отдельный monitoring-NiFi; либо исключить группу фильтром по имени |
-| Всплеск объёма | Слишком частый запуск/слишком много компонентов | Расписание, фильтры |
-| Дубли с нескольких узлов | Reporting Tasks работают на каждом узле, каждый отправляет свой статус | Различайте по `actorHostname`/`bulletinNodeAddress`; для задач, которым нужен один отчёт на кластер, проверьте возможность ограничить выполнение Primary Node (**[проверить]**) |
-| Алерт-шторм | Повторяющиеся bulletins | Дедупликация (п. 4) |
-| Утечка секретов в сообщениях | Bulletin message может содержать фрагменты данных/URL с токенами | Маскирование (`UpdateRecord`/`ReplaceText`) до отправки во внешние системы |
+| Monitoring data does not arrive | The port is not started/the name does not match; no policies; network/TLS | Check the Input Port, the policies *retrieve site-to-site details* / *receive data via site-to-site*, the bulletins on the Reporting Task itself |
+| A TLS/handshake error | An untrusted certificate; the SAN does not match the host | The truststore/SAN; for a receiving cluster — DNS names (since 2.12.0) |
+| Links in events lead to `:8080` | *Instance URL* was not changed | Specify the actual HTTPS URL |
+| Gaps in the data | There is no queue on the reporting task side: if the receiver is unavailable, the data for the period may be lost (**[verify]** the behavior of your version) | Do not use S2S monitoring as the sole source of an alert; duplicate critical alerts through Prometheus/an external health check |
+| **A feedback loop** | The monitoring flow itself lands in Status (it generates records about its own components) on the same NiFi | A separate monitoring NiFi; or exclude the group with a name filter |
+| A burst of volume | Running too often/too many components | The schedule, filters |
+| Duplicates from several nodes | Reporting Tasks run on every node, each sends its own status | Distinguish by `actorHostname`/`bulletinNodeAddress`; for tasks that need one report per cluster, check whether execution can be restricted to the Primary Node (**[verify]**) |
+| An alert storm | Repeating bulletins | Deduplication (item 4) |
+| Leakage of secrets in messages | A bulletin message may contain fragments of data/URLs with tokens | Masking (`UpdateRecord`/`ReplaceText`) before sending to external systems |
 
-##### Альтернативы и сочетание
+##### Alternatives and combinations
 
-| Инструмент | Когда лучше |
+| Tool | When it is better |
 |---|---|
-| Prometheus REST endpoint / `PrometheusReportingTask` | Стандартный стек метрик (Prometheus + Grafana + Alertmanager); минимальная нагрузка; метрики узла/кластера/JVM/процессоров |
-| Site-to-Site Reporting Tasks | Нужна обработка данных мониторинга **внутри NiFi**, доставка в Splunk/Kafka/БД, bulletins с текстом причин |
-| REST API (`/nifi-api/flow/...`) | Одноразовые проверки, скрипты оркестрации |
-| Логи (`nifi-app.log`) в SIEM | Детали исключений, форензика |
+| The Prometheus REST endpoint / `PrometheusReportingTask` | The standard metrics stack (Prometheus + Grafana + Alertmanager); minimal load; node/cluster/JVM/processor metrics |
+| Site-to-Site Reporting Tasks | You need to process monitoring data **inside NiFi**, deliver to Splunk/Kafka/a database, bulletins with the text of the causes |
+| The REST API (`/nifi-api/flow/...`) | One-off checks, orchestration scripts |
+| Logs (`nifi-app.log`) in a SIEM | Exception details, forensics |
 
-Практический совет: **сочетайте** — Prometheus для метрик и алертов по ресурсам, Site-to-Site Bulletin Reporting для текстов ошибок и маршрутизации уведомлений, Status — для долгосрочной статистики по компонентам.
+A practical tip: **combine them** — Prometheus for metrics and resource alerts, Site-to-Site Bulletin Reporting for error texts and notification routing, Status — for long-term statistics by component.
 
-##### Mini-lab: мониторинг NiFi средствами NiFi
+##### Mini-lab: monitoring NiFi with NiFi
 
-**Цель.** Отправить статус и bulletins в Input Port, построить два алерта и сохранить записи в файл/Splunk-эмулятор.
+**Goal.** Send status and bulletins to an Input Port, build two alerts, and save the records to a file/the Splunk emulator.
 
-**Шаги.**
+**Steps.**
 
-1. На том же NiFi создайте Input Port `monitoring-in` (корневая группа) и flow: `monitoring-in ► QueryRecord (alerts) ► LogAttribute`, параллельно `monitoring-in ► MergeRecord (NDJSON) ► PutFile /opt/nifi/data/monitoring` (на хосте стенда — `nifi/data/monitoring`).
-2. Создайте `JsonTreeReader` (Infer Schema — только для лаборатории) и `JsonRecordSetWriter` (One Line Per Object).
-3. Создайте `SiteToSiteBulletinReportingTask` и `SiteToSiteStatusReportingTask` с Destination URL на этот же экземпляр; выдайте политики (*retrieve site-to-site details*, *receive data via site-to-site*) идентичности NiFi.
-4. Намеренно вызовите ошибку: поместите в `InvokeHTTP` неверный URL — появится bulletin ERROR; создайте переполнение очереди — back pressure.
-5. Проверьте: `QueryRecord` пропускает bulletin ERROR и записи с `isBackPressureEnabled = 'true'`; в `nifi/data/monitoring` накапливается NDJSON.
+1. On the same NiFi, create an Input Port `monitoring-in` (the root group) and a flow: `monitoring-in ► QueryRecord (alerts) ► LogAttribute`, and in parallel `monitoring-in ► MergeRecord (NDJSON) ► PutFile /opt/nifi/data/monitoring` (on the stand host — `nifi/data/monitoring`).
+2. Create a `JsonTreeReader` (Infer Schema — for the lab only) and a `JsonRecordSetWriter` (One Line Per Object).
+3. Create a `SiteToSiteBulletinReportingTask` and a `SiteToSiteStatusReportingTask` with the Destination URL pointing to this same instance; grant the policies (*retrieve site-to-site details*, *receive data via site-to-site*) to the NiFi identity.
+4. Deliberately cause an error: put a wrong URL into `InvokeHTTP` — an ERROR bulletin will appear; create a queue overflow — back pressure.
+5. Check: `QueryRecord` passes the ERROR bulletin and the records with `isBackPressureEnabled = 'true'`; NDJSON accumulates in `nifi/data/monitoring`.
 
-> На стенде (Приложение A) Destination URL — `https://nifi:8443/nifi` (single) или `https://nifi1:8443/nifi` (cluster); узлы работают по TLS с общим CA (`nifi/certs`). Идентичность узла для политик S2S — DN сертификата (`CN=nifi, OU=NIFI` / `CN=nifiN, OU=NIFI`). Мини-лабораторная на стенде не проверялась (**[проверить]**).
-6. Исключите петлю: ограничьте фильтры Status так, чтобы flow `monitoring` не попадал в отчёты (по имени), и сравните объём до/после.
+> On the stand (Appendix A) the Destination URL is `https://nifi:8443/nifi` (single) or `https://nifi1:8443/nifi` (cluster); the nodes work over TLS with a common CA (`nifi/certs`). The node identity for the S2S policies is the certificate DN (`CN=nifi, OU=NIFI` / `CN=nifiN, OU=NIFI`). The mini-lab was not tested on the stand (**[verify]**).
+6. Exclude the loop: restrict the Status filters so that the `monitoring` flow does not appear in the reports (by name), and compare the volume before/after.
 
-**Проверка.** Алерты формируются в течение 1–2 интервалов запуска; нет роста очереди на `monitoring-in`; при остановке получателя отправитель логирует ошибку (bulletin на задаче), после возобновления потоки восстанавливаются.
+**Verification.** Alerts are formed within 1–2 run intervals; there is no growth of the queue on `monitoring-in`; when the receiver is stopped, the sender logs an error (a bulletin on the task), and after it resumes the flows recover.
 
-**Типичные ошибки.** Забыли запустить Input Port; не выданы политики; `Instance URL` оставлен по умолчанию; Reader не соответствует схеме записей Status/Bulletin (пустой результат `QueryRecord`).
+**Common mistakes.** The Input Port was not started; the policies were not granted; the `Instance URL` was left at its default; the Reader does not match the schema of the Status/Bulletin records (an empty `QueryRecord` result).
 
 
-### 3.2.2 Мониторинг и автономное восстановление: уменьшение ручного контроля
+### 3.2.2 Monitoring and autonomous recovery: reducing manual supervision
 
-1. **Alerting вместо наблюдения за холстом.** Prometheus/Alertmanager (или аналог) по метрикам выше; `MonitorActivity` (alert о «тишине» источника); bulletins → Site-to-Site → отдельный flow, рассылающий уведомления (`PutEmail`, `InvokeHTTP` в чат/PagerDuty).
-2. **Самовосстановление:** retry на уровне фреймворка/`RetryFlowFile`; автоматический повторный запуск JVM; DLQ+replay; kubernetes liveness/readiness.
-3. **Ограничение ущерба:** back pressure на всех связях; лимиты по месту на диске (archive Content Repository ограничивается по возрасту и проценту использования); `FlowFile Expiration` там, где потеря допустима.
-4. **Runbook-и.** Для типичных сигналов — формализованные действия (что смотреть, какие решения принимать).
-5. **Flow Analysis Rules** (API введён в 2.0): предотвращают плохие практики на стадии проектирования (например, запрет автотерминации `failure`), уменьшая число инцидентов эксплуатации (набор встроенных правил — в разделе 3.2.6).
+1. **Alerting instead of watching the canvas.** Prometheus/Alertmanager (or an equivalent) on the metrics above; `MonitorActivity` (an alert about a source's "silence"); bulletins → Site-to-Site → a separate flow that sends out notifications (`PutEmail`, `InvokeHTTP` to chat/PagerDuty).
+2. **Self-recovery:** retry at the framework level/`RetryFlowFile`; an automatic JVM restart; DLQ+replay; Kubernetes liveness/readiness.
+3. **Limiting damage:** back pressure on all connections; disk space limits (the Content Repository archive is limited by age and usage percentage); `FlowFile Expiration` where loss is acceptable.
+4. **Runbooks.** For typical signals — formalized actions (what to look at, which decisions to make).
+5. **Flow Analysis Rules** (the API was introduced in 2.0): prevent bad practices at the design stage (for example, a ban on auto-terminating `failure`), reducing the number of operational incidents (the set of built-in rules is in section 3.2.6).
 
-### 3.2.3 Типичные проблемы и расследование первопричины
+### 3.2.3 Common problems and root cause investigation
 
-#### Память
+#### Memory
 
-| Симптом | Вероятные причины | Диагностика | Действия |
+| Symptom | Probable causes | Diagnostics | Actions |
 |---|---|---|---|
-| `OutOfMemoryError: Java heap space` | Миллионы мелких FlowFile (метаданные в heap); крупные атрибуты (контент в атрибутах); `MergeContent`/`MergeRecord` с огромными bin; Reader/Writer, накапливающий данные; `EvaluateJsonPath`/`ReplaceText` на огромном FlowFile целиком; утечки в кастомных компонентах | System Diagnostics; `bin/nifi.sh dump`/`diagnostics`; heap dump (`-XX:+HeapDumpOnOutOfMemoryError`); Summary по числу FlowFile | Record-подход; меньшие bin/пачки; увеличить heap с проверкой GC; ограничить размер атрибутов; swap/пороги очередей |
-| Долгие паузы GC | Слишком большой/малый heap, G1 при больших live-set | GC-логи; графики GC в Status History | Настроить размеры; уменьшить число FlowFile; поэкспериментировать с параметрами G1 |
-| `unable to create native thread` | Слишком много потоков/лимиты ОС | `ulimit -u`, число потоков | Уменьшить concurrent tasks; увеличить лимиты |
+| `OutOfMemoryError: Java heap space` | Millions of small FlowFiles (metadata in the heap); large attributes (content in attributes); `MergeContent`/`MergeRecord` with huge bins; a Reader/Writer that accumulates data; `EvaluateJsonPath`/`ReplaceText` on an entire huge FlowFile; leaks in custom components | System Diagnostics; `bin/nifi.sh dump`/`diagnostics`; a heap dump (`-XX:+HeapDumpOnOutOfMemoryError`); Summary by the number of FlowFiles | The Record approach; smaller bins/batches; increase the heap while checking GC; limit the size of attributes; swap/queue thresholds |
+| Long GC pauses | A heap that is too large/too small, G1 with large live sets | GC logs; GC graphs in Status History | Tune the sizes; reduce the number of FlowFiles; experiment with G1 parameters |
+| `unable to create native thread` | Too many threads/OS limits | `ulimit -u`, the number of threads | Reduce concurrent tasks; increase the limits |
 
-#### Очереди
+#### Queues
 
-| Симптом | Причина | Решение |
+| Symptom | Cause | Solution |
 |---|---|---|
-| Очередь растёт перед процессором | Недостаточно concurrent tasks/ресурсов; медленный приёмник | Масштабировать (потоки, узлы); искать узкое место по Tasks/Time; ограничить источник |
-| Процессор «не запускается» при свободных потоках | Заполнена одна из исходящих связей; процессор Primary Node Only на неактивном узле; ресурсы; invalid | Проверить связи (красный индикатор), validation errors |
-| Все FlowFile «застряли» | Оштрафованы (penalty) | Проверить индикатор penalized; подождать/исправить причину |
-| Рост swap-файлов | Очереди > `nifi.queue.swap.threshold` | Усилить приёмник/агрегацию |
-| Данные «пропали» | `FlowFile Expiration`; auto-terminate; `DROP` в provenance | Provenance по `uuid` |
+| A queue grows before a processor | Not enough concurrent tasks/resources; a slow destination | Scale (threads, nodes); look for the bottleneck by Tasks/Time; limit the source |
+| A processor "does not start" with free threads | One of the outgoing connections is full; a Primary Node Only processor on an inactive node; resources; invalid | Check the connections (the red indicator), validation errors |
+| All FlowFiles are "stuck" | They are penalized | Check the penalized indicator; wait/fix the cause |
+| Growth of swap files | Queues > `nifi.queue.swap.threshold` | Strengthen the destination/aggregation |
+| Data has "disappeared" | `FlowFile Expiration`; auto-terminate; `DROP` in provenance | Provenance by `uuid` |
 
-#### Ошибки процессоров
+#### Processor errors
 
-1. Откройте bulletin (иконка на процессоре); посмотрите stack trace (с 2.7.0 есть в UI).
-2. Найдите в `nifi-app.log` по времени/`uuid`/имени процессора; обратите внимание на `Caused by`.
-3. Проверьте провенанс FlowFile, у которого произошла ошибка: какие атрибуты/контент были на входе.
-4. Воспроизведите на копии: сохраните проблемный FlowFile (через provenance → Download), прогоните в тестовой цепочке (или используйте `Run Once`).
-5. Классифицируйте: данные / конфигурация / внешняя система / ресурсы NiFi.
+1. Open the bulletin (the icon on the processor); look at the stack trace (available in the UI since 2.7.0).
+2. Find it in `nifi-app.log` by time/`uuid`/processor name; pay attention to `Caused by`.
+3. Check the provenance of the FlowFile on which the error occurred: which attributes/content were at the input.
+4. Reproduce on a copy: save the problematic FlowFile (through provenance → Download), run it through a test chain (or use `Run Once`).
+5. Classify: data / configuration / an external system / NiFi resources.
 
-**Поток расследования (RCA).**
+**The investigation flow (RCA).**
 
 ```text
-Симптом (алерт) → Где? (Summary: какой процессор/очередь) → Что? (bulletin, log) →
-Почему? (provenance + атрибуты, метрики ресурсов, внешняя система) → Исправление →
-Предотвращение (алерт, правило анализа, тест, runbook)
+Symptom (an alert) → Where? (Summary: which processor/queue) → What? (the bulletin, the log) →
+Why? (provenance + attributes, resource metrics, the external system) → The fix →
+Prevention (an alert, an analysis rule, a test, a runbook)
 ```
 
-### 3.2.4 Стратегии восстановления: restart и failover
+### 3.2.4 Recovery strategies: restart and failover
 
-- **Restart процессора/группы:** Stop → проверить, что нет активных потоков → Start; для Controller Service — Disable → Enable.
-- **Restart узла:** корректная остановка; после старта проверка валидности и очередей. Данные в репозиториях восстановятся из WAL.
-- **Failover.** Кластер продолжает работать при отказе узла (при сохранении кворума ZooKeeper). Перевыбираются Coordinator и Primary Node; процессоры *Primary Node Only* стартуют на новом primary (state — в cluster state). Данные, находившиеся на упавшем узле, ждут его возврата; для быстрого failover «с данными» — хранилище, которое можно подключить к другому узлу (сетевой диск/PV в Kubernetes) и **идентичность узла**, либо допускается повторная загрузка из источников (Kafka offset не сдвинулся, т. к. commit произошёл после обработки).
-- **Disconnected node.** С 1.16.0 узел может вернуться в кластер, синхронизировав flow (с резервной копией своего); кластер допускает изменения flow при отключённых узлах.
-- **Восстановление из backup** — Block 3.1.5.
+- **Restarting a processor/group:** Stop → check that there are no active threads → Start; for a Controller Service — Disable → Enable.
+- **Restarting a node:** a clean stop; after the start, check validity and the queues. The data in the repositories will be restored from the WAL.
+- **Failover.** The cluster keeps working when a node fails (while the ZooKeeper quorum is preserved). The Coordinator and the Primary Node are re-elected; the *Primary Node Only* processors start on the new primary (the state is in the cluster state). The data that was on the failed node waits for its return; for a fast failover "with the data" — storage that can be attached to another node (a network disk/a PV in Kubernetes) and **the node identity**, or a reload from the sources is acceptable (the Kafka offset did not move because the commit happened after processing).
+- **A disconnected node.** Since 1.16.0 a node can return to the cluster, synchronizing the flow (with a backup of its own); the cluster permits flow changes while nodes are disconnected.
+- **Restoring from a backup** — Block 3.1.5.
 
-### 3.2.5 Flow rollback: возврат flow к предыдущей версии
+### 3.2.5 Flow rollback: returning a flow to a previous version
 
-1. **Через Registry (Git).** Process Group → **Version → Change version** → выбрать предыдущую; NiFi остановит затронутые компоненты и применит. Для проверки — **Show local changes** до/после.
-2. **Откат локальных правок** — **Revert local changes**.
-3. **Архив конфигурации.** `conf/archive/flow.json.gz.<timestamp>` — восстановление всего flow на узле/кластере при остановленном NiFi (учитывайте параметры/sensitive key).
-4. **Что откат не вернёт:** данные в очередях (останутся и будут обработаны уже откаченным flow), state компонентов (если схема state изменилась), внешние побочные эффекты.
-5. **Правило безопасности:** перед откатом остановите источники и дайте очередям опустеть, если новая и старая версия по-разному обрабатывают «промежуточные» FlowFile.
+1. **Through the Registry (Git).** Process Group → **Version → Change version** → choose the previous one; NiFi will stop the affected components and apply it. To verify — **Show local changes** before/after.
+2. **Rolling back local edits** — **Revert local changes**.
+3. **The configuration archive.** `conf/archive/flow.json.gz.<timestamp>` — restoring the whole flow on a node/the cluster while NiFi is stopped (take the parameters/the sensitive key into account).
+4. **What a rollback will not return:** the data in the queues (it will remain and will be processed by the already rolled-back flow), the state of components (if the state schema has changed), external side effects.
+5. **A safety rule:** before a rollback, stop the sources and let the queues empty if the new and the old versions process "intermediate" FlowFiles differently.
 
-### 3.2.6 NiFi Settings: назначение вкладок General, Management Controller Services, Reporting Tasks, Flow Analysis Rules, Registry Clients, Parameter Providers
+### 3.2.6 NiFi Settings: the purpose of the General, Management Controller Services, Reporting Tasks, Flow Analysis Rules, Registry Clients, and Parameter Providers tabs
 
-Раздел **NiFi Settings** (в 1.x — *Controller Settings*; меню в правом верхнем углу → *Settings*) содержит настройки **уровня всего экземпляра/кластера**, а не конкретной Process Group. Здесь живут компоненты, которые не принадлежат ни одному flow, но обслуживают весь NiFi: мониторинг, контроль качества дизайна, версионирование и источники параметров. Изменения реплицируются на все узлы кластера, а сами компоненты сохраняются в конфигурации flow (**[проверить]** для вашей версии). Для доступа нужны глобальные права (политика *access the controller*; Block 3.3).
+The **NiFi Settings** section (in 1.x — *Controller Settings*; the menu in the upper right corner → *Settings*) contains settings **at the level of the whole instance/cluster**, not of a specific Process Group. This is where the components live that do not belong to any one flow but serve the whole NiFi: monitoring, design quality control, versioning, and parameter sources. Changes are replicated to all cluster nodes, and the components themselves are saved in the flow configuration (**[verify]** for your version). Access requires global permissions (the *access the controller* policy; Block 3.3).
 
 ```text
 NiFi Settings
-├── General                          ← глобальные параметры работы (пулы потоков и т. п.)
-├── Management Controller Services   ← общие сервисы для компонентов этого раздела
-├── Reporting Tasks                  ← периодические задачи: метрики, мониторинг, отправка статусов
-├── Flow Analysis Rules              ← правила проверки качества дизайна flow
-├── Registry Clients                 ← подключения к хранилищам версий flow (Git, NiFi Registry)
-└── Parameter Providers              ← загрузка параметров из внешних источников (секреты, конфигурация)
+├── General                          ← global operating parameters (thread pools, etc.)
+├── Management Controller Services   ← shared services for the components of this section
+├── Reporting Tasks                  ← periodic tasks: metrics, monitoring, sending statuses
+├── Flow Analysis Rules              ← rules for checking the quality of flow design
+├── Registry Clients                 ← connections to flow version stores (Git, NiFi Registry)
+└── Parameter Providers              ← loading parameters from external sources (secrets, configuration)
 ```
 
 #### General
 
-**Назначение.** Глобальные настройки поведения узла.
+**Purpose.** Global settings of the node's behavior.
 
-| Параметр | Смысл |
+| Parameter | Meaning |
 |---|---|
-| **Maximum Timer Driven Thread Count** | Размер общего пула потоков, из которого выполняются все процессоры и службы узла (Block 3.4). Это самый важный параметр раздела: слишком малое значение — простаивающие ядра и растущие очереди, слишком большое — конкуренция за CPU и диск |
-| Maximum Event Driven Thread Count | Только в 1.x; в 2.x event-driven планирование и этот пул удалены |
+| **Maximum Timer Driven Thread Count** | The size of the shared thread pool from which all of the node's processors and services run (Block 3.4). This is the most important parameter of the section: a value that is too small — idle cores and growing queues; too large — competition for CPU and disk |
+| Maximum Event Driven Thread Count | In 1.x only; in 2.x event-driven scheduling and this pool were removed |
 
-**Чего здесь нет.** Значения по умолчанию для новых соединений (back pressure: 10 000 FlowFile и 1 GB) задаются **не на этой вкладке**: глобально — свойствами `nifi.queue.backpressure.count` и `nifi.queue.backpressure.size` в `nifi.properties` ([Administration Guide, Core Properties](https://docs.cloudera.com/cfm/2.1.2/nifi-admin-guide/topics/nifi-core-properties-br.html) — зеркало документации Apache), а на уровне группы — в настройках Process Group (*Default FlowFile Expiration*, *Default Back Pressure Object/Data Size Threshold*). Других обязательных полей, кроме пула потоков, источники не подтверждают; если ваш UI показывает дополнительные поля, ориентируйтесь на справку в самом интерфейсе.
+**What is not here.** The default values for new connections (back pressure: 10,000 FlowFiles and 1 GB) are set **not on this tab**: globally — by the properties `nifi.queue.backpressure.count` and `nifi.queue.backpressure.size` in `nifi.properties` ([Administration Guide, Core Properties](https://docs.cloudera.com/cfm/2.1.2/nifi-admin-guide/topics/nifi-core-properties-br.html) — a mirror of the Apache documentation), and at the group level — in the Process Group settings (*Default FlowFile Expiration*, *Default Back Pressure Object/Data Size Threshold*). The sources do not confirm any other mandatory fields apart from the thread pool; if your UI shows additional fields, rely on the help in the interface itself.
 
-**Особенности.** Параметр применяется **на каждом узле** кластера отдельно (общее число потоков в кластере = значение × число узлов). Event-driven пул в 2.x удалён, поэтому остаётся один пул. Изменение вступает в силу сразу, без перезапуска.
+**Specifics.** The parameter applies **on each node** of the cluster separately (the total number of threads in the cluster = the value × the number of nodes). The event-driven pool was removed in 2.x, so a single pool remains. A change takes effect immediately, without a restart.
 
 #### Management Controller Services
 
-**Назначение.** Controller Services **уровня контроллера**: общие сервисы, которые используют компоненты этого же раздела (Reporting Tasks, Flow Analysis Rules, Registry Clients, Parameter Providers). Это отличает их от сервисов, создаваемых в Process Group: **процессоры в flow эти сервисы не видят**, а сервисы Process Group недоступны reporting tasks.
+**Purpose.** **Controller-level** Controller Services: shared services used by the components of this same section (Reporting Tasks, Flow Analysis Rules, Registry Clients, Parameter Providers). This distinguishes them from services created in a Process Group: **processors in a flow do not see these services**, and Process Group services are not available to reporting tasks.
 
-**Примеры.**
+**Examples.**
 
-| Сервис | Для чего здесь |
+| Service | What it is for here |
 |---|---|
-| `StandardSSLContextService` (или PEM-вариант) | TLS для `SiteToSite*ReportingTask`, клиентов реестра и провайдеров параметров |
-| `JsonRecordSetWriter` / другой Record Writer | Формат записей, которые отправляют Site-to-Site reporting tasks (Block 3.2.1) |
-| `StandardProxyConfigurationService` | Доступ к внешним сервисам через прокси |
-| Сервисы учётных данных (AWS Credentials, GCP Credentials, Kerberos) | Аутентификация провайдеров параметров и reporting tasks во внешних системах |
+| `StandardSSLContextService` (or the PEM variant) | TLS for `SiteToSite*ReportingTask`, registry clients, and parameter providers |
+| `JsonRecordSetWriter` / another Record Writer | The format of the records that the Site-to-Site reporting tasks send (Block 3.2.1) |
+| `StandardProxyConfigurationService` | Access to external services through a proxy |
+| Credential services (AWS Credentials, GCP Credentials, Kerberos) | Authentication of parameter providers and reporting tasks in external systems |
 
-**Колонки таблицы на скриншоте:** *Name* (имя), *Type* (класс сервиса), *Bundle* (NAR, из которого он загружен), *State* (Enabled/Disabled/Invalid и т. п.), *Scope* (область действия). Кнопка **«+»** создаёт сервис. Порядок работы тот же, что в Process Group: создать → настроить → **Enable**. Пустая таблица означает, что управляющие сервисы ещё не создавались.
+**The columns of the table in the screenshot:** *Name* (the name), *Type* (the service class), *Bundle* (the NAR it was loaded from), *State* (Enabled/Disabled/Invalid, etc.), *Scope* (the scope of action). The **"+"** button creates a service. The workflow is the same as in a Process Group: create → configure → **Enable**. An empty table means that no management services have been created yet.
 
-**Рекомендации.** Заводите отдельные сервисы для мониторинга (не переиспользуйте сервисы потоков данных); давайте им понятные имена; следите, чтобы сервис был включён раньше, чем запускается зависимая задача.
+**Recommendations.** Create separate services for monitoring (do not reuse the data flow services); give them clear names; make sure the service is enabled before the dependent task starts.
 
 #### Reporting Tasks
 
-**Назначение.** Задачи, которые NiFi запускает **периодически на уровне контроллера**, вне потока данных: сбор и экспорт метрик, проверка ресурсов, отправка статусов и bulletins. Подробно Site-to-Site задачи разобраны в подразделе «Site-to-Site Reporting Tasks: подробно» выше.
+**Purpose.** Tasks that NiFi runs **periodically at the controller level**, outside the data flow: collecting and exporting metrics, checking resources, sending statuses and bulletins. The Site-to-Site tasks are covered in detail in the subsection "Site-to-Site Reporting Tasks: in detail" above.
 
-| Задача | Что делает |
+| Task | What it does |
 |---|---|
-| `PrometheusReportingTask` | Публикует метрики в формате Prometheus (альтернатива REST-эндпоинту метрик, Block 3.2.1) |
-| `SiteToSiteStatusReportingTask`, `SiteToSiteBulletinReportingTask`, `SiteToSiteMetricsReportingTask` | Отправляют статусы компонентов, bulletins и метрики в Input Port другого (или того же) NiFi |
-| `MonitorDiskUsage` | Контролирует заполнение каталогов (репозитории) и пишет предупреждения при превышении порога |
-| `MonitorMemory` | Следит за использованием пулов памяти JVM и сигнализирует о превышении порога |
-| `ControllerStatusReportingTask` | Периодически записывает сводку статуса контроллера и компонентов в журнал |
+| `PrometheusReportingTask` | Publishes metrics in the Prometheus format (an alternative to the REST metrics endpoint, Block 3.2.1) |
+| `SiteToSiteStatusReportingTask`, `SiteToSiteBulletinReportingTask`, `SiteToSiteMetricsReportingTask` | Send the statuses of components, bulletins, and metrics to an Input Port of another (or the same) NiFi |
+| `MonitorDiskUsage` | Monitors how full the directories (repositories) are and writes warnings when a threshold is exceeded |
+| `MonitorMemory` | Watches the use of the JVM memory pools and signals when a threshold is exceeded |
+| `ControllerStatusReportingTask` | Periodically writes a summary of the status of the controller and components to the log |
 
-**Настройка.** У каждой задачи есть *Scheduling Strategy* (Timer driven или CRON), *Run Schedule* (периодичность), состояние (Running/Stopped) и свойства; периодичность по умолчанию для reporting tasks — порядка 5 минут (так указано в [NIFI-3878](https://issues.apache.org/jira/browse/NIFI-3878), где её меняли на 1 минуту для одной конкретной задачи); у процессоров есть настройка *Execution* (*All Nodes* / *Primary Node*, [NIFI-401](https://www.mail-archive.com/commits@nifi.apache.org/msg19852.html)), но для reporting tasks наличие такого переключателя в вашей версии подтвердить не удалось — по умолчанию считайте, что задача работает **на каждом узле** (в записях видно, с какого узла они пришли) (**[проверить]** возможность выполнения только на Primary Node). Результат сообщается через bulletins самой задачи, поэтому смотрите их при проблемах.
+**Configuration.** Each task has a *Scheduling Strategy* (Timer driven or CRON), a *Run Schedule* (the frequency), a state (Running/Stopped), and properties; the default frequency for reporting tasks is on the order of 5 minutes (as stated in [NIFI-3878](https://issues.apache.org/jira/browse/NIFI-3878), where it was changed to 1 minute for one specific task); processors have an *Execution* setting (*All Nodes* / *Primary Node*, [NIFI-401](https://www.mail-archive.com/commits@nifi.apache.org/msg19852.html)), but we could not confirm that reporting tasks have such a switch in your version — by default, assume that the task runs **on every node** (the records show which node they came from) (**[verify]** the possibility of running only on the Primary Node). The result is reported through the bulletins of the task itself, so look at them when there are problems.
 
-**Практика.** Минимальный набор для production: `MonitorDiskUsage` для томов репозиториев, `MonitorMemory`, экспорт метрик (Prometheus или S2S), отправка bulletins; пороги и расписание подбирайте так, чтобы не создавать шум.
+**Practice.** The minimum set for production: `MonitorDiskUsage` for the repository volumes, `MonitorMemory`, a metrics export (Prometheus or S2S), sending bulletins; choose the thresholds and the schedule so as not to create noise.
 
 #### Flow Analysis Rules
 
-**Назначение.** **Правила автоматической проверки дизайна flow** (governance): они анализируют конфигурацию компонентов и Process Group и находят нарушения стандартов (например, запрещённые типы процессоров или небезопасные настройки). API введён в 2.0.0-M1 ([Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
+**Purpose.** **Rules for the automatic checking of flow design** (governance): they analyze the configuration of components and Process Groups and find violations of standards (for example, prohibited processor types or unsafe settings). The API was introduced in 2.0.0-M1 ([Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 
-**Как работают.**
+**How they work.**
 
-1. Администратор создаёт правило на вкладке *Flow Analysis Rules*, настраивает его свойства и **включает**.
-2. При изменении flow NiFi анализирует затронутые компоненты и группы; найденные **нарушения** показываются в UI у соответствующих компонентов.
-3. У правила есть **политика применения** (*Enforcement Policy*): *Warn* — компонент с нарушением **можно запускать**, нарушение только попадает в отчёт о нарушениях (Rules Violations report, доступен с холста); *Enforce* — компонент с нарушением помечается **Invalid** и **не может быть запущен**, даже если настроен правильно; нарушение также видно в отчёте ([пост по Flow Analysis Rules](https://community.cloudera.com/t5/Developer-Blogs/Flow-Analysis-Rules-enforcing-Best-Practices-in-Flow-Design/m-p/413017) от разработчика NiFi).
+1. An administrator creates a rule on the *Flow Analysis Rules* tab, configures its properties, and **enables** it.
+2. When a flow changes, NiFi analyzes the affected components and groups; the **violations** found are shown in the UI on the corresponding components.
+3. A rule has an **enforcement policy** (*Enforcement Policy*): *Warn* — a component with a violation **can be started**, the violation only goes into the violations report (the Rules Violations report, available from the canvas); *Enforce* — a component with a violation is marked **Invalid** and **cannot be started**, even if it is configured correctly; the violation is also visible in the report ([a post about Flow Analysis Rules](https://community.cloudera.com/t5/Developer-Blogs/Flow-Analysis-Rules-enforcing-Best-Practices-in-Flow-Design/m-p/413017) by a NiFi developer).
 
-**Встроенные правила.** В Apache NiFi 2.6.0 доступны четыре ([источник](https://community.cloudera.com:443/users/641/mburgess.html)):
+**Built-in rules.** Apache NiFi 2.6.0 provides four ([source](https://community.cloudera.com:443/users/641/mburgess.html)):
 
-| Правило | Что проверяет |
+| Rule | What it checks |
 |---|---|
-| `DisallowComponentType` | Запрещает использовать указанный тип компонента (например, `ExecuteScript`, если скрипты запрещены политикой) |
-| `RestrictBackpressureSettings` | Ограничивает значения back pressure на соединениях |
-| `RequireServerSSLContextService` | Требует SSL Context Service у серверных компонентов |
-| `RestrictFlowFileExpiration` | Ограничивает значения FlowFile Expiration |
+| `DisallowComponentType` | Prohibits the use of a specified component type (for example, `ExecuteScript`, if scripts are prohibited by policy) |
+| `RestrictBackpressureSettings` | Restricts the back pressure values on connections |
+| `RequireServerSSLContextService` | Requires an SSL Context Service on server components |
+| `RestrictFlowFileExpiration` | Restricts the FlowFile Expiration values |
 
-В более новых сборках (по данным Cloudera, основанным на Apache NiFi 2.x) набор шире, например `DisallowDeadEnd`, `RecommendRecordProcessor`, `RestrictComponentNaming`, `RestrictProcessorConcurrency`, `RestrictThreadPoolSize`, `RequireHandleHttpResponseAfterHandleHttpRequest` ([список](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-supported-nifi-flow-analysis-rules.html)); какие из них входят в сам Apache NiFi вашей версии, смотрите в списке при создании правила (**[проверить]**). Правило создаётся и настраивается из меню NiFi (раздел Settings) на вкладке *Flow Analysis Rules*.
+In newer builds (according to Cloudera, based on Apache NiFi 2.x) the set is wider, for example `DisallowDeadEnd`, `RecommendRecordProcessor`, `RestrictComponentNaming`, `RestrictProcessorConcurrency`, `RestrictThreadPoolSize`, `RequireHandleHttpResponseAfterHandleHttpRequest` ([the list](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-supported-nifi-flow-analysis-rules.html)); which of them are part of Apache NiFi itself in your version, see in the list when creating a rule (**[verify]**). A rule is created and configured from the NiFi menu (the Settings section) on the *Flow Analysis Rules* tab.
 
-**Зачем это в эксплуатации.** Правила переносят требования «как проектировать flow» из документа в автоматическую проверку: меньше ошибок в production (например, автотерминация `failure`, небезопасные настройки), единые стандарты для разных команд. Можно писать собственные правила как расширения.
+**Why this matters in operations.** The rules move the requirements for "how to design a flow" from a document into an automatic check: fewer errors in production (for example, auto-terminating `failure`, unsafe settings) and uniform standards across teams. You can write your own rules as extensions.
 
 #### Registry Clients
 
-**Назначение.** Подключения NiFi к **хранилищам версий flow** — основа версионирования Process Group (Block 1.4.6). Через клиент вы выполняете *Version → Start version control / Commit / Change version*.
+**Purpose.** NiFi's connections to **flow version stores** — the basis of Process Group versioning (Block 1.4.6). Through a client you perform *Version → Start version control / Commit / Change version*.
 
-| Клиент | Хранилище | Статус |
+| Client | Store | Status |
 |---|---|---|
-| NiFi Registry | Отдельный сервис NiFi Registry | **[dep]** с 2.8.0 |
-| GitHub | Репозиторий GitHub (ветки и подкаталоги) | 2.x |
-| GitLab | Репозиторий GitLab | 2.x |
-| Bitbucket | Репозиторий Bitbucket | 2.x |
-| Azure DevOps | Git-репозиторий Azure DevOps | 2.x |
+| NiFi Registry | A separate NiFi Registry service | **[dep]** since 2.8.0 |
+| GitHub | A GitHub repository (branches and subdirectories) | 2.x |
+| GitLab | A GitLab repository | 2.x |
+| Bitbucket | A Bitbucket repository | 2.x |
+| Azure DevOps | An Azure DevOps Git repository | 2.x |
 
-**Настройка GitHub-клиента** (по исходному коду реализации, [PR #8765](https://www.mail-archive.com/issues@nifi.apache.org/msg173690.html); в более поздних версиях набор может быть шире):
+**Configuring the GitHub client** (from the implementation source code, [PR #8765](https://www.mail-archive.com/issues@nifi.apache.org/msg173690.html); the set may be wider in later versions):
 
-| Свойство | Смысл |
+| Property | Meaning |
 |---|---|
-| GitHub API URL | Адрес API (по умолчанию `https://api.github.com/`; для GitHub Enterprise — свой) |
-| Repository Owner / Repository Name | Владелец и имя репозитория |
-| Default Branch | Ветка по умолчанию (`main`) |
-| Repository Path | Подкаталог для хранения flow; пустое значение — корень репозитория; **без `/` в начале и в конце** (иначе ошибка валидации) |
-| Authentication Type | `NONE` (по умолчанию), `PERSONAL_ACCESS_TOKEN` или `APP_INSTALLATION_TOKEN` |
-| Personal Access Token / App Installation Token | Секрет (sensitive); поле зависит от выбранного типа аутентификации |
+| GitHub API URL | The API address (`https://api.github.com/` by default; for GitHub Enterprise — your own) |
+| Repository Owner / Repository Name | The owner and the name of the repository |
+| Default Branch | The default branch (`main`) |
+| Repository Path | A subdirectory for storing flows; an empty value is the repository root; **without a `/` at the start and at the end** (otherwise a validation error) |
+| Authentication Type | `NONE` (the default), `PERSONAL_ACCESS_TOKEN`, or `APP_INSTALLATION_TOKEN` |
+| Personal Access Token / App Installation Token | A secret (sensitive); the field depends on the chosen authentication type |
 
-Для GitLab, Bitbucket и Azure DevOps имена свойств другие (**[проверить]** в документации клиента). Если клиенту нужен TLS или прокси, используйте сервисы из *Management Controller Services*.
+For GitLab, Bitbucket, and Azure DevOps the property names are different (**[verify]** in the client documentation). If the client needs TLS or a proxy, use the services from *Management Controller Services*.
 
-**Практика.** Отдельный репозиторий/ветка на окружение или единый репозиторий с promotion между ветками; токен с минимальными правами; не коммитить секреты (параметры sensitive не должны попадать в Git); проверять, что у пользователей есть права на создание и фиксацию версий.
+**Practice.** A separate repository/branch per environment, or a single repository with promotion between branches; a token with minimal permissions; do not commit secrets (sensitive parameters must not end up in Git); check that users have permissions to create and commit versions.
 
 #### Parameter Providers
 
-**Назначение.** Загрузка значений для **Parameter Contexts из внешних источников** (хранилища секретов, файлы, переменные окружения, БД). Введены в 1.18.0. Позволяют не хранить пароли и токены в flow.
+**Purpose.** Loading values for **Parameter Contexts from external sources** (secret stores, files, environment variables, databases). Introduced in 1.18.0. They let you avoid storing passwords and tokens in a flow.
 
-**Как работает.**
+**How it works.**
 
-1. Создайте провайдера на вкладке *Parameter Providers* и настройте источник (адрес хранилища, аутентификация — часто через сервис из *Management Controller Services*).
-2. **Fetch Parameters**: NiFi запрашивает параметры у источника. Они сгруппированы в **Parameter Groups**; для каждой группы нужно указать, какие параметры **sensitive**.
-3. **Apply**: группа превращается в Parameter Context (или обновляет существующий), помеченный как «управляемый провайдером». Значения таких параметров редактируются только в источнике.
-4. Дальше параметры используются как обычно: `#{db.password}` в свойствах процессоров и сервисов.
+1. Create a provider on the *Parameter Providers* tab and configure the source (the store address, authentication — often through a service from *Management Controller Services*).
+2. **Fetch Parameters**: NiFi requests the parameters from the source. They are grouped into **Parameter Groups**; for each group you need to specify which parameters are **sensitive**.
+3. **Apply**: the group turns into a Parameter Context (or updates an existing one) marked as "managed by a provider". The values of such parameters are edited only at the source.
+4. After that, the parameters are used as usual: `#{db.password}` in the properties of processors and services.
 
-**Доступные провайдеры** (по спискам поставляемых в составе Apache NiFi провайдеров из [документации Cloudera](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-supported-parameter-providers.html)):
+**Available providers** (according to the lists of providers shipped as part of Apache NiFi from the [Cloudera documentation](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-supported-parameter-providers.html)):
 
-| Провайдер | Источник |
+| Provider | Source |
 |---|---|
-| `EnvironmentVariableParameterProvider` | Переменные окружения |
-| `FileParameterProvider`, `PropertiesFileParameterProvider` | Файлы (каждый файл — параметр) и `.properties`-файлы |
-| `DatabaseParameterProvider` | Таблица в БД через JDBC |
+| `EnvironmentVariableParameterProvider` | Environment variables |
+| `FileParameterProvider`, `PropertiesFileParameterProvider` | Files (each file is a parameter) and `.properties` files |
+| `DatabaseParameterProvider` | A database table through JDBC |
 | `HashiCorpVaultParameterProvider` | HashiCorp Vault |
 | `AwsSecretsManagerParameterProvider` | AWS Secrets Manager |
 | `GcpSecretManagerParameterProvider` | GCP Secret Manager |
 | `AzureKeyVaultSecretsParameterProvider` | Azure Key Vault |
 | `CyberArkConjurParameterProvider`, `OnePasswordParameterProvider` | CyberArk Conjur, 1Password |
-| `KubernetesSecretParameterProvider` | Kubernetes Secrets (в новых сборках 2.x) |
+| `KubernetesSecretParameterProvider` | Kubernetes Secrets (in newer 2.x builds) |
 
-Набор зависит от версии (в 1.18 их было шесть, в более новых 2.x — больше); окончательный список смотрите в диалоге создания провайдера. Провайдеры создаются из меню NiFi в разделе Settings, как и остальные глобальные компоненты ([описание](https://community.cloudera.com:443/users/641/mburgess.html)).
+The set depends on the version (in 1.18 there were six of them, in newer 2.x — more); see the final list in the provider creation dialog. Providers are created from the NiFi menu in the Settings section, like the other global components ([description](https://community.cloudera.com:443/users/641/mburgess.html)).
 
-**Важные нюансы.** Загрузка выполняется **по запросу** (Fetch/Apply), а не непрерывно: после ротации секрета нужно обновить контекст (вручную или автоматизируя через REST API). Значения из внешних источников не должны попадать в Git при версионировании flow. Права на Parameter Providers — только у администраторов.
+**Important nuances.** Loading is performed **on request** (Fetch/Apply), not continuously: after a secret is rotated, the context has to be updated (manually or by automating it through the REST API). Values from external sources must not end up in Git when versioning a flow. Permissions on Parameter Providers belong to administrators only.
 
-#### Как компоненты работают вместе (сценарии)
+#### How the components work together (scenarios)
 
-| Сценарий | Какие вкладки задействованы |
+| Scenario | Which tabs are involved |
 |---|---|
-| **Мониторинг в Splunk** | *Management Controller Services* (SSL Context + Record Writer) → *Reporting Tasks* (`SiteToSite*`) → flow-приёмник доставляет в Splunk |
-| **Безопасные секреты** | *Management Controller Services* (учётные данные облака) → *Parameter Providers* (Vault/Secrets Manager) → Parameter Context в flow |
-| **Контроль качества и релизы** | *Flow Analysis Rules* проверяют дизайн → *Registry Clients* фиксируют версию в Git → promotion по окружениям |
-| **Тюнинг производительности** | *General* (Timer Driven Thread Count) + метрики из *Reporting Tasks* для проверки эффекта |
+| **Monitoring into Splunk** | *Management Controller Services* (SSL Context + a Record Writer) → *Reporting Tasks* (`SiteToSite*`) → the receiving flow delivers to Splunk |
+| **Safe secrets** | *Management Controller Services* (cloud credentials) → *Parameter Providers* (Vault/Secrets Manager) → a Parameter Context in the flow |
+| **Quality control and releases** | *Flow Analysis Rules* check the design → *Registry Clients* commit the version to Git → promotion across environments |
+| **Performance tuning** | *General* (the Timer Driven Thread Count) + metrics from *Reporting Tasks* to verify the effect |
 
-#### Резервное копирование и аудит
+#### Backup and audit
 
-Состав раздела — часть конфигурации NiFi: входит в `flow.json.gz` и в backup (Block 3.1.5); изменения фиксируются в *Flow Configuration History* (Block 3.3.3). При восстановлении из backup на другом окружении проверьте токены реестров, адреса приёмников reporting tasks и источники провайдеров параметров: они часто окружение-специфичны.
+The contents of this section are part of the NiFi configuration: they are included in `flow.json.gz` and in the backup (Block 3.1.5); changes are recorded in the *Flow Configuration History* (Block 3.3.3). When restoring from a backup in a different environment, check the registry tokens, the addresses of the reporting task receivers, and the parameter provider sources: they are often environment-specific.
 
 ---
 
 ## Block 3.3: Security and governance
 
-### 3.3.1 TLS и аутентификация
+### 3.3.1 TLS and authentication
 
-**TLS по умолчанию.** С 1.14.0 NiFi стартует в защищённом режиме: HTTPS (порт 8443), автосгенерированный самоподписанный сертификат и случайные учётные данные Single User, выводимые в лог ([Release Notes 1.14.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). Для production замените его сертификатом корпоративного PKI.
+**TLS by default.** Since 1.14.0, NiFi starts in a secure mode: HTTPS (port 8443), an automatically generated self-signed certificate, and random Single User credentials printed to the log ([Release Notes 1.14.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). For production, replace it with a certificate from the corporate PKI.
 
-**Конфигурация TLS (`nifi.properties`).**
+**The TLS configuration (`nifi.properties`).**
 
 ```properties
 nifi.web.https.host=nifi-1.example.com
 nifi.web.https.port=8443
 nifi.security.keystore=./conf/keystore.p12
 nifi.security.keystoreType=PKCS12
-nifi.security.keystorePasswd=<секрет>
-nifi.security.keyPasswd=<секрет>
+nifi.security.keystorePasswd=<secret>
+nifi.security.keyPasswd=<secret>
 nifi.security.truststore=./conf/truststore.p12
 nifi.security.truststoreType=PKCS12
-nifi.security.truststorePasswd=<секрет>
+nifi.security.truststorePasswd=<secret>
 ```
 
-Особенности 2.x:
+2.x specifics:
 
-- Поддерживается конфигурация **PEM-кодированными** ключами и сертификатами для фреймворка (с 2.1.0) и для расширений (`PEMEncodedSSLContextProvider`) ([Release Notes 2.1.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
-- Keystore/truststore Jetty могут **автоматически перезагружаться** при изменении файлов (с 1.14.0; в 2.0.0-M4 улучшена динамическая перезагрузка для кластерного взаимодействия).
-- **PKCS8** обязателен для PEM-ключей `StandardPrivateKeyService` (2.13.0).
-- Сертификаты узлов должны содержать SAN, соответствующий имени хоста; wildcard-сертификаты официально не поддерживаются (из истории 1.7.x); с 2.12.0 в TLS-кластере нужны DNS-имена в свойствах кластера.
-- Удалено: OCSP-валидация клиентских сертификатов (2.7.0).
+- Configuration with **PEM-encoded** keys and certificates is supported for the framework (since 2.1.0) and for extensions (`PEMEncodedSSLContextProvider`) ([Release Notes 2.1.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
+- The Jetty keystore/truststore can be **reloaded automatically** when files change (since 1.14.0; in 2.0.0-M4 dynamic reloading was improved for cluster communication).
+- **PKCS8** is mandatory for the PEM keys of `StandardPrivateKeyService` (2.13.0).
+- Node certificates must contain a SAN matching the host name; wildcard certificates are officially not supported (from the history of 1.7.x); since 2.12.0 a TLS cluster needs DNS names in the cluster properties.
+- Removed: OCSP validation of client certificates (2.7.0).
 
-**Способы аутентификации пользователей.**
+**User authentication methods.**
 
-| Способ | Примечания |
+| Method | Notes |
 |---|---|
-| **Client certificate (mTLS)** | Идентичность из DN сертификата; удобно для сервисных клиентов; обязательно между узлами кластера |
-| **Single User** (`SingleUserLoginIdentityProvider`) | Только для разработки/лаборатории |
-| **LDAP / Active Directory** | `LdapProvider` в `login-identity-providers.xml`; с 2.x доступны также провайдеры групп (в т. ч. Azure AD, с 1.14.0) |
-| **OpenID Connect (OIDC)** | SSO; поддерживает Authorization Code (с PKCE, 2.0.0-M3) и Client Credentials (для программного доступа) |
+| **Client certificate (mTLS)** | The identity from the certificate DN; convenient for service clients; mandatory between cluster nodes |
+| **Single User** (`SingleUserLoginIdentityProvider`) | For development/the lab only |
+| **LDAP / Active Directory** | `LdapProvider` in `login-identity-providers.xml`; in 2.x group providers are also available (including Azure AD, since 1.14.0) |
+| **OpenID Connect (OIDC)** | SSO; supports Authorization Code (with PKCE, 2.0.0-M3) and Client Credentials (for programmatic access) |
 | **SAML** | SSO |
-| **Kerberos Login Identity Provider** | **[dep]** помечен к удалению начиная с 2.7.0 |
+| **Kerberos Login Identity Provider** | **[dep]** marked for removal starting with 2.7.0 |
 | ~~Knox SSO~~ / ~~Kerberos SPNEGO (REST)~~ | **[rem 2.0.0-M4]** |
 
-(Источник: [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes).)
+(Source: [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes).)
 
-**Single User в Docker/лаборатории:** `bin/nifi.sh set-single-user-credentials <user> <password>`.
+**Single User in Docker/the lab:** `bin/nifi.sh set-single-user-credentials <user> <password>`.
 
-### 3.3.2 Контроль доступа: пользователи, группы, политики, ролевая модель
+### 3.3.2 Access control: users, groups, policies, the role model
 
-**Модель авторизации (multi-tenant authorization).** Права задаются **политиками (Access Policies)** — парой *(ресурс, действие)* и списком пользователей/групп. Роли как таковых нет: «роль» реализуется **группой** (например, `nifi-operators`, `nifi-developers`) с набором политик. С 1.0.0 заменила прежнюю роль-ориентированную модель ([Migration Guidance 0.x→1.0.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+**The authorization model (multi-tenant authorization).** Permissions are set by **policies (Access Policies)** — a pair *(a resource, an action)* and a list of users/groups. There are no roles as such: a "role" is implemented by a **group** (for example, `nifi-operators`, `nifi-developers`) with a set of policies. Since 1.0.0 it has replaced the earlier role-oriented model ([Migration Guidance 0.x→1.0.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
 
-Конфигурация — `authorizers.xml`, состоит из трёх уровней:
+The configuration is `authorizers.xml`, consisting of three levels:
 
-1. **User Group Provider** — откуда берутся пользователи/группы (`FileUserGroupProvider`, `LdapUserGroupProvider`, Azure, Composite…).
-2. **Access Policy Provider** — где хранятся политики (`FileAccessPolicyProvider`) и кто начальный администратор (*Initial Admin Identity*).
-3. **Authorizer** — `StandardManagedAuthorizer`, использующий провайдеры выше.
+1. A **User Group Provider** — where users/groups come from (`FileUserGroupProvider`, `LdapUserGroupProvider`, Azure, Composite…).
+2. An **Access Policy Provider** — where policies are stored (`FileAccessPolicyProvider`) and who the initial administrator is (*Initial Admin Identity*).
+3. An **Authorizer** — `StandardManagedAuthorizer`, which uses the providers above.
 
-В 2.x ранее поддерживавшиеся внешние механизмы **Apache Ranger plugin удалён** (2.0.0-M3), **Shell User Group Provider удалён** (2.0.0).
+In 2.x, the previously supported external mechanisms were removed: the **Apache Ranger plugin was removed** (2.0.0-M3) and the **Shell User Group Provider was removed** (2.0.0).
 
-**Типы политик.**
+**Policy types.**
 
-| Уровень | Примеры | Действия |
+| Level | Examples | Actions |
 |---|---|---|
-| Глобальные (controller) | access the controller, access parameter contexts, query provenance, access all policies, access system diagnostics, proxy user requests, retrieve site-to-site details, view counters | View/Modify |
-| Компонентные | view/modify the component; **view/modify the data** (доступ к атрибутам и контенту FlowFile через очередь/Provenance); **view provenance** (с 1.7.0 — отдельная политика просмотра событий без доступа к контенту); operate the component (start/stop); view/modify the policies | Применяются к Process Group и наследуются вложенными компонентами |
+| Global (controller) | access the controller, access parameter contexts, query provenance, access all policies, access system diagnostics, proxy user requests, retrieve site-to-site details, view counters | View/Modify |
+| Component | view/modify the component; **view/modify the data** (access to a FlowFile's attributes and content through a queue/Provenance); **view provenance** (since 1.7.0 — a separate policy for viewing events without access to the content); operate the component (start/stop); view/modify the policies | Applied to a Process Group and inherited by nested components |
 
-**Принципы проектирования доступа.**
+**Principles of access design.**
 
-1. **Минимум привилегий.** Операторам — *operate* + *view*; разработчикам — *modify* в своих Process Group; администраторам — управление политиками.
-2. **Разделение данных и метаданных.** *view provenance* без *view the data* позволяет понимать flow без доступа к содержимому (важно для PII).
-3. **Группы вместо отдельных пользователей;** политика на уровне Process Group (наследование) вместо политик на каждый компонент.
-4. **Parameter Contexts:** отдельные права на *access parameter contexts*; sensitive-параметры не отображаются.
-5. **Прокси-пользователи:** при reverse proxy/балансировщике — политика `proxy user requests` для идентичности прокси, корректная передача `X-ProxiedEntitiesChain` (формат с обрамляющими `<>`, [Migration Guidance 1.13](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+1. **Least privilege.** Operators — *operate* + *view*; developers — *modify* in their own Process Groups; administrators — policy management.
+2. **Separating data from metadata.** *view provenance* without *view the data* lets you understand a flow without access to its contents (important for PII).
+3. **Groups instead of individual users;** a policy at the Process Group level (inheritance) instead of policies on each component.
+4. **Parameter Contexts:** separate permissions for *access parameter contexts*; sensitive parameters are not displayed.
+5. **Proxy users:** with a reverse proxy/load balancer — the `proxy user requests` policy for the proxy's identity, correct passing of `X-ProxiedEntitiesChain` (the format with enclosing `<>`, [Migration Guidance 1.13](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
 
-**Изменения в 2.x по авторизации (важно для долгосрочного проектирования).**
+**Changes in 2.x regarding authorization (important for long-term design).**
 
-- **2.10.0 [rem]:** удалена фреймворковая авторизация «restricted components / required permissions» (NIFI-24) и аннотации Restricted у компонентов; ограничения теперь реализуются иными средствами (политики на Process Group, процессные ограничения) ([Migration Guidance 2.10.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
-- **2.12.0 [dep]:** **fine-grained авторизация на уровне Process Group и компонентов объявлена deprecated для удаления** (NIP-39), как и `AbstractPolicyBasedAuthorizer` ([Release Notes 2.12.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). Это означает, что при проектировании новой модели доступа не стоит строить сложную иерархию политик на уровне отдельных компонентов; **следите за NIP-39** и планируйте более грубую модель (на уровне окружений/потоков) и изоляцию через отдельные инстансы/кластеры/namespaces.
-- **Проверьте конкретику** (сроки удаления, что именно остаётся) в NIP-39 перед архитектурными решениями.
+- **2.10.0 [rem]:** the framework authorization "restricted components / required permissions" (NIFI-24) and the Restricted annotations on components were removed; restrictions are now implemented by other means (Process Group policies, process constraints) ([Migration Guidance 2.10.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+- **2.12.0 [dep]:** **fine-grained authorization at the Process Group and component level was declared deprecated for removal** (NIP-39), as was `AbstractPolicyBasedAuthorizer` ([Release Notes 2.12.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). This means that when designing a new access model you should not build a complex hierarchy of policies at the level of individual components; **follow NIP-39** and plan a coarser model (at the level of environments/flows) and isolation through separate instances/clusters/namespaces.
+- **Check the specifics** (the removal dates, what exactly remains) in NIP-39 before making architectural decisions.
 
-### 3.3.3 Audit trails: отслеживание изменений конфигурации и доступа
+### 3.3.3 Audit trails: tracking changes to configuration and access
 
-| Механизм | Что фиксирует | Где |
+| Mechanism | What it records | Where |
 |---|---|---|
-| **Flow Configuration History** | Кто, когда и что изменил (добавление/удаление/настройка компонентов, запуск/остановка) | UI: Global menu → *Flow Configuration History*; хранится в `database_repository` (JetBrains Xodus с 1.24.0; ранее H2) |
-| `nifi-user.log` | Аутентификация, запросы пользователей, отказ в авторизации | `logs/` |
-| `nifi-request.log` | HTTP-запросы (с 1.16.0) | `logs/` |
-| **Data Provenance** | Происхождение данных (какие компоненты обработали FlowFile) | UI и API |
-| Git history (Registry) | Версии flow и авторы коммитов | Git |
-| **Flow Action Reporter** | Расширяемая интеграция для отправки действий по изменению flow во внешние системы (добавлен в 2.4.0) | [Release Notes 2.4.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes) |
+| **Flow Configuration History** | Who, when, and what was changed (adding/removing/configuring components, starting/stopping) | UI: Global menu → *Flow Configuration History*; stored in `database_repository` (JetBrains Xodus since 1.24.0; H2 before) |
+| `nifi-user.log` | Authentication, user requests, authorization denials | `logs/` |
+| `nifi-request.log` | HTTP requests (since 1.16.0) | `logs/` |
+| **Data Provenance** | The origin of data (which components processed a FlowFile) | The UI and the API |
+| Git history (the Registry) | Flow versions and the authors of commits | Git |
+| **Flow Action Reporter** | An extensible integration for sending flow change actions to external systems (added in 2.4.0) | [Release Notes 2.4.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes) |
 
-Рекомендации: централизуйте логи (SIEM); задайте срок хранения истории изменений в соответствии с политикой аудита; сопоставляйте идентичности из mTLS/OIDC с человекочитаемыми именами; отдельно аудируйте административные операции (изменения политик).
+Recommendations: centralize the logs (a SIEM); set the retention period of the change history in accordance with the audit policy; map identities from mTLS/OIDC to human-readable names; audit administrative operations (policy changes) separately.
 
-### 3.3.4 Шифрование: sensitive properties и data at rest
+### 3.3.4 Encryption: sensitive properties and data at rest
 
-**Sensitive properties.** Значения свойств, помеченных как *sensitive* (пароли, токены), шифруются в `flow.json.gz` ключом, производным от `nifi.sensitive.props.key`. Настройки: `nifi.sensitive.props.key`, `nifi.sensitive.props.algorithm` (по умолчанию в поставляемой конфигурации 2.x — `NIFI_PBKDF2_AES_GCM_256`). Правила:
+**Sensitive properties.** The values of properties marked as *sensitive* (passwords, tokens) are encrypted in `flow.json.gz` with a key derived from `nifi.sensitive.props.key`. The settings: `nifi.sensitive.props.key`, `nifi.sensitive.props.algorithm` (by default in the shipped 2.x configuration — `NIFI_PBKDF2_AES_GCM_256`). The rules:
 
-- Ключ **обязателен** и должен быть **одинаковым на всех узлах кластера**; смена — через `bin/nifi.sh set-sensitive-properties-key <new key>` (который перешифрует конфигурацию) ([Migration Guidance 1.13→1.14](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
-- Потеря ключа = невозможность расшифровать sensitive-значения; их придётся ввести заново.
-- Предпочтительно **не хранить секреты в flow вообще:** **Parameter Providers** (HashiCorp Vault, AWS/GCP Secrets Manager, Kubernetes Secrets — с 1.18.0/2.0) подгружают параметры во время работы. В 2.12.0 добавлена расширяемая абстракция шифрования свойств (**PropertyEncryptionProvider**).
-- В 2.x удалены: «application property protection» и `encrypt-config` (2.0.0-M4) — то есть шифрование значений в `nifi.properties` средствами `encrypt-config` недоступно; используйте внешние секрет-хранилища/переменные окружения и права файловой системы ([Release Notes 2.0.0-M4](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). **[проверить]** актуальные штатные альтернативы для защиты `nifi.properties` в вашей версии.
-- Динамические свойства могут быть помечены пользователем как sensitive (с 1.17.0).
+- The key is **mandatory** and must be **the same on all nodes of the cluster**; changing it is done through `bin/nifi.sh set-sensitive-properties-key <new key>` (which re-encrypts the configuration) ([Migration Guidance 1.13→1.14](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+- Losing the key = being unable to decrypt the sensitive values; they will have to be entered again.
+- It is preferable **not to store secrets in the flow at all:** **Parameter Providers** (HashiCorp Vault, AWS/GCP Secrets Manager, Kubernetes Secrets — since 1.18.0/2.0) load parameters at run time. In 2.12.0 an extensible property encryption abstraction (**PropertyEncryptionProvider**) was added.
+- In 2.x the following were removed: "application property protection" and `encrypt-config` (2.0.0-M4) — that is, encrypting values in `nifi.properties` with `encrypt-config` is unavailable; use external secret stores/environment variables and file system permissions ([Release Notes 2.0.0-M4](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). **[verify]** the current standard alternatives for protecting `nifi.properties` in your version.
+- Dynamic properties can be marked as sensitive by the user (since 1.17.0).
 
 **Data at rest.**
 
-- **[rem 2.0.0]** Встроенное шифрование репозиториев (FlowFile/Content/Provenance) **удалено**. Следовательно, защита данных «на диске» в 2.x обеспечивается на уровне инфраструктуры: **шифрование файловой системы/тома** (LUKS/dm-crypt, шифрование облачных дисков, KMS), контроль доступа к ОС и бэкапам.
-- Шифрование отдельных данных внутри flow: процессоры `EncryptContentAge`/`DecryptContentAge` (age), `EncryptContentPGP`/`DecryptContentPGP`; обратите внимание: `DecryptContent` и `DecryptContentCompatibility` удалены в 2.0.0.
-- **Data in motion:** TLS на всех границах (UI/API, кластер, Site-to-Site, Kafka, JDBC, HTTP).
-- **PII:** маскирование/удаление до логирования; ограничение прав *view the data*; осторожность с `LogAttribute`/`LogMessage`.
+- **[rem 2.0.0]** The built-in repository encryption (FlowFile/Content/Provenance) was **removed**. Consequently, protection of data "on disk" in 2.x is provided at the infrastructure level: **file system/volume encryption** (LUKS/dm-crypt, cloud disk encryption, KMS), access control to the OS and the backups.
+- Encrypting individual data inside a flow: the processors `EncryptContentAge`/`DecryptContentAge` (age), `EncryptContentPGP`/`DecryptContentPGP`; note: `DecryptContent` and `DecryptContentCompatibility` were removed in 2.0.0.
+- **Data in motion:** TLS at all boundaries (UI/API, the cluster, Site-to-Site, Kafka, JDBC, HTTP).
+- **PII:** masking/removal before logging; restricting the *view the data* permission; caution with `LogAttribute`/`LogMessage`.
 
-### Governance: практический чек-лист
+### Governance: a practical checklist
 
-1. TLS везде; нет Single User в production.
-2. Группы и политики документированы; регулярный пересмотр доступа.
-3. Секреты — в Parameter Providers/Vault; `sensitive.props.key` защищён и бэкапнут отдельно.
-4. Шифрование дисков на уровне ОС; закрытые каталоги репозиториев.
-5. Аудит: история изменений + логи + Git; экспорт в SIEM.
-6. Процесс изменений: PR/review в Git, тестовое окружение, запрет прямых правок на prod.
-7. Политика обновлений: следить за [Security Advisories](https://nifi.apache.org/security.html) и Release Notes.
+1. TLS everywhere; no Single User in production.
+2. Groups and policies are documented; access is reviewed regularly.
+3. Secrets are in Parameter Providers/Vault; `sensitive.props.key` is protected and backed up separately.
+4. Disk encryption at the OS level; closed repository directories.
+5. Audit: the change history + logs + Git; export to a SIEM.
+6. The change process: PRs/review in Git, a test environment, a ban on direct edits on prod.
+7. The update policy: follow the [Security Advisories](https://nifi.apache.org/security.html) and the Release Notes.
 
 ---
 
 ## Block 3.4: Performance tuning, hardware and storage
 
-### 3.4.1 JVM, heap, thread pools, concurrent tasks, параметры кластера
+### 3.4.1 JVM, heap, thread pools, concurrent tasks, cluster parameters
 
-**JVM (`conf/bootstrap.conf`).**
+**The JVM (`conf/bootstrap.conf`).**
 
 ```text
 java.arg.2=-Xms8g
 java.arg.3=-Xmx8g
-# Сборщик по умолчанию - G1; параметры менять только по результатам анализа GC-логов
+# The default collector is G1; change parameters only based on an analysis of GC logs
 java.arg.XX...=-XX:+HeapDumpOnOutOfMemoryError
 ```
 
-- Дефолтный heap в поставке мал (порядка 512 МБ) и предназначен для знакомства. Для production начинайте с ~4–16 ГБ и корректируйте по GC и объёму метаданных FlowFile. Устанавливайте `Xms = Xmx` (без динамического изменения размера).
-- Основной потребитель heap — **метаданные FlowFile (атрибуты)** и записи в очередях, а не контент (он на диске). Поэтому heap растёт с **числом** FlowFile, а не с объёмом данных.
-- Не выделяйте всю RAM под heap: Content Repository и Provenance активно используют **page cache ОС**; оставьте RAM на кэш.
-- Включите GC-логирование, анализируйте паузы; рост heap «ради паузы» часто маскирует проблему слишком большого числа FlowFile.
+- The default heap in the distribution is small (on the order of 512 MB) and is intended for getting acquainted. For production, start with ~4–16 GB and adjust based on GC and the volume of FlowFile metadata. Set `Xms = Xmx` (no dynamic resizing).
+- The main consumer of the heap is **FlowFile metadata (attributes)** and the entries in queues, not the content (which is on disk). So the heap grows with the **number** of FlowFiles, not with the volume of data.
+- Do not allocate all RAM to the heap: the Content Repository and Provenance actively use the **OS page cache**; leave RAM for the cache.
+- Enable GC logging and analyze the pauses; increasing the heap "for the sake of the pause" often masks the problem of too many FlowFiles.
 
-**Пулы потоков.**
+**Thread pools.**
 
-- **Maximum Timer Driven Thread Count** (Global menu → *Controller Settings*): общий пул для всех компонентов узла (по умолчанию `10` на каждый узел; для кластера из трёх узлов это 30 потоков в сумме). Общая рекомендация разработчиков NiFi — начинать с **2–4 потоков на ядро** и корректировать по загрузке CPU: если load average приближается к числу ядер или превышает его, пул нужно уменьшать ([разбор на community.cloudera.com](https://community.cloudera.com/t5/Community-Articles/Understanding-NiFi-max-thread-pools-and-processor-concurrent/m-p/248920)); это общепринятый ориентир из сообщества, а не нормативное значение Administration Guide. Слишком малое значение — простаивающие ядра и очереди; слишком большое — переключение контекста и конкуренция за диск.
-- Пул *event-driven* удалён в 2.0 — настраивается только Timer-driven.
-- В кластере настройка применяется **к каждому узлу**.
+- **Maximum Timer Driven Thread Count** (Global menu → *Controller Settings*): the shared pool for all of a node's components (`10` per node by default; for a cluster of three nodes this is 30 threads in total). The general recommendation of the NiFi developers is to start with **2–4 threads per core** and adjust based on CPU load: if the load average approaches or exceeds the number of cores, the pool should be reduced ([an explanation on community.cloudera.com](https://community.cloudera.com/t5/Community-Articles/Understanding-NiFi-max-thread-pools-and-processor-concurrent/m-p/248920)); this is a commonly accepted community guideline, not a normative value from the Administration Guide. A value that is too small — idle cores and queues; too large — context switching and competition for the disk.
+- The *event-driven* pool was removed in 2.0 — only the Timer-driven one is configured.
+- In a cluster the setting applies **to each node**.
 
-**Concurrent Tasks (на процессоре).**
+**Concurrent Tasks (on a processor).**
 
-- Определяет, сколько потоков одновременно может выполнять *один* процессор (по умолчанию 1). Увеличивайте для процессоров, ограниченных ожиданием I/O или CPU, при наличии нескольких FlowFile в очереди.
-- Общая нагрузка ограничена пулом: сумма активных задач ≤ Maximum Timer Driven Thread Count.
-- Для источников (`ConsumeKafka`, `ListenX`) — число задач ≈ число партиций/каналов.
-- Не увеличивайте для процессоров, зависящих от порядка/единственного ресурса.
+- Determines how many threads can simultaneously execute *one* processor (1 by default). Increase it for processors that are limited by I/O waits or by CPU, when there are several FlowFiles in the queue.
+- The total load is limited by the pool: the sum of active tasks ≤ Maximum Timer Driven Thread Count.
+- For sources (`ConsumeKafka`, `ListenX`) — the number of tasks ≈ the number of partitions/channels.
+- Do not increase it for processors that depend on ordering/a single resource.
 
-**Run Duration.** Параметр (0 мс … 2 с) позволяет процессору в одном «запуске» обработать несколько FlowFile в одной сессии → меньше накладных расходов на commit в репозиторий; выше throughput, но выше latency и больше «в полёте» при сбое. Подходит для процессоров, помеченных как поддерживающие batching (в UI слайдер *Run Duration*).
+**Run Duration.** The parameter (0 ms … 2 s) lets a processor handle several FlowFiles in one session within a single "run" → less overhead for commits to the repository; higher throughput, but higher latency and more data "in flight" on a failure. Suitable for processors marked as supporting batching (the *Run Duration* slider in the UI).
 
-**Scheduling.** *Run Schedule* (`0 sec` — как можно чаще; для источников установите разумный интервал, чтобы не молотить внешние системы), *Penalty Duration* (`30 sec` по умолчанию), *Yield Duration* (`1 sec` по умолчанию).
+**Scheduling.** *Run Schedule* (`0 sec` — as often as possible; for sources set a reasonable interval so as not to pound external systems), *Penalty Duration* (`30 sec` by default), *Yield Duration* (`1 sec` by default).
 
-**Параметры кластера.**
+**Cluster parameters.**
 
-- `nifi.cluster.node.protocol.threads` (начальный размер) и `nifi.cluster.node.protocol.max.threads` (макс. размер пула репликации запросов, по умолчанию 50) — для кластеров с большим числом узлов/компонентов ([Migration Guidance 1.3.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
-- Балансировка между узлами ([Cluster Node Properties](https://docs.cloudera.com/cfm/2.1.2/nifi-admin-guide/topics/nifi-cluster_node_properties.html)): `nifi.cluster.load.balance.connections.per.node` (по документации `4`; сколько сокетов открывать к каждому узлу) и `nifi.cluster.load.balance.max.thread.count` (по документации `8`; сколько потоков передают данные другим узлам). Увеличение даёт эффект, пока значение не превысит число узлов × число соединений на узел; дополнительные потоки нагружают запись в Content и FlowFile Repository. Таймаут обмена — `nifi.cluster.load.balance.comms.timeout` (`30 sec`).
-- Размер ансамбля ZooKeeper (3/5), латентность до ZK; частые изменения state нагружают ZK.
-- Время heartbeat/таймауты: слишком агрессивные значения приводят к ложным disconnect при GC-паузах.
+- `nifi.cluster.node.protocol.threads` (the initial size) and `nifi.cluster.node.protocol.max.threads` (the maximum size of the request replication pool, 50 by default) — for clusters with a large number of nodes/components ([Migration Guidance 1.3.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+- Balancing between nodes ([Cluster Node Properties](https://docs.cloudera.com/cfm/2.1.2/nifi-admin-guide/topics/nifi-cluster_node_properties.html)): `nifi.cluster.load.balance.connections.per.node` (`4` according to the documentation; how many sockets to open to each node) and `nifi.cluster.load.balance.max.thread.count` (`8` according to the documentation; how many threads transfer data to the other nodes). Increasing it has an effect until the value exceeds the number of nodes × the number of connections per node; additional threads load the writes to the Content and FlowFile Repositories. The exchange timeout is `nifi.cluster.load.balance.comms.timeout` (`30 sec`).
+- The size of the ZooKeeper ensemble (3/5), latency to ZK; frequent state changes load ZK.
+- Heartbeat time/timeouts: values that are too aggressive lead to false disconnects during GC pauses.
 
-**Репозитории.**
+**Repositories.**
 
-- `nifi.content.claim.max.appendable.size` — размер claim, в который дописываются мелкие FlowFile (меньше файлов в ФС, лучше для мелких данных).
-- `nifi.flowfile.repository.checkpoint.interval` — реже checkpoint = меньше нагрузка, больше время восстановления.
-- `always.sync=true` — надёжнее, но существенно медленнее.
-- `nifi.queue.swap.threshold` — порог swap.
-- Provenance: `nifi.provenance.repository.max.storage.time/size`, `index.threads`, `rollover.time/size`, перечень `indexed.fields`/`indexed.attributes` — **индексируйте минимум**; чем больше индексируемых полей, тем выше нагрузка (CPU и I/O).
-- В 2.10.0 добавлена частичная дефрагментация Content Repository (truncation tail-claim) — снижает потребление диска при долгоживущих claim ([Release Notes 2.10.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
+- `nifi.content.claim.max.appendable.size` — the size of a claim to which small FlowFiles are appended (fewer files in the file system, better for small data).
+- `nifi.flowfile.repository.checkpoint.interval` — less frequent checkpoints = less load, longer recovery time.
+- `always.sync=true` — more reliable but substantially slower.
+- `nifi.queue.swap.threshold` — the swap threshold.
+- Provenance: `nifi.provenance.repository.max.storage.time/size`, `index.threads`, `rollover.time/size`, the list of `indexed.fields`/`indexed.attributes` — **index the minimum**; the more indexed fields, the higher the load (CPU and I/O).
+- In 2.10.0, partial defragmentation of the Content Repository (truncation of the tail claim) was added — it reduces disk consumption with long-lived claims ([Release Notes 2.10.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 
-### 3.4.2 Масштабирование и выбор оборудования
+### 3.4.2 Scaling and hardware selection
 
-**Больше ядер vs меньше, но быстрее.**
+**More cores vs fewer but faster.**
 
-| Нагрузка | Предпочтение | Обоснование |
+| Load | Preference | Rationale |
 |---|---|---|
-| Много независимых потоков/FlowFile, высокая параллельность (Kafka с множеством партиций, пакетная обработка) | **Больше ядер** | Throughput масштабируется числом одновременных задач (Timer-driven пул) |
-| Узкое последовательное звено (один порядок/одно соединение, `Concurrent Tasks=1`, сложный разбор одного огромного FlowFile, TLS-шифрование одного потока) | **Более быстрые ядра** | Скорость одного потока ограничена тактовой частотой/IPC |
-| Provenance indexing, сжатие, шифрование, парсинг JSON | Большее число ядер **плюс** достаточная частота | Это CPU-bound операции, но параллелятся |
-| Смешанная | Баланс: 16–32 физических ядра на узел — типичная отправная точка, затем **масштабируйте горизонтально** | Узел с чрезмерным числом ядер упирается в диск/GC/heap раньше, чем используются все ядра |
+| Many independent threads/FlowFiles, high parallelism (Kafka with many partitions, batch processing) | **More cores** | Throughput scales with the number of simultaneous tasks (the Timer-driven pool) |
+| A narrow sequential link (a single order/a single connection, `Concurrent Tasks=1`, complex parsing of one huge FlowFile, TLS encryption of a single stream) | **Faster cores** | The speed of a single thread is limited by the clock frequency/IPC |
+| Provenance indexing, compression, encryption, JSON parsing | A larger number of cores **plus** sufficient frequency | These are CPU-bound operations, but they parallelize |
+| Mixed | Balance: 16–32 physical cores per node is a typical starting point, then **scale horizontally** | A node with an excessive number of cores hits the disk/GC/heap before all the cores are used |
 
-Рекомендации: горизонтальное масштабирование (больше узлов) надёжнее, чем одна «огромная» машина (GC-паузы, диски, единая точка отказа). Но помните про цену: балансировка между узлами = сеть + запись в репозиторий принимающего узла.
+Recommendations: horizontal scaling (more nodes) is more reliable than one "huge" machine (GC pauses, disks, a single point of failure). But remember the price: balancing between nodes = network + a write to the receiving node's repository.
 
-**RAM.** Heap (см. выше) + page cache; для интенсивного Provenance Lucene-индексов нужен кэш ОС.
+**RAM.** The heap (see above) + the page cache; intensive Provenance needs an OS cache for the Lucene indexes.
 
-**Сеть.** 10 GbE для кластера с интенсивным load balancing; проверьте MTU, отсутствие пересчёта на NAT; TLS-накладные.
+**Network.** 10 GbE for a cluster with intensive load balancing; check the MTU, the absence of NAT recalculation; TLS overhead.
 
-### 3.4.3 Структура хранилища и нагрузка Provenance Repository на I/O
+### 3.4.3 The storage layout and the I/O load of the Provenance Repository
 
-**Паттерны нагрузки.**
+**Load patterns.**
 
-| Репозиторий | Профиль I/O |
+| Repository | I/O profile |
 |---|---|
-| FlowFile Repository | Малые синхронные записи WAL (latency-sensitive); при `always.sync=true` — fsync на каждый commit |
-| Content Repository | Последовательные записи/чтения больших объёмов (throughput-sensitive); большое число файлов claim |
-| Provenance Repository | Записи журналов + **индексация (Lucene)**: много мелких случайных операций, merge сегментов, поисковые чтения при запросах UI |
-| `database_repository` | Мало |
+| FlowFile Repository | Small synchronous WAL writes (latency-sensitive); with `always.sync=true` — an fsync on every commit |
+| Content Repository | Sequential writes/reads of large volumes (throughput-sensitive); a large number of claim files |
+| Provenance Repository | Journal writes + **indexing (Lucene)**: many small random operations, segment merges, search reads on UI queries |
+| `database_repository` | Little |
 
-**Вариант A: раздельные массивы/диски.**
+**Option A: separate arrays/disks.**
 
 ```text
-Диск/RAID1-10 №1: FlowFile Repository (низкая латентность, надёжность)
-Диски №2..N     : Content Repository (несколько директорий `contentX` на разных устройствах)
-Диск №M         : Provenance Repository (изолирует индексирование и поиск от основного потока)
-ОС/логи         : отдельно
+Disk/RAID1-10 №1: FlowFile Repository (low latency, reliability)
+Disks №2..N     : Content Repository (several `contentX` directories on different devices)
+Disk №M         : Provenance Repository (isolates indexing and search from the main flow)
+OS/logs         : separately
 ```
 
-Плюсы: изоляция I/O (нагрузка provenance не влияет на WAL/контент), предсказуемость, возможность подобрать тип устройства под профиль. Минусы: сложнее, больше устройств, неравномерная загрузка.
+Pros: I/O isolation (the provenance load does not affect the WAL/content), predictability, the ability to choose the device type for the profile. Cons: more complex, more devices, uneven utilization.
 
-**Вариант B: единый массив NVMe.**
+**Option B: a single NVMe array.**
 
-Плюсы: очень высокие IOPS/throughput общего пула, простота, быстрые Lucene-merge. Минусы: **шумные соседи** — всплеск индексации/merge Provenance конкурирует с fsync WAL и записью контента; при заполнении тома одним репозиторием страдают все; сложнее наблюдать причину деградации.
+Pros: very high IOPS/throughput of the shared pool, simplicity, fast Lucene merges. Cons: **noisy neighbors** — a burst of Provenance indexing/merging competes with the WAL fsync and the content writes; when a volume is filled by one repository, everyone suffers; it is harder to observe the cause of degradation.
 
-**Как выбирать.**
+**How to choose.**
 
-1. Если можно — **отдельный том для Provenance**, даже при NVMe (логическое разделение, `quota`, отдельные метрики).
-2. Если NVMe-массив имеет большой запас IOPS и вы замеряете отсутствие деградации WAL-latency — единый массив допустим.
-3. Снижайте нагрузку Provenance: меньше срок хранения/размер, меньше индексируемых полей, `rollover` настроить, исключить из индексации крупные/бесполезные атрибуты; **не отключайте provenance целиком** без понимания последствий (потеря аудита и отладки) — в крайнем случае используйте `VolatileProvenanceRepository` (в памяти; события теряются при рестарте).
-4. **Замеряйте** (`iostat -x`, `await`, `%util`, `fio`; метрики repo в System Diagnostics) до и после.
-5. **Content Repository** распределяйте по нескольким директориям/устройствам; следите за `archive` (`max.retention.period`, `max.usage.percentage`): архив сохраняет удалённый контент для просмотра/Replay, но занимает место.
+1. If possible — a **separate volume for Provenance**, even with NVMe (logical separation, `quota`, separate metrics).
+2. If the NVMe array has a large IOPS reserve and you measure the absence of WAL latency degradation — a single array is acceptable.
+3. Reduce the Provenance load: a shorter retention period/size, fewer indexed fields, tune `rollover`, exclude large/useless attributes from indexing; **do not disable provenance entirely** without understanding the consequences (loss of audit and debugging) — as a last resort use the `VolatileProvenanceRepository` (in memory; events are lost on restart).
+4. **Measure** (`iostat -x`, `await`, `%util`, `fio`; the repository metrics in System Diagnostics) before and after.
+5. Distribute the **Content Repository** across several directories/devices; watch the `archive` (`max.retention.period`, `max.usage.percentage`): the archive keeps deleted content for viewing/Replay but takes up space.
 
-**Файловая система/ОС:** ext4/xfs; отключите `atime` (`noatime`); увеличьте лимиты файловых дескрипторов (`ulimit -n`) и процессов; заранее предусмотрите достаточное количество inode (множество мелких claim).
+**The file system/OS:** ext4/xfs; disable `atime` (`noatime`); raise the limits on file descriptors (`ulimit -n`) and processes; plan in advance for a sufficient number of inodes (many small claims).
 
-### 3.4.4 Снижение узких мест в дизайне flow, приоритизация, управление throughput
+### 3.4.4 Reducing bottlenecks in flow design, prioritization, throughput control
 
-**Дизайн.**
+**Design.**
 
-1. **Record-подход** вместо Split (Block 1.3) — самое большое улучшение для CPU/heap/репозиториев.
-2. **Меньше шагов, переписывающих контент:** объединяйте преобразования (один `QueryRecord`/`JoltTransformRecord` вместо цепочки `ReplaceText`→`ReplaceText`).
-3. **Избегайте контента в атрибутах** (`EvaluateJsonPath` больших объектов, `ExtractText` больших значений).
-4. **Крупные пачки на выходе** (MergeRecord) для приёмников, платящих за каждое соединение/запрос (БД, Splunk, HTTP).
-5. **Параллелизм там, где узко:** Concurrent Tasks/load balancing по месту медленного звена, а не везде.
-6. **Не используйте `Connection Per FlowFile`, `Wait/Notify` и т. п. на «горячих» путях без необходимости.**
-7. **Минимум сложных регулярных выражений** на горячем пути; предпочитайте строгие парсеры.
-8. **Выносите «холодные» пути** (DLQ, аудит) в отдельные группы.
+1. **The Record approach** instead of Split (Block 1.3) — the biggest improvement for CPU/heap/repositories.
+2. **Fewer steps that rewrite content:** combine transformations (one `QueryRecord`/`JoltTransformRecord` instead of a chain `ReplaceText`→`ReplaceText`).
+3. **Avoid content in attributes** (`EvaluateJsonPath` of large objects, `ExtractText` of large values).
+4. **Large batches on output** (MergeRecord) for destinations that pay for each connection/request (databases, Splunk, HTTP).
+5. **Parallelism where it is narrow:** Concurrent Tasks/load balancing at the slow link, not everywhere.
+6. **Do not use `Connection Per FlowFile`, `Wait/Notify`, and the like on "hot" paths without need.**
+7. **A minimum of complex regular expressions** on the hot path; prefer strict parsers.
+8. **Move "cold" paths** (DLQ, audit) into separate groups.
 
-**Приоритизация и throughput control.**
+**Prioritization and throughput control.**
 
-- **Prioritizers** на очередях (Block 1.2): `NewestFlowFileFirst` для приоритета свежих данных; `PriorityAttributePrioritizer` для классов трафика.
-- **ControlRate:** ограничение скорости по числу FlowFile/размеру/значению атрибута — защита приёмников.
-- **Back pressure** как основной регулятор; планируйте пороги по ёмкости: порог по FlowFile защищает heap, по размеру — диск.
-- **Load balancing** — выравнивание, а не лекарство от всех бед.
-- **Run Duration / Run Schedule** — баланс latency и throughput.
-- **Приоритеты между потоками:** NiFi не имеет жёстких QoS между Process Group в одном пуле потоков; для гарантий выделяйте отдельный кластер/экземпляр или ограничивайте concurrent tasks менее критичных потоков.
+- **Prioritizers** on queues (Block 1.2): `NewestFlowFileFirst` to prioritize fresh data; `PriorityAttributePrioritizer` for traffic classes.
+- **ControlRate:** limiting the rate by the number of FlowFiles/size/an attribute value — protecting destinations.
+- **Back pressure** as the main regulator; plan the thresholds by capacity: a threshold by FlowFiles protects the heap, by size — the disk.
+- **Load balancing** is an equalizer, not a cure for all ills.
+- **Run Duration / Run Schedule** — a balance of latency and throughput.
+- **Priorities between flows:** NiFi has no hard QoS between Process Groups in a single thread pool; for guarantees, allocate a separate cluster/instance or limit the concurrent tasks of less critical flows.
 
-**Типичные ошибки производительности.**
+**Common performance mistakes.**
 
-| Ошибка | Следствие |
+| Mistake | Consequence |
 |---|---|
-| Heap по умолчанию | Частые GC/OOM |
-| Миллионы мелких FlowFile | Нагрузка на heap/WAL/provenance |
-| Provenance и Content на одном медленном диске | Низкий throughput |
-| Слишком много Concurrent Tasks | Конкуренция, GC, медленнее общий результат |
-| `Infer Schema` на больших FlowFile | Лишние проходы и нестабильность |
-| Один огромный FlowFile | Нет параллелизма, трудный retry |
+| The default heap | Frequent GC/OOM |
+| Millions of small FlowFiles | Load on the heap/WAL/provenance |
+| Provenance and Content on one slow disk | Low throughput |
+| Too many Concurrent Tasks | Contention, GC, a slower overall result |
+| `Infer Schema` on large FlowFiles | Extra passes and instability |
+| One huge FlowFile | No parallelism, a hard retry |
 
-### Lab 8: тест производительности и тюнинг конвейера
+### Lab 8: a performance test and pipeline tuning
 
-**Цель.** Измерить throughput конвейера из Lab 5, найти узкое место и улучшить показатели.
+**Goal.** Measure the throughput of the pipeline from Lab 5, find the bottleneck, and improve the indicators.
 
-**Методика (по шагам).**
+**Method (step by step).**
 
-1. **Базовая линия.** Зафиксируйте версию, конфигурацию (heap, thread pool, concurrent tasks), железо. Подготовьте генератор нагрузки (`GenerateRecord`, Kafka producer perf-test).
-2. **Метрики.** События/с на выходе; Tasks/Time по процессорам; очереди (где растут); heap/GC; CPU; `iostat`; размер/время событий provenance.
-3. **Сценарии.**
-   - A: базовая конфигурация.
-   - B: явные схемы (убрать Infer).
-   - C: увеличить `Concurrent Tasks` узкого звена.
-   - D: увеличить размер пачек (`MergeRecord`).
-   - E: перенести Provenance на отдельный том/уменьшить индексацию.
-   - F: увеличить heap и thread pool (по росту числа ядер).
-4. **Один параметр за раз;** по 3 прогона; медиана.
-5. **Отчёт:** таблица «изменение → эффект → вывод», обновлённые настройки, рекомендации.
+1. **The baseline.** Record the version, the configuration (heap, thread pool, concurrent tasks), the hardware. Prepare a load generator (`GenerateRecord`, a Kafka producer perf-test).
+2. **Metrics.** Events/s at the output; Tasks/Time per processor; queues (where they grow); heap/GC; CPU; `iostat`; the size/time of provenance events.
+3. **Scenarios.**
+   - A: the baseline configuration.
+   - B: explicit schemas (remove Infer).
+   - C: increase `Concurrent Tasks` of the bottleneck.
+   - D: increase the batch size (`MergeRecord`).
+   - E: move Provenance to a separate volume/reduce indexing.
+   - F: increase the heap and thread pool (in line with the growing number of cores).
+4. **One parameter at a time;** 3 runs each; the median.
+5. **The report:** a "change → effect → conclusion" table, the updated settings, recommendations.
 
-**На стенде (Приложение A).**
+**On the stand (Appendix A).**
 
-- **Генератор:** `GenerateRecord` (схема лог-события с `user.pwd`, Number of Records `10000`, Run Schedule `1 sec`) перед конвейером Lab 5 — около 10 000 событий/с; нагрузку увеличивают через *Number of Records* и *Run Schedule*. Пока узким местом остаётся генератор, это и есть базовая линия.
-- **Счётчик выхода:** `UpdateCounter` после `MergeRecord` с Delta `${record.count}` — events/s = прирост счётчика (☰ → Counters) за интервал.
-- **Сценарий A** — Reader с `Infer Schema`; **B** — переключите Record Reader у `ValidateRecord` на `JsonTreeReader` с явной схемой.
-- **Сценарий D** — *Minimum/Maximum Number of Records* у `MergeRecord`.
-- **Сценарий E** — на Docker Desktop все volumes лежат на одном виртуальном диске, поэтому эффект отдельного тома не воспроизвести; уменьшите индексацию provenance в `conf/nifi.properties` (volume `nifi_conf`): `nifi.provenance.repository.indexed.fields`, `nifi.provenance.repository.indexed.attributes`, `nifi.provenance.repository.max.storage.time`, затем перезапуск `make nifi` (**[проверить]** влияние на вашей версии).
-- **Сценарий F** — heap: `NIFI_JVM_HEAP_INIT` / `NIFI_JVM_HEAP_MAX` в `nifi/single/docker-compose-nifi-single.yml` и `make nifi` (учитывайте лимит памяти Docker Desktop); thread pool: ☰ → Controller Settings → *Maximum Timer Driven Thread Count*.
-- **Метрики:** Prometheus уже собирает метрики NiFi (`http://localhost:9090`, job `nifi`), графики — Grafana `http://localhost:3000`.
-- **Выход** пишется в `nifi/data/lab8-out` с именами по секундам (`lab8-${now():format('ss')}.ndjson`, Conflict Resolution `replace`) — на диске не больше 60 файлов при любой нагрузке.
+- **The generator:** `GenerateRecord` (a log event schema with `user.pwd`, Number of Records `10000`, Run Schedule `1 sec`) before the Lab 5 pipeline — about 10,000 events/s; the load is increased through *Number of Records* and *Run Schedule*. While the generator remains the bottleneck, that is the baseline.
+- **The output counter:** `UpdateCounter` after `MergeRecord` with Delta `${record.count}` — events/s = the growth of the counter (☰ → Counters) over an interval.
+- **Scenario A** — a Reader with `Infer Schema`; **B** — switch the Record Reader of `ValidateRecord` to a `JsonTreeReader` with an explicit schema.
+- **Scenario D** — *Minimum/Maximum Number of Records* of `MergeRecord`.
+- **Scenario E** — on Docker Desktop all volumes sit on one virtual disk, so the effect of a separate volume cannot be reproduced; reduce the provenance indexing in `conf/nifi.properties` (the volume `nifi_conf`): `nifi.provenance.repository.indexed.fields`, `nifi.provenance.repository.indexed.attributes`, `nifi.provenance.repository.max.storage.time`, then restart with `make nifi` (**[verify]** the effect on your version).
+- **Scenario F** — heap: `NIFI_JVM_HEAP_INIT` / `NIFI_JVM_HEAP_MAX` in `nifi/single/docker-compose-nifi-single.yml` and `make nifi` (mind the Docker Desktop memory limit); thread pool: ☰ → Controller Settings → *Maximum Timer Driven Thread Count*.
+- **Metrics:** Prometheus already collects NiFi metrics (`http://localhost:9090`, job `nifi`), and the graphs are in Grafana at `http://localhost:3000`.
+- **The output** is written to `nifi/data/lab8-out` with names by seconds (`lab8-${now():format('ss')}.ndjson`, Conflict Resolution `replace`) — no more than 60 files are on disk at any load.
 
-**Шаблон таблицы результатов.**
+**A results table template.**
 
 ```markdown
-| Сценарий | Изменение | events/s | CPU % | GC pause (p95) | I/O await (мс) | Вывод |
+| Scenario | Change | events/s | CPU % | GC pause (p95) | I/O await (ms) | Conclusion |
 |---|---|---|---|---|---|---|
-| A | базовая | | | | | |
-| B | явные схемы | | | | | |
+| A | baseline | | | | | |
+| B | explicit schemas | | | | | |
 ```
 
-**Полезные команды.**
+**Useful commands.**
 
 ```bash
 bin/nifi.sh dump /tmp/nifi-dump.txt           # thread dump
-bin/nifi.sh diagnostics /tmp/diag.txt         # диагностика
-iostat -x 5                                   # нагрузка на диски
+bin/nifi.sh diagnostics /tmp/diag.txt         # diagnostics
+iostat -x 5                                   # disk load
 jstat -gcutil <pid> 5000                      # GC
 ```
 
-На стенде те же команды выполняются внутри контейнера, а нагрузка видна через `docker stats`:
+On the stand the same commands are run inside the container, and the load is visible through `docker stats`:
 
 ```bash
 docker exec nifi /opt/nifi/nifi-current/bin/nifi.sh dump /tmp/nifi-dump.txt
 docker exec nifi /opt/nifi/nifi-current/bin/nifi.sh diagnostics /tmp/diag.txt
-docker exec nifi sh -c 'jstat -gcutil $(pgrep -f org.apache.nifi.NiFi | head -1) 5000'   # [проверить]
-docker stats nifi                                                                     # CPU / память контейнера
+docker exec nifi sh -c 'jstat -gcutil $(pgrep -f org.apache.nifi.NiFi | head -1) 5000'   # [verify]
+docker stats nifi                                                                     # the container's CPU / memory
 ```
 
-**Типичные ошибки.** Измерение без стабильного входа; одновременное изменение нескольких параметров; игнорирование прогрева JVM (первые минуты не показательны); сравнение без одинаковых данных; выход на диск без ограничения объёма (заполняет диск за минуты).
+**Common mistakes.** Measuring without a stable input; changing several parameters at once; ignoring JVM warm-up (the first minutes are not representative); comparing without identical data; output to disk without a volume limit (it fills the disk within minutes).
 
-**Эталонное решение:** `nifi/flows/lab8-performance.json`.
+**Reference solution:** `nifi/flows/lab8-performance.json`.
 
 ---
 
 ## Block 3.5: Final hands-on lab: end-to-end pipeline
 
-### Цель и результат
+### Goal and result
 
-Собрать производственно-ориентированный конвейер: **Kafka → валидация и преобразование JSON/NDJSON (Record) → доставка (Splunk или файл) → обработка ошибок → проверка производительности и тюнинг**.
+Build a production-oriented pipeline: **Kafka → validation and transformation of JSON/NDJSON (Record) → delivery (Splunk or a file) → error handling → a performance check and tuning**.
 
-### Архитектура
+### Architecture
 
 ```text
                          ┌───────────────────────── PG: ingest ─────────────────────────┐
@@ -1312,15 +1310,15 @@ docker stats nifi                                                               
                          ┌───────────────── PG: validate-transform ───────────────────┐
                          │ ValidateRecord (schema LogEvent.in)                         │
                          │   ├ invalid ─────────────────────────────► PG: errors        │
-                         │ UpdateRecord (ingest_ts; writer-schema без секретов,         │
-                         │               порядок полей: ingest_ts первым)               │
+                         │ UpdateRecord (ingest_ts; a writer schema without secrets,    │
+                         │               field order: ingest_ts first)                  │
                          │ QueryRecord (WHERE level <> 'DEBUG')                         │
-                         │ MergeRecord (NDJSON, до 10 000 записей, Max Bin Age 30 sec)  │
+                         │ MergeRecord (NDJSON, up to 10,000 records, Max Bin Age 30 sec)│
                          └───────────────┬───────────────────────────────────────────────┘
                                          ▼
                          ┌───────────────────── PG: deliver ─────────────────────────┐
-                         │ PutSplunk (TCP)  или  InvokeHTTP→HEC  или PutFile           │
-                         │   ├ failure/retry ► RetryFlowFile ► (исчерпано) ► PG: errors │
+                         │ PutSplunk (TCP)  or  InvokeHTTP→HEC  or PutFile              │
+                         │   ├ failure/retry ► RetryFlowFile ► (exhausted) ► PG: errors │
                          └───────────────┬───────────────────────────────────────────────┘
                                          ▼
                          ┌───────────────────── PG: errors ───────────────────────────┐
@@ -1328,28 +1326,28 @@ docker stats nifi                                                               
                          └───────────────────────────────────────────────────────────────┘
 ```
 
-### Controller Services и параметры
+### Controller Services and parameters
 
-| Сервис/параметр | Значение |
+| Service/parameter | Value |
 |---|---|
 | `Kafka3ConnectionService` | `#{kafka.bootstrap}` |
 | `AvroSchemaRegistry` | `LogEvent.in`, `LogEvent.out` |
-| `JsonTreeReader` | Schema Name Property, registry; без Infer |
-| `JsonRecordSetWriter` | `LogEvent.out`, `One Line Per Object`, без Pretty Print |
+| `JsonTreeReader` | Schema Name Property, the registry; without Infer |
+| `JsonRecordSetWriter` | `LogEvent.out`, `One Line Per Object`, without Pretty Print |
 | Parameter Context `logs-prod` | `kafka.bootstrap`, `splunk.host`, `splunk.port`, `dlq.topic`, `out.dir` |
 
-Значения для стенда (Приложение A.5): `kafka.bootstrap=kafka1:19092`, `splunk.host=splunk-sim`, `splunk.port=5514`, `dlq.topic=logs.dlq`, `out.dir=/opt/nifi/data/final` (резервный сток DLQ; на хосте — `nifi/data/final`).
+Values for the stand (Appendix A.5): `kafka.bootstrap=kafka1:19092`, `splunk.host=splunk-sim`, `splunk.port=5514`, `dlq.topic=logs.dlq`, `out.dir=/opt/nifi/data/final` (a fallback sink for the DLQ; on the host — `nifi/data/final`).
 
-В режиме `RECORD` у `ConsumeKafka` есть relationship **`parse failure`** (сообщения, которые Reader не разобрал) — направьте его в `errors`, иначе процессор невалиден. Для сверки удобно поставить `UpdateCounter` с Delta `${record.count}` в точках «принято» (после `ConsumeKafka`), «доставлено» (перед `PutSplunk`), «отфильтровано» (выход `debug` второго запроса `QueryRecord`: `SELECT * FROM FLOWFILE WHERE level = 'DEBUG'`) и «в DLQ» (в группе `errors`).
+In `RECORD` mode `ConsumeKafka` has a relationship **`parse failure`** (messages that the Reader could not parse) — route it to `errors`, otherwise the processor is invalid. For reconciliation it is convenient to put an `UpdateCounter` with Delta `${record.count}` at the points "accepted" (after `ConsumeKafka`), "delivered" (before `PutSplunk`), "filtered" (the `debug` output of the second `QueryRecord`: `SELECT * FROM FLOWFILE WHERE level = 'DEBUG'`), and "to the DLQ" (in the `errors` group).
 
-### Последовательность
+### Sequence
 
-1. Подготовьте стенд (Приложение A); создайте топики `logs.raw` (например, 6 партиций) и `logs.dlq` — на стенде это делает `make lab-setup`.
-2. Создайте Parameter Context, Controller Services (схемы!).
-3. Постройте группы в порядке: ingest → validate-transform → deliver → errors; соедините порты.
-4. Настройте back pressure на межгрупповых связях; на связях в `errors` — высокие пороги.
-5. Включите framework retry на `PutSplunk`/`InvokeHTTP`; `RetryFlowFile` для исчерпавших.
-6. Запустите генератор нагрузки: смесь валидных и невалидных событий (5–10 % невалидных), события DEBUG, события с секретом. На стенде: `make lab-final-load n=100000` (код — `lab-services/produce_logs.py`). Вручную:
+1. Prepare the stand (Appendix A); create the topics `logs.raw` (for example, 6 partitions) and `logs.dlq` — on the stand `make lab-setup` does this.
+2. Create the Parameter Context and the Controller Services (the schemas!).
+3. Build the groups in the order: ingest → validate-transform → deliver → errors; connect the ports.
+4. Configure back pressure on the inter-group connections; on the connections into `errors` — high thresholds.
+5. Enable framework retry on `PutSplunk`/`InvokeHTTP`; `RetryFlowFile` for those that exhausted their attempts.
+6. Start the load generator: a mix of valid and invalid events (5–10% invalid), DEBUG events, events with a secret. On the stand: `make lab-final-load n=100000` (the code is `lab-services/produce_logs.py`). Manually:
 
 ```bash
 python3 - <<'EOF' | docker exec -i kafka1 kafka-console-producer --bootstrap-server kafka1:19092 --topic logs.raw
@@ -1357,257 +1355,257 @@ import json, random, time
 for i in range(100000):
     r = random.random()
     if r < 0.05:
-        print('{"ts":"bad"}')                     # невалидная запись
+        print('{"ts":"bad"}')                     # an invalid record
     else:
         print(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ"), "level": random.choice(["INFO","ERROR","DEBUG"]),
                           "svc": "api", "msg": "event %d" % i, "user": {"id": i % 100, "pwd": "s3cret"}}))
 EOF
 ```
 
-### Проверка корректности
+### Correctness check
 
-- В приёмнике: события **без** `pwd`, без `DEBUG`, с `ingest_ts` первым полем.
-- В `logs.dlq` — невалидные записи (примерно 5 %) с атрибутами/заголовками ошибки.
-- Сумма: `принято = доставлено + отфильтровано (DEBUG) + в DLQ` (сверка через `record.count`/счётчики `UpdateCounter`).
-- Отсутствие роста очередей в `errors` свыше порогов; основная очередь не блокируется при росте DLQ.
-- Provenance: для случайного события виден путь Kafka → … → SEND.
+- At the destination: events **without** `pwd`, without `DEBUG`, with `ingest_ts` as the first field.
+- In `logs.dlq` — invalid records (about 5%) with error attributes/headers.
+- The sum: `accepted = delivered + filtered (DEBUG) + to the DLQ` (reconciled through `record.count`/the `UpdateCounter` counters).
+- There is no growth of the queues in `errors` above the thresholds; the main queue is not blocked when the DLQ grows.
+- Provenance: for a random event the path Kafka → … → SEND is visible.
 
-На стенде:
+On the stand:
 
 ```bash
-make lab-splunk-count                                    # строк в эмуляторе = final.delivered
-docker exec splunk-sim sh -c 'grep -c pwd /data/splunk_in.log; grep -c DEBUG /data/splunk_in.log'   # ожидаем 0 и 0
+make lab-splunk-count                                    # lines in the emulator = final.delivered
+docker exec splunk-sim sh -c 'grep -c pwd /data/splunk_in.log; grep -c DEBUG /data/splunk_in.log'   # we expect 0 and 0
 docker exec kafka1 kafka-console-consumer --bootstrap-server kafka1:19092 --topic logs.dlq \
    --from-beginning --timeout-ms 10000 --property print.headers=true | head
 ```
 
-Пример сверки на 2000 событий: `final.accepted` 2000 = `final.delivered` 1256 + `final.filtered.debug` 636 + `final.dlq` 108 (☰ → Counters).
+An example of reconciliation on 2,000 events: `final.accepted` 2000 = `final.delivered` 1256 + `final.filtered.debug` 636 + `final.dlq` 108 (☰ → Counters).
 
-**Повторный прогон.** Consumer group `nifi-logs` хранит offsets; перед новым прогоном с начала топика остановите `ConsumeKafka` и выполните `docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-logs`; обнулите эмулятор: `docker exec splunk-sim sh -c ': > /data/splunk_in.log'`.
+**Re-running.** The consumer group `nifi-logs` stores the offsets; before a new run from the start of the topic, stop `ConsumeKafka` and run `docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-logs`; zero the emulator: `docker exec splunk-sim sh -c ': > /data/splunk_in.log'`.
 
-### Тест отказов
+### Failure testing
 
-1. Остановите приёмник (Splunk-эмулятор; на стенде `docker stop splunk-sim`, затем `docker start splunk-sim`): очередь растёт, back pressure останавливает ingest; Kafka lag растёт (потери нет; `docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --describe --group nifi-logs`); после возврата — рассасывание.
-2. Перезапустите NiFi во время нагрузки (на стенде `docker restart nifi`): очереди восстанавливаются, consumer продолжает с зафиксированных offsets; возможны повторы (at-least-once) — проверить идемпотентность/приемлемость.
-3. Подайте «пачку мусора» (100 % невалидных): основной поток не останавливается; DLQ принимает.
+1. Stop the destination (the Splunk emulator; on the stand `docker stop splunk-sim`, then `docker start splunk-sim`): the queue grows, back pressure stops the ingest; the Kafka lag grows (there is no loss; `docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --describe --group nifi-logs`); after it returns — the backlog drains.
+2. Restart NiFi during the load (on the stand `docker restart nifi`): the queues are restored, the consumer continues from the committed offsets; repeats are possible (at-least-once) — check idempotency/acceptability.
+3. Submit a "batch of garbage" (100% invalid): the main flow does not stop; the DLQ accepts it.
 
-### Performance check и tuning
+### Performance check and tuning
 
-Выполните Lab 8 на этом конвейере: цель — стабильная пропускная способность без роста lag, GC-паузы в пределах SLO; зафиксируйте итоговые настройки (heap, thread pool, concurrent tasks, размер пачек, репозитории).
+Perform Lab 8 on this pipeline: the goal is stable throughput without growth of the lag, GC pauses within the SLO; record the final settings (heap, thread pool, concurrent tasks, batch sizes, repositories).
 
-### Типичные ошибки и диагностика
+### Common mistakes and diagnostics
 
-| Симптом | Диагностика |
+| Symptom | Diagnostics |
 |---|---|
-| Данные не появляются | Статус `ConsumeKafka` (Group/Offset Reset), bulletins; `kafka-consumer-groups.sh --describe` (на стенде `docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --describe --group nifi-logs`); группа уже прочитала топик — см. «Повторный прогон» |
-| `ConsumeKafka` невалиден | Не подключён relationship `parse failure` |
-| Всё в DLQ | Схема `LogEvent.in` не соответствует данным (типы/вложенные структуры) — смотрите атрибуты ошибки |
-| Низкий throughput | Tasks/Time, очереди; не хватает партиций; мелкие FlowFile; один поток на `PutSplunk` |
-| Дубли в приёмнике | Перезапуски/ребалансы; нужна идемпотентность |
+| Data does not appear | The status of `ConsumeKafka` (Group/Offset Reset), bulletins; `kafka-consumer-groups.sh --describe` (on the stand `docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --describe --group nifi-logs`); the group has already read the topic — see "Re-running" |
+| `ConsumeKafka` is invalid | The `parse failure` relationship is not connected |
+| Everything goes to the DLQ | The `LogEvent.in` schema does not match the data (types/nested structures) — look at the error attributes |
+| Low throughput | Tasks/Time, queues; not enough partitions; small FlowFiles; a single thread on `PutSplunk` |
+| Duplicates at the destination | Restarts/rebalances; idempotency is needed |
 
-**Эталонное решение:** `nifi/flows/lab9-final-pipeline.json`. Тесты отказов (остановка приёмника, перезапуск NiFi под нагрузкой) на эталоне не прогонялись.
+**Reference solution:** `nifi/flows/lab9-final-pipeline.json`. The failure tests (stopping the destination, restarting NiFi under load) were not run on the reference solution.
 
 ---
 
 ## Block 3.6: Course recap and next steps
 
-### Ключевые выводы за три дня
+### Key takeaways from the three days
 
-1. **Фундамент:** архитектура NiFi (Flow Controller, три репозитория, immutable content), FlowFile (атрибуты + контент), back pressure, prioritization, модульный дизайн (Process Group + Parameter Context + Flow Registry).
-2. **Record-подход** — основной способ эффективной обработки: Reader/Writer/Schema, явные схемы, NDJSON, `QueryRecord`/`UpdateRecord`/`JoltTransformRecord`/`MergeRecord`.
-3. **Интеграции:** JDBC (`ExecuteSQLRecord`, `QueryDatabaseTableRecord`, `PutDatabaseRecord`), REST (`InvokeHTTP`), Kafka 2.x (`ConsumeKafka`/`PublishKafka` + `Kafka3ConnectionService`), Splunk (`PutSplunk`/HEC).
-4. **Миграция 1.x → 2.x:** Java 21; предварительно 1.27.0; удалённые компоненты (в т. ч. Kafka 2.6, Variables, Templates, Event-driven); blue/green и backup `state/local`; тестирование и план отката.
-5. **Надёжность:** retry (framework-level и `RetryFlowFile`), DLQ, разделение путей ошибок, защита основного потока от заполнения failure-очередей, backup `conf/` + sensitive key.
-6. **Эксплуатация:** мониторинг (UI, Prometheus, bulletins, provenance), RCA, rollback, восстановление.
-7. **Безопасность:** TLS/mTLS, OIDC/LDAP, политики (с учётом deprecated fine-grained авторизации с 2.12), аудит, секреты и шифрование (repo encryption удалён в 2.0).
-8. **Производительность:** heap/GC, thread pool, concurrent tasks, схема хранилища (изоляция Provenance), дизайн flow без узких мест, измерения.
+1. **The foundation:** the NiFi architecture (the Flow Controller, three repositories, immutable content), the FlowFile (attributes + content), back pressure, prioritization, modular design (Process Group + Parameter Context + Flow Registry).
+2. **The Record approach** is the main way to process efficiently: Reader/Writer/Schema, explicit schemas, NDJSON, `QueryRecord`/`UpdateRecord`/`JoltTransformRecord`/`MergeRecord`.
+3. **Integrations:** JDBC (`ExecuteSQLRecord`, `QueryDatabaseTableRecord`, `PutDatabaseRecord`), REST (`InvokeHTTP`), Kafka 2.x (`ConsumeKafka`/`PublishKafka` + `Kafka3ConnectionService`), Splunk (`PutSplunk`/HEC).
+4. **Migration 1.x → 2.x:** Java 21; 1.27.0 beforehand; removed components (including Kafka 2.6, Variables, Templates, Event-driven); blue/green and a backup of `state/local`; testing and a rollback plan.
+5. **Reliability:** retry (framework-level and `RetryFlowFile`), the DLQ, separation of error paths, protecting the main flow from failure queues filling up, a backup of `conf/` + the sensitive key.
+6. **Operations:** monitoring (the UI, Prometheus, bulletins, provenance), RCA, rollback, recovery.
+7. **Security:** TLS/mTLS, OIDC/LDAP, policies (taking into account the deprecated fine-grained authorization since 2.12), audit, secrets and encryption (repo encryption was removed in 2.0).
+8. **Performance:** heap/GC, thread pool, concurrent tasks, the storage layout (isolating Provenance), flow design without bottlenecks, measurements.
 
-### Рекомендуемые следующие шаги для команды
+### Recommended next steps for the team
 
-| Область | Действия |
+| Area | Actions |
 |---|---|
-| **Миграция** | Инвентаризация компонентов; апгрейд до последней 1.x ≥ 1.27.0; deprecation-аудит; staging 2.x (Java 21); план Kafka-переключения через Group ID; blue/green; backup `conf/`, ключей и `state/local` |
-| **Flow tuning** | Замена Split на Record; явные схемы; пересмотр concurrent tasks/heap/thread pool; изоляция Provenance; метрики и baseline |
-| **Error handling** | Стандартный шаблон DLQ+replay; framework retry на сетевых процессорах; алерты на размер failure-очередей; идемпотентные приёмники |
-| **Безопасность** | mTLS/OIDC; модель групп; план перехода от fine-grained политик (NIP-39); Parameter Providers; шифрование дисков |
-| **Процесс** | Git-based Registry; review и promotion dev→test→prod; Flow Analysis Rules; runbooks |
+| **Migration** | An inventory of components; an upgrade to the latest 1.x ≥ 1.27.0; a deprecation audit; staging 2.x (Java 21); a Kafka switchover plan through the Group ID; blue/green; a backup of `conf/`, the keys, and `state/local` |
+| **Flow tuning** | Replacing Split with Record; explicit schemas; reviewing concurrent tasks/heap/thread pool; isolating Provenance; metrics and a baseline |
+| **Error handling** | A standard DLQ+replay template; framework retry on network processors; alerts on the size of failure queues; idempotent destinations |
+| **Security** | mTLS/OIDC; a group model; a plan for moving away from fine-grained policies (NIP-39); Parameter Providers; disk encryption |
+| **Process** | A Git-based Registry; review and promotion dev→test→prod; Flow Analysis Rules; runbooks |
 
-### Final Q&A и feedback
+### Final Q&A and feedback
 
-Обсуждение открытых вопросов; сбор обратной связи по курсу; план внедрения на 30/60/90 дней.
+A discussion of open questions; collecting feedback on the course; a 30/60/90-day implementation plan.
 
 ---
 
-## Приложение A: Лабораторный стенд (Docker Compose)
+## Appendix A: The lab stand (Docker Compose)
 
-Учебный стенд для всех лабораторных (не для production) — репозиторий стенда (compose-проект `nifi-playground`). Все сервисы запускаются через `make`, работают в одной Docker-сети `nifi-net` и хранят данные в именованных volumes. Проверено на NiFi 2.12.0.
+A training stand for all the labs (not for production) — the stand repository (the compose project `nifi-playground`). All services are started through `make`, run in one Docker network `nifi-net`, and keep their data in named volumes. Verified on NiFi 2.12.0.
 
-### A.1 Состав стенда
+### A.1 Components of the stand
 
-| Сервис | Образ | Контейнер | Адрес в сети `nifi-net` | Порт на хосте | Compose-файл |
+| Service | Image | Container | Address in the `nifi-net` network | Host port | Compose file |
 |---|---|---|---|---|---|
 | NiFi (single) | `apache/nifi:2.12.0` | `nifi` | `https://nifi:8443` | `8443`, `8081` (ListenHTTP, Lab 2) | `nifi/single/docker-compose-nifi-single.yml` |
-| NiFi (cluster, 3 узла) | `apache/nifi:2.12.0` | `nifi1`–`nifi3` | `https://nifi1:8443` … | `9443`–`9445` | `nifi/cluster/docker-compose-nifi-cluster.yml` |
-| ZooKeeper (для кластера) | `zookeeper:3.9` | `nifi-cluster-zookeeper` | `zookeeper:2181` | — | там же |
-| NiFi Registry (HTTPS) + LDAP (`lldap`) | `apache/nifi-registry:2.12.0` | `nifi-registry` | `https://nifi-registry:18443` | `18443`; UI LDAP `17170` | `nifi/registry/docker-compose-nifi-registry.yml` |
+| NiFi (cluster, 3 nodes) | `apache/nifi:2.12.0` | `nifi1`–`nifi3` | `https://nifi1:8443` … | `9443`–`9445` | `nifi/cluster/docker-compose-nifi-cluster.yml` |
+| ZooKeeper (for the cluster) | `zookeeper:3.9` | `nifi-cluster-zookeeper` | `zookeeper:2181` | — | the same file |
+| NiFi Registry (HTTPS) + LDAP (`lldap`) | `apache/nifi-registry:2.12.0` | `nifi-registry` | `https://nifi-registry:18443` | `18443`; the LDAP UI `17170` | `nifi/registry/docker-compose-nifi-registry.yml` |
 | PostgreSQL 18 | `postgres:18-alpine` | `nifi-postgres` | `postgres:5432` | `5432` | `postgres/docker-compose-postgres.yml` |
-| pgAdmin (UI для PostgreSQL) | `dpage/pgadmin4` | `pgadmin` | — | `127.0.0.1:5050` | там же |
-| Kafka (KRaft, 1 брокер) | `confluentinc/cp-kafka:8.0.0` | `kafka1` | `kafka1:19092` | `9092` | `kafka/docker-compose-kafka-single-node.yml` |
-| Conduktor Console (UI Kafka) | `conduktor/conduktor-console` | — | — | `8080` | там же |
+| pgAdmin (a UI for PostgreSQL) | `dpage/pgadmin4` | `pgadmin` | — | `127.0.0.1:5050` | the same file |
+| Kafka (KRaft, 1 broker) | `confluentinc/cp-kafka:8.0.0` | `kafka1` | `kafka1:19092` | `9092` | `kafka/docker-compose-kafka-single-node.yml` |
+| Conduktor Console (a Kafka UI) | `conduktor/conduktor-console` | — | — | `8080` | the same file |
 | Prometheus + kafka-exporter | `prom/prometheus` | `prometheus`, `kafka-exporter` | `prometheus:9090` | `9090`, `9308` | `monitoring/prometheus/docker-compose-prometheus.yml` |
 | Grafana | `grafana/grafana` | `grafana` | `grafana:3000` | `3000` | `monitoring/grafana/docker-compose-grafana.yml` |
-| Заглушка REST API клиентов (Lab 4) | `python:3.12-alpine` | `customers-api` | `http://customers-api:8000` | — | `lab-services/docker-compose-lab-services.yml` |
-| Эмулятор Splunk (Lab 6, финальная) | `python:3.12-alpine` | `splunk-sim` | TCP `splunk-sim:5514`, HEC `http://splunk-sim:8088` | — | там же |
-| Нестабильный API (Lab 7) | `python:3.12-alpine` | `flaky` | `http://flaky:9099/events` | — | там же |
-| Splunk Enterprise (trial, по желанию) | `splunk/splunk` | `splunk` | TCP `splunk:5514`, HEC `http://splunk:8088` | `8000` (UI), `8088` | `splunk/docker-compose-splunk.yml` |
+| A stub of the customers REST API (Lab 4) | `python:3.12-alpine` | `customers-api` | `http://customers-api:8000` | — | `lab-services/docker-compose-lab-services.yml` |
+| The Splunk emulator (Lab 6, the final lab) | `python:3.12-alpine` | `splunk-sim` | TCP `splunk-sim:5514`, HEC `http://splunk-sim:8088` | — | the same file |
+| An unstable API (Lab 7) | `python:3.12-alpine` | `flaky` | `http://flaky:9099/events` | — | the same file |
+| Splunk Enterprise (trial, optional) | `splunk/splunk` | `splunk` | TCP `splunk:5514`, HEC `http://splunk:8088` | `8000` (UI), `8088` | `splunk/docker-compose-splunk.yml` |
 
-Splunk не входит в `make up` и запускается отдельно (`make splunk`, первый старт — несколько минут; на Apple Silicon образ amd64 работает через эмуляцию). Для лабораторных достаточно эмулятора `splunk-sim`; настоящий Splunk нужен, чтобы увидеть события в поиске (`index=nifi`). Порты те же, что у эмулятора, — в Parameter Context меняется только хост: `splunk-sim` → `splunk`.
+Splunk is not part of `make up` and is started separately (`make splunk`; the first start takes several minutes; on Apple Silicon the amd64 image runs through emulation). For the labs the `splunk-sim` emulator is enough; a real Splunk is needed to see the events in a search (`index=nifi`). The ports are the same as the emulator's — only the host changes in the Parameter Context: `splunk-sim` → `splunk`.
 
-### A.2 Структура репозитория
+### A.2 The repository structure
 
 ```text
-Makefile                      все команды стенда (make help)
+Makefile                      all the stand's commands (make help)
 nifi/
-  single/  cluster/           compose-файлы NiFi, authorizers.xml
+  single/  cluster/           NiFi compose files, authorizers.xml
   registry/                   NiFi Registry + LDAP, authorizers.xml
-  common/                     генерация сертификатов, пустой flow, скрипты политик и импорта
-  flows/                      эталонные решения лабораторных (lab*.json) + README
-  certs/                      общий CA и сертификаты узлов (генерируются, не коммитятся)
-  data/                       смонтирован в NiFi как /opt/nifi/data (входы и выходы лабораторных)
-  drivers/                    JDBC-драйверы, смонтированы как /opt/nifi/drivers
+  common/                     certificate generation, an empty flow, policy and import scripts
+  flows/                      reference solutions for the labs (lab*.json) + README
+  certs/                      the common CA and the node certificates (generated, not committed)
+  data/                       mounted into NiFi as /opt/nifi/data (the labs' inputs and outputs)
+  drivers/                    JDBC drivers, mounted as /opt/nifi/drivers
 kafka/                        Kafka + Conduktor
-postgres/                     PostgreSQL + pgAdmin; init/ — таблицы лабораторных, pgadmin/ — сервер стенда
+postgres/                     PostgreSQL + pgAdmin; init/ — the labs' tables, pgadmin/ — the stand's server
 monitoring/prometheus/        Prometheus, kafka-exporter, prometheus.yml
-monitoring/grafana/           Grafana и provisioning источника данных
-splunk/                       Splunk Enterprise; apps/ — индекс nifi, TCP/HEC inputs, sourcetype
-lab-services/                 заглушки: customers_api.py, splunk_sim.py, flaky.py; генератор produce_logs.py
+monitoring/grafana/           Grafana and data source provisioning
+splunk/                       Splunk Enterprise; apps/ — the nifi index, TCP/HEC inputs, sourcetype
+lab-services/                 stubs: customers_api.py, splunk_sim.py, flaky.py; the produce_logs.py generator
 ```
 
-### A.3 Запуск
+### A.3 Starting
 
-Требования: Docker (Docker Desktop) с ~8 ГБ памяти, `make`, `python3` на хосте (только для `make lab-final-load`).
+Requirements: Docker (Docker Desktop) with ~8 GB of memory, `make`, and `python3` on the host (only for `make lab-final-load`).
 
 ```bash
-make up              # single NiFi + Registry, Postgres, Kafka, мониторинг, заглушки
-make up-cluster      # то же с кластером NiFi из 3 узлов (≈4–5 ГБ памяти только на кластер)
-make lab-setup       # таблица orders_stage, топики Kafka, каталоги nifi/data/* (идемпотентно)
-make ps              # состояние контейнеров
-make logs s=nifi     # логи контейнера
-make urls            # адреса и логины
-make down            # остановить всё, данные в volumes сохраняются
-make destroy         # удалить всё вместе с данными (спрашивает подтверждение)
+make up              # single NiFi + Registry, Postgres, Kafka, monitoring, stubs
+make up-cluster      # the same with a 3-node NiFi cluster (≈4–5 GB of memory for the cluster alone)
+make lab-setup       # the orders_stage table, Kafka topics, the nifi/data/* directories (idempotent)
+make ps              # the state of the containers
+make logs s=nifi     # the container's logs
+make urls            # addresses and logins
+make down            # stop everything, the data in volumes is preserved
+make destroy         # delete everything together with the data (asks for confirmation)
 ```
 
-Отдельные стеки: `make nifi`, `make cluster`, `make registry`, `make postgres`, `make kafka`, `make monitoring`, `make lab-services`, `make splunk` и соответствующие `*-down`. NiFi стартует 1–3 минуты; `make nifi` / `make cluster` дожидаются готовности и выдают нужные политики доступа.
+Separate stacks: `make nifi`, `make cluster`, `make registry`, `make postgres`, `make kafka`, `make monitoring`, `make lab-services`, `make splunk` and the corresponding `*-down`. NiFi takes 1–3 minutes to start; `make nifi` / `make cluster` wait for readiness and grant the required access policies.
 
-### A.4 Доступ
+### A.4 Access
 
-| Что | Адрес | Логин |
+| What | Address | Login |
 |---|---|---|
-| NiFi (single) | `https://localhost:8443/nifi` | `admin` / пароль из `make urls` |
-| NiFi (cluster) | `https://localhost:9443/nifi` (узлы 2–3: `:9444`, `:9445`) | тот же |
-| NiFi Registry | `https://localhost:18443/nifi-registry` | `admin` / пароль из `make urls` (пользователи — в LDAP) |
-| Пользователи Registry (lldap) | `http://localhost:17170` | тот же `admin` |
-| Splunk (если запущен) | `http://localhost:8000`, поиск `index=nifi` | `admin` / пароль из `make urls` |
-| PostgreSQL | `localhost:5432`, БД `nifi` | `nifi` / `nifi` |
-| pgAdmin | `http://localhost:5050`; сервер `nifi-playground` уже в списке (пароль БД `nifi` спросит при первом подключении) | `admin@example.com` / пароль из `make urls` |
+| NiFi (single) | `https://localhost:8443/nifi` | `admin` / the password from `make urls` |
+| NiFi (cluster) | `https://localhost:9443/nifi` (nodes 2–3: `:9444`, `:9445`) | the same |
+| NiFi Registry | `https://localhost:18443/nifi-registry` | `admin` / the password from `make urls` (the users are in LDAP) |
+| Registry users (lldap) | `http://localhost:17170` | the same `admin` |
+| Splunk (if started) | `http://localhost:8000`, search `index=nifi` | `admin` / the password from `make urls` |
+| PostgreSQL | `localhost:5432`, the database `nifi` | `nifi` / `nifi` |
+| pgAdmin | `http://localhost:5050`; the server `nifi-playground` is already in the list (it will ask for the database password `nifi` on the first connection) | `admin@example.com` / the password from `make urls` |
 | Kafka | `localhost:9092` | — |
-| Conduktor | `http://localhost:8080` | при первом входе |
+| Conduktor | `http://localhost:8080` | on the first login |
 | Prometheus | `http://localhost:9090` | — |
 | Grafana | `http://localhost:3000` | `admin` / `admin` |
 
-NiFi работает по HTTPS с сертификатом от собственного CA стенда; чтобы браузер не предупреждал, импортируйте `nifi/certs/ca.crt` как доверенный корневой сертификат. В кластере работайте через один узел: токен входа выдаётся узлом, и при переключении между портами придётся логиниться заново.
+NiFi runs over HTTPS with a certificate from the stand's own CA; so that the browser does not warn you, import `nifi/certs/ca.crt` as a trusted root certificate. In the cluster, work through one node: the login token is issued by a node, and when switching between ports you will have to log in again.
 
-### A.5 Адреса для лабораторных
+### A.5 Addresses for the labs
 
-Что указывать в Parameter Context и командах вместо абстрактных адресов:
+What to specify in the Parameter Context and in commands instead of abstract addresses:
 
-| Назначение | Значение на стенде |
+| Purpose | The value on the stand |
 |---|---|
-| Kafka из NiFi (`bootstrap.servers`) | `kafka1:19092`, Security Protocol `PLAINTEXT` |
-| Kafka CLI | `docker exec -i kafka1 kafka-console-producer --bootstrap-server kafka1:19092 ...` (аналогично `kafka-console-consumer`, `kafka-topics`, `kafka-consumer-groups`) |
-| JDBC URL | `jdbc:postgresql://postgres:5432/nifi` (пользователь `nifi` / `nifi`) |
-| JDBC-драйвер | `org.postgresql.Driver`, `/opt/nifi/drivers/postgresql-42.7.14.jar` |
-| SQL-консоль | `docker exec nifi-postgres psql -U nifi -d nifi -c "..."` |
-| Каталоги для `ListFile` / `PutFile` | `/opt/nifi/data/<имя>` в NiFi = `nifi/data/<имя>` на хосте |
-| REST API клиентов | `http://customers-api:8000/customers/<id>` |
-| Splunk | эмулятор: TCP `splunk-sim:5514`, HEC `http://splunk-sim:8088/services/collector/event`; настоящий Splunk: TCP `splunk:5514`, HEC `http://splunk:8088/services/collector/raw` (NDJSON как есть) или `/services/collector/event` (конверт `{"event": …}`), заголовок `Authorization: Splunk 00000000-0000-0000-0000-000000000000` |
-| Нестабильный API | `http://flaky:9099/events` |
-| NiFi Registry (Registry Client) | `https://nifi-registry:18443` — клиент создаётся автоматически (`make nifi` / `make cluster`), SSL Context Service не нужен |
+| Kafka from NiFi (`bootstrap.servers`) | `kafka1:19092`, Security Protocol `PLAINTEXT` |
+| The Kafka CLI | `docker exec -i kafka1 kafka-console-producer --bootstrap-server kafka1:19092 ...` (likewise `kafka-console-consumer`, `kafka-topics`, `kafka-consumer-groups`) |
+| The JDBC URL | `jdbc:postgresql://postgres:5432/nifi` (user `nifi` / `nifi`) |
+| The JDBC driver | `org.postgresql.Driver`, `/opt/nifi/drivers/postgresql-42.7.14.jar` |
+| The SQL console | `docker exec nifi-postgres psql -U nifi -d nifi -c "..."` |
+| Directories for `ListFile` / `PutFile` | `/opt/nifi/data/<name>` in NiFi = `nifi/data/<name>` on the host |
+| The customers REST API | `http://customers-api:8000/customers/<id>` |
+| Splunk | the emulator: TCP `splunk-sim:5514`, HEC `http://splunk-sim:8088/services/collector/event`; a real Splunk: TCP `splunk:5514`, HEC `http://splunk:8088/services/collector/raw` (NDJSON as is) or `/services/collector/event` (the envelope `{"event": …}`), the header `Authorization: Splunk 00000000-0000-0000-0000-000000000000` |
+| The unstable API | `http://flaky:9099/events` |
+| NiFi Registry (the Registry Client) | `https://nifi-registry:18443` — the client is created automatically (`make nifi` / `make cluster`), an SSL Context Service is not needed |
 
-### A.6 Особенности стенда
+### A.6 Specifics of the stand
 
-- **Single и cluster.** Порт `8081` для `ListenHTTP` (Lab 2) проброшен только у single NiFi. В кластере источники-генераторы и `ListFile` стоит запускать на Primary Node (*Execution: Primary node*), иначе каждый узел генерирует свои данные.
-- **Безопасность.** Все узлы NiFi используют общий CA (`nifi/certs`), авторизация — `managed-authorizer`, вход — single-user `admin`. Права администратора и узлов выдаются автоматически при `make nifi` / `make cluster`.
-- **Метрики NiFi.** Prometheus забирает `/nifi-api/flow/metrics/prometheus` по mTLS с клиентским сертификатом `CN=prometheus` (только чтение `/flow`).
-- **Драйверы и данные.** `nifi/drivers` и `nifi/data` смонтированы во все узлы по одинаковым путям; новый JAR подхватывается при включении `DBCPConnectionPool` без перезапуска NiFi.
-- **Один compose-проект.** Стеки запускаются через `make` с `docker compose -p nifi-playground`; запуская файлы напрямую, указывайте тот же `-p`, иначе Compose создаст новые пустые volumes.
+- **Single and cluster.** Port `8081` for `ListenHTTP` (Lab 2) is forwarded only for the single NiFi. In the cluster, the generator sources and `ListFile` should be run on the Primary Node (*Execution: Primary node*), otherwise each node generates its own data.
+- **Security.** All NiFi nodes use a common CA (`nifi/certs`), authorization is `managed-authorizer`, login is single-user `admin`. Administrator and node permissions are granted automatically with `make nifi` / `make cluster`.
+- **NiFi metrics.** Prometheus scrapes `/nifi-api/flow/metrics/prometheus` over mTLS with the client certificate `CN=prometheus` (read-only on `/flow`).
+- **Drivers and data.** `nifi/drivers` and `nifi/data` are mounted into all nodes at identical paths; a new JAR is picked up when `DBCPConnectionPool` is enabled, without restarting NiFi.
+- **One compose project.** The stacks are started through `make` with `docker compose -p nifi-playground`; when you run the files directly, specify the same `-p`, otherwise Compose will create new empty volumes.
 
-### A.7 Тестовые данные и сброс
+### A.7 Test data and reset
 
 ```bash
-make lab4-data                    # 4 тестовых заказа в orders.raw (Lab 4)
-make lab-final-load n=100000      # нагрузка для финальной лабораторной в logs.raw
-make lab-splunk-count             # сколько строк получил эмулятор Splunk
-make import f=nifi/flows/<файл>.json            # загрузить поток в single NiFi
-make import-cluster f=nifi/flows/<файл>.json    # то же для кластера
+make lab4-data                    # 4 test orders into orders.raw (Lab 4)
+make lab-final-load n=100000      # the load for the final lab into logs.raw
+make lab-splunk-count             # how many lines the Splunk emulator received
+make import f=nifi/flows/<file>.json            # load a flow into the single NiFi
+make import-cluster f=nifi/flows/<file>.json    # the same for the cluster
 ```
 
-Перед повторным прогоном лабораторных с Kafka сбросьте consumer group (при остановленном `ConsumeKafka`), иначе поток не прочитает уже прочитанные сообщения:
+Before re-running the labs with Kafka, reset the consumer group (with `ConsumeKafka` stopped), otherwise the flow will not read the messages that have already been read:
 
 ```bash
 docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-lab4   # Lab 4
-docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-logs   # финальная
+docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-logs   # the final one
 docker exec nifi-postgres psql -U nifi -d nifi -c "TRUNCATE orders_stage"                             # Lab 4
-docker exec splunk-sim sh -c ': > /data/splunk_in.log; : > /data/hec_in.log'                          # эмулятор Splunk
+docker exec splunk-sim sh -c ': > /data/splunk_in.log; : > /data/hec_in.log'                          # the Splunk emulator
 ```
 
-### A.8 Эталонные решения
+### A.8 Reference solutions
 
-В каталоге `nifi/flows` лежат проверенные на стенде Flow Definitions всех лабораторных (`lab1-first-flow.json` … `lab8-performance.json`, `lab9-final-pipeline.json` — финальная). Импорт: перетащите на холст значок **Process Group** и нажмите значок загрузки файла, либо `make import f=...`. После импорта включите Controller Services группы (*Enable all controller services*) и запустите её. Значения окружения вынесены в Parameter Context каждой лабораторной. Чтобы изменить эталон, поправьте поток в NiFi, экспортируйте его (ПКМ на группе → *Download flow definition*) и замените файл в `nifi/flows`.
+The `nifi/flows` directory holds the Flow Definitions of all the labs verified on the stand (`lab1-first-flow.json` … `lab8-performance.json`, `lab9-final-pipeline.json` — the final one). Import: drag the **Process Group** icon onto the canvas and click the file upload icon, or `make import f=...`. After importing, enable the group's Controller Services (*Enable all controller services*) and start it. The environment values are moved into the Parameter Context of each lab. To change a reference solution, fix the flow in NiFi, export it (right-click the group → *Download flow definition*), and replace the file in `nifi/flows`.
 
 ---
 
-## Приложение B: Список источников и статус верификации
+## Appendix B: List of sources and verification status
 
-### Источники, использованные для подтверждения фактов в этой сессии
+### Sources used to confirm facts in this session
 
-| Источник | Что подтверждено |
+| Source | What it confirmed |
 |---|---|
-| [Release Notes (Apache NiFi wiki)](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes) | История релизов 1.x/2.x; удалённые компоненты; deprecations; новые возможности (Kafka, Registry-клиенты, Prometheus, PEM, Flow Action Reporter и др.) |
-| [Migration Guidance (Apache NiFi wiki)](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance) | Путь через 1.27.0; изменения по версиям 2.x; breaking changes (2.8, 2.10, 2.12, 2.13, 2.14); `flow.json.gz`; scope `ENVIRONMENT`; Distributed→Map/Set Cache; Windows `nifi.cmd` |
-| [NiFi 2.0 Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals) | Цели 2.0: удаление Templates/Variable Registry/`PersistentProvenanceRepository`, `flow.xml.gz`; переход на `java.time`; ghosted components |
-| [Migrating Deprecated Components and Features for 2.0.0](https://cwiki.apache.org/confluence/spaces/NIFI/pages/240883792/Migrating+Deprecated+Components+and+Features+for+2.0.0) | Замены удалённых компонентов (частично) |
-| [ConsumeKafka (справочник)](https://nifi.apache.org/components/org.apache.nifi.kafka.processors.ConsumeKafka/) и [PR о новых Kafka-компонентах](https://www.mail-archive.com/issues@nifi.apache.org/msg169807.html) | Свойства `ConsumeKafka`; Processing/Output Strategy; `Kafka3ConnectionService` |
-| [П. Виллар: Getting ready for Apache NiFi 2.0](https://medium.com/cloudera-inc/getting-ready-for-apache-nifi-2-0-5a5e6a67f450) (автор — PMC NiFi) и документы Cloudera ([Behavioral changes](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-behavioral-changes.html), [Breaking changes](https://docs.cloudera.com/cfm/4.10.0/release-notes/topics/cfm-nifi2-breaking-changes.html)) | Java 21; event-driven scheduling; замены компонентов (вторичные источники) |
-| Справочники компонентов Site-to-Site Reporting Tasks ([Status](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask), [Metrics](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask)) | Свойства и схемы записей Status/Metrics (версии 1.27–1.28, 2.0.0-M2/M3); наличие в 2.10.0 |
-| Описание Flow Analysis Rules ([пост разработчика NiFi](https://community.cloudera.com/t5/Developer-Blogs/Flow-Analysis-Rules-enforcing-Best-Practices-in-Flow-Design/m-p/413017)), [PR #8765 (GitHub-клиент реестра)](https://www.mail-archive.com/issues@nifi.apache.org/msg173690.html), списки [Parameter Providers](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-supported-parameter-providers.html) | Политики Warn/Enforce; встроенные правила 2.6.0; свойства GitHub-клиента; список провайдеров параметров |
-| Справочники компонентов `SplitText`, `SplitRecord`, `SplitJson`, `QueryRecord`, `UpdateRecord`, `ValidateRecord`, `EvaluateJsonPath`, `MergeRecord` (nifi.apache.org, версии 1.2–2.0.0-M3 и latest; ссылки — в Day 1 §1.3.7 и Day 2 §2.2.6) и [RetryFlowFile](https://docs.snowflake.com/en/user-guide/data-integration/openflow/processors/retryflowfile) | Свойства, relationships и атрибуты этих процессоров |
-| Справочники [Kafka3ConnectionService](https://docs.snowflake.com/en/user-guide/data-integration/openflow/controllers/kafka3connectionservice), [PublishKafka](https://docs.snowflake.com/en/en/user-guide/data-integration/openflow/processors/publishkafka), [DBCPConnectionPool](https://docs.snowflake.com/en/user-guide/data-integration/openflow/controllers/dbcpconnectionpool), [HikariCPConnectionPool](https://docs.snowflake.com/en/user-guide/data-integration/openflow/controllers/hikaricpconnectionpool), [JsonTreeReader](https://docs.snowflake.com/en/en/user-guide/data-integration/openflow/controllers/jsontreereader) (зеркала документации компонентов Apache NiFi), схемы Site-to-Site Bulletin/Status, README образа apache/nifi, описание REST API, [release notes Jolt 0.0.22](https://github.com/bazaarvoice/jolt/releases/tag/jolt-0.0.22) | Свойства и значения по умолчанию компонентов; поля S2S-записей; переменные образа; пути REST API; семантика `modify-*` в Jolt |
-| Исходник Administration Guide ([PR](https://github.com/apache/nifi/pull/11488/files)) и [коммит NIFI-16290](https://mail-archive.com/commits@nifi.apache.org/msg46395.html) | `nifi.flowcontroller.autoResumeState` (по умолчанию `true`), `graceful.shutdown.period` (по умолчанию `10 secs`) и его использование при offload |
-| Лабораторный стенд (Приложение A, NiFi 2.12.0): манифесты расширений из NAR образа (`META-INF/docs/extension-manifest.xml`) и прогон эталонных решений `nifi/flows` | Имена свойств, значения по умолчанию, допустимые значения и relationships всех процессоров и сервисов лабораторных; поведение Lab 1–8 и финальной лабораторной на реальных данных |
+| [Release Notes (Apache NiFi wiki)](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes) | The release history of 1.x/2.x; removed components; deprecations; new capabilities (Kafka, Registry clients, Prometheus, PEM, Flow Action Reporter, etc.) |
+| [Migration Guidance (Apache NiFi wiki)](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance) | The path through 1.27.0; changes by 2.x version; breaking changes (2.8, 2.10, 2.12, 2.13, 2.14); `flow.json.gz`; the `ENVIRONMENT` scope; Distributed→Map/Set Cache; Windows `nifi.cmd` |
+| [NiFi 2.0 Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals) | The goals of 2.0: removal of Templates/Variable Registry/`PersistentProvenanceRepository`, `flow.xml.gz`; the move to `java.time`; ghosted components |
+| [Migrating Deprecated Components and Features for 2.0.0](https://cwiki.apache.org/confluence/spaces/NIFI/pages/240883792/Migrating+Deprecated+Components+and+Features+for+2.0.0) | Replacements for removed components (partially) |
+| [ConsumeKafka (reference)](https://nifi.apache.org/components/org.apache.nifi.kafka.processors.ConsumeKafka/) and the [PR about the new Kafka components](https://www.mail-archive.com/issues@nifi.apache.org/msg169807.html) | The properties of `ConsumeKafka`; the Processing/Output Strategy; `Kafka3ConnectionService` |
+| [P. Villard: Getting ready for Apache NiFi 2.0](https://medium.com/cloudera-inc/getting-ready-for-apache-nifi-2-0-5a5e6a67f450) (the author is a NiFi PMC member) and the Cloudera documents ([Behavioral changes](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-behavioral-changes.html), [Breaking changes](https://docs.cloudera.com/cfm/4.10.0/release-notes/topics/cfm-nifi2-breaking-changes.html)) | Java 21; event-driven scheduling; component replacements (secondary sources) |
+| The component references of the Site-to-Site Reporting Tasks ([Status](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask), [Metrics](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask)) | The properties and record schemas of Status/Metrics (versions 1.27–1.28, 2.0.0-M2/M3); presence in 2.10.0 |
+| A description of Flow Analysis Rules ([a post by a NiFi developer](https://community.cloudera.com/t5/Developer-Blogs/Flow-Analysis-Rules-enforcing-Best-Practices-in-Flow-Design/m-p/413017)), [PR #8765 (the GitHub registry client)](https://www.mail-archive.com/issues@nifi.apache.org/msg173690.html), the lists of [Parameter Providers](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-supported-parameter-providers.html) | The Warn/Enforce policies; the built-in 2.6.0 rules; the GitHub client properties; the list of parameter providers |
+| The component references of `SplitText`, `SplitRecord`, `SplitJson`, `QueryRecord`, `UpdateRecord`, `ValidateRecord`, `EvaluateJsonPath`, `MergeRecord` (nifi.apache.org, versions 1.2–2.0.0-M3 and latest; the links are in Day 1 §1.3.7 and Day 2 §2.2.6) and [RetryFlowFile](https://docs.snowflake.com/en/user-guide/data-integration/openflow/processors/retryflowfile) | The properties, relationships, and attributes of these processors |
+| The references of [Kafka3ConnectionService](https://docs.snowflake.com/en/user-guide/data-integration/openflow/controllers/kafka3connectionservice), [PublishKafka](https://docs.snowflake.com/en/en/user-guide/data-integration/openflow/processors/publishkafka), [DBCPConnectionPool](https://docs.snowflake.com/en/user-guide/data-integration/openflow/controllers/dbcpconnectionpool), [HikariCPConnectionPool](https://docs.snowflake.com/en/user-guide/data-integration/openflow/controllers/hikaricpconnectionpool), [JsonTreeReader](https://docs.snowflake.com/en/en/user-guide/data-integration/openflow/controllers/jsontreereader) (mirrors of the Apache NiFi component documentation), the Site-to-Site Bulletin/Status schemas, the apache/nifi image README, the REST API description, the [Jolt 0.0.22 release notes](https://github.com/bazaarvoice/jolt/releases/tag/jolt-0.0.22) | The properties and default values of components; the fields of S2S records; the image variables; the REST API paths; the semantics of `modify-*` in Jolt |
+| The Administration Guide source ([PR](https://github.com/apache/nifi/pull/11488/files)) and the [NIFI-16290 commit](https://mail-archive.com/commits@nifi.apache.org/msg46395.html) | `nifi.flowcontroller.autoResumeState` (`true` by default), `graceful.shutdown.period` (`10 secs` by default) and its use during offload |
+| The lab stand (Appendix A, NiFi 2.12.0): the extension manifests from the image's NARs (`META-INF/docs/extension-manifest.xml`) and runs of the `nifi/flows` reference solutions | The property names, default values, allowed values, and relationships of all the processors and services of the labs; the behavior of Labs 1–8 and the final lab on real data |
 
-### Статус верификации (обновлено)
+### Verification status (updated)
 
-**Подтверждено по справочникам и документации в ходе работы над конспектом:** свойства, relationships и атрибуты `SplitText`, `SplitRecord`, `SplitJson`, `QueryRecord`, `UpdateRecord`, `ValidateRecord`, `EvaluateJsonPath`, `MergeRecord`, `RetryFlowFile`, `JsonTreeReader`; свойства `Kafka3ConnectionService`, `PublishKafka`, `DBCPConnectionPool`, `HikariCPConnectionPool`; схемы записей Site-to-Site Bulletin и Status; пути REST API (`/access/token`, `/flow/process-groups/{id}`, `.../controller-services`, `.../status`); переменные Docker-образа; `autoResumeState`, `graceful.shutdown.period`, `graceful.shutdown.seconds` (семантика); параметры балансировки кластера; `always.sync`; пул потоков (10 на узел) и ориентир 2–4 потока на ядро (сообщество); Warn/Enforce и встроенные правила Flow Analysis (2.6.0); свойства GitHub-клиента реестра; список провайдеров параметров; семантика `modify-*` в Jolt; отсутствие официального Helm chart на ноябрь 2024.
+**Confirmed against references and documentation while preparing the notes:** the properties, relationships, and attributes of `SplitText`, `SplitRecord`, `SplitJson`, `QueryRecord`, `UpdateRecord`, `ValidateRecord`, `EvaluateJsonPath`, `MergeRecord`, `RetryFlowFile`, `JsonTreeReader`; the properties of `Kafka3ConnectionService`, `PublishKafka`, `DBCPConnectionPool`, `HikariCPConnectionPool`; the record schemas of Site-to-Site Bulletin and Status; the REST API paths (`/access/token`, `/flow/process-groups/{id}`, `.../controller-services`, `.../status`); the Docker image variables; `autoResumeState`, `graceful.shutdown.period`, `graceful.shutdown.seconds` (the semantics); the cluster balancing parameters; `always.sync`; the thread pool (10 per node) and the 2–4 threads per core guideline (the community); Warn/Enforce and the built-in Flow Analysis rules (2.6.0); the properties of the GitHub registry client; the list of parameter providers; the semantics of `modify-*` in Jolt; the absence of an official Helm chart as of November 2024.
 
-**Проверено на лабораторном стенде (NiFi 2.12.0):** значения по умолчанию `RetryFlowFile` (`Retry Attribute = flowfile.retries`, `Maximum Retries = 3`, `Penalize Retries = true`); свойства `Kafka3ConnectionService`, `ConsumeKafka`, `PublishKafka` (по манифестам NAR) и relationship `parse failure` у `ConsumeKafka` в режиме `RECORD`; `UpdateRecord` добавляет поле, отсутствующее в схеме Reader, при Writer с `Inherit Record Schema`; загрузка JDBC-драйвера через *Database Driver Locations* при включении сервиса, без перезапуска NiFi; Java 21 в образе `apache/nifi:2.12.0`; конфигурация KRaft одиночного брокера (`confluentinc/cp-kafka:8.0.0`); формат даты в Expression Language: `format("…'T'…")` работает, `format('…\'T\'…')` — нет; `ListenHTTP` не выставляет `mime.type`; Calcite в `QueryRecord` не сравнивает Avro enum в `IN`/`NOT IN`; у `PutSplunk` в 2.12 нет свойства `Connection Per FlowFile`.
+**Verified on the lab stand (NiFi 2.12.0):** the default values of `RetryFlowFile` (`Retry Attribute = flowfile.retries`, `Maximum Retries = 3`, `Penalize Retries = true`); the properties of `Kafka3ConnectionService`, `ConsumeKafka`, `PublishKafka` (from the NAR manifests) and the `parse failure` relationship of `ConsumeKafka` in `RECORD` mode; `UpdateRecord` adds a field that is absent from the Reader schema when the Writer has `Inherit Record Schema`; loading a JDBC driver through *Database Driver Locations* when the service is enabled, without restarting NiFi; Java 21 in the `apache/nifi:2.12.0` image; the KRaft configuration of a single broker (`confluentinc/cp-kafka:8.0.0`); the date format in Expression Language: `format("…'T'…")` works, `format('…\'T\'…')` does not; `ListenHTTP` does not set `mime.type`; Calcite in `QueryRecord` does not compare an Avro enum in `IN`/`NOT IN`; `PutSplunk` in 2.12 has no `Connection Per FlowFile` property.
 
-**Остаётся непроверенным (отмечено в тексте как [проверить]):**
+**Remains unverified (marked in the text as [verify]):**
 
-- Страница компонента `RetryFlowFile` на nifi.apache.org (значения по умолчанию подтверждены на стенде).
-- Страница документации по сборке `Kafka3ConnectionService` и `PublishKafka` в самом Apache (использованы зеркала документации; свойства подтверждены манифестами NAR на стенде).
-- Поведение `QueryRecord` (отдельный проход на каждый запрос).
-- Загрузка JDBC-драйвера: отдельный class loader на сервис, передача драйвера через Assets Parameter Context, классы и URL конкретных драйверов (кроме PostgreSQL), режим курсора pgjdbc, ограничения `DBCPConnectionPoolLookup` по процессорам.
-- Версии удаления в Apache для `ConvertJSONToAvro`, `ConvertCSVToAvro`, `ConvertAvroSchema`, `InferAvroSchema`, `ConvertAvroToORC`, старых Kafka-процессоров, Ignite/Flume/Kite, точные имена классов Hive 3; замены `InvokeAWSGatewayApi`.
-- Reporting Tasks: выполнение только на Primary Node, неприменимость Parameter Contexts; поведение при недоступном получателе.
-- systemd-юнит, probes Kubernetes, повторное включение Controller Services после недоступности зависимости.
-- Расположение изменения `graceful.shutdown.period` при offload (NIFI-16290) по релизам; значение `graceful.shutdown.seconds` именно для NiFi.
-- Stateless: in-memory content (2.13.0); `logback.xml` (автоподхват), `nifi-env.sh`; официальной роли Ansible; Java 21 в образах тегов, кроме проверенного `2.12.0`; альтернативы защиты `nifi.properties` после удаления `encrypt-config`.
+- The `RetryFlowFile` component page on nifi.apache.org (the default values were confirmed on the stand).
+- The documentation page for the `Kafka3ConnectionService` and `PublishKafka` builds in Apache itself (documentation mirrors were used; the properties were confirmed by the NAR manifests on the stand).
+- The behavior of `QueryRecord` (a separate pass for each query).
+- Loading a JDBC driver: a separate class loader per service, passing a driver through Assets of a Parameter Context, the classes and URLs of specific drivers (other than PostgreSQL), the pgjdbc cursor mode, the restrictions of `DBCPConnectionPoolLookup` by processor.
+- The removal versions in Apache for `ConvertJSONToAvro`, `ConvertCSVToAvro`, `ConvertAvroSchema`, `InferAvroSchema`, `ConvertAvroToORC`, the old Kafka processors, Ignite/Flume/Kite, the exact class names of Hive 3; the replacements for `InvokeAWSGatewayApi`.
+- Reporting Tasks: running only on the Primary Node, the inapplicability of Parameter Contexts; the behavior when the receiver is unavailable.
+- The systemd unit, Kubernetes probes, re-enabling Controller Services after a dependency was unavailable.
+- Which releases contain the `graceful.shutdown.period` change during offload (NIFI-16290); the value of `graceful.shutdown.seconds` for NiFi specifically.
+- Stateless: in-memory content (2.13.0); `logback.xml` (auto-reload), `nifi-env.sh`; an official Ansible role; Java 21 in the images of tags other than the verified `2.12.0`; alternatives for protecting `nifi.properties` after the removal of `encrypt-config`.
 
-### Ссылки на руководства (для самостоятельной сверки)
+### Links to the guides (for your own verification)
 
 - [Overview](https://nifi.apache.org/docs/nifi-docs/html/overview.html) · [Getting Started](https://nifi.apache.org/docs/nifi-docs/html/getting-started.html) · [User Guide](https://nifi.apache.org/docs/nifi-docs/html/user-guide.html) · [Administration Guide](https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html)
 - [Expression Language Guide](https://nifi.apache.org/docs/nifi-docs/html/expression-language-guide.html) · [RecordPath Guide](https://nifi.apache.org/docs/nifi-docs/html/record-path-guide.html) · [NiFi In Depth](https://nifi.apache.org/docs/nifi-docs/html/nifi-in-depth.html)
 - [Python Developer Guide](https://nifi.apache.org/docs/nifi-docs/html/python-developer-guide.html) · [Toolkit Guide](https://nifi.apache.org/docs/nifi-docs/html/toolkit-guide.html)
-- [Справочник компонентов](https://nifi.apache.org/components/) · [Security Advisories](https://nifi.apache.org/security.html) · [Deprecated Components and Features](https://cwiki.apache.org/confluence/display/NIFI/Deprecated+Components+and+Features)
+- [The component reference](https://nifi.apache.org/components/) · [Security Advisories](https://nifi.apache.org/security.html) · [Deprecated Components and Features](https://cwiki.apache.org/confluence/display/NIFI/Deprecated+Components+and+Features)

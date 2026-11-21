@@ -1,13 +1,11 @@
----
-title: "Day 1 — Apache NiFi Fundamentals"
----
+# Apache NiFi — Engineering Study Notes. Day 1: Foundations, Record Processing and Cluster Setup
 
-> Документ 1 из 3. Основа структуры — программа курса «Apache NiFi Training: Agenda» (21 час, 3 дня). Целевая версия: **Apache NiFi 2.x**; версия 1.x упоминается там, где это помогает понять архитектуру, эволюцию или миграцию.
-> Связанные документы: **Day 2** (`day-2.md`), **Day 3** (`day-3.md`). Перекрёстные ссылки вида «Block X.Y» указывают на соответствующий блок в одном из трёх документов.
+> Document 1 of 3. The structure is based on the course agenda "Apache NiFi Training: Agenda" (21 hours, 3 days). Target version: **Apache NiFi 2.x**; version 1.x is mentioned where it helps to understand the architecture, its evolution, or migration.
+> Related documents: **Day 2** (`apache_nifi_day2_en.md`), **Day 3** (`apache_nifi_day3_en.md`). Cross-references such as "Block X.Y" point to the corresponding block in one of the three documents.
 
-## Содержание
+## Contents
 
-- [О материале: версии, источники, обозначения](#о-материале-версии-источники-обозначения)
+- [About this material: versions, sources, notation](#about-this-material-versions-sources-notation)
 - [Block 1.1: NiFi fundamentals](#block-11-nifi-fundamentals)
 - [Block 1.2: Building data flows](#block-12-building-data-flows)
 - [Block 1.3: Record-based processing](#block-13-record-based-processing)
@@ -16,28 +14,28 @@ title: "Day 1 — Apache NiFi Fundamentals"
 
 ---
 
-## О материале: версии, источники, обозначения
+## About this material: versions, sources, notation
 
-### Версионная база
+### Version baseline
 
-На момент подготовки конспекта (ноябрь 2026) ветка 2.x развивается минорными релизами: [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes) перечисляют основной релиз 2.12.0 (13 сентября 2026), а страница [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance) уже описывает переход на 2.14.0. Страницы вики могут отставать друг от друга, поэтому перед работой сверяйте точную версию, которую вы ставите.
+At the time these notes were prepared (November 2026), the 2.x branch evolves through minor releases: the [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes) list 2.12.0 (September 13, 2026) as the main release, while the [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance) page already describes the move to 2.14.0. The wiki pages may lag behind each other, so check the exact version you are installing before you start.
 
-Обозначения в тексте:
+Notation used in the text:
 
-| Метка | Значение |
+| Label | Meaning |
 |---|---|
-| **[2.x]** | Поведение актуально для NiFi 2.x |
-| **[1.x]** | Поведение 1.x; в 2.x изменено или удалено |
-| **[dep]** | Deprecated: пока работает, но помечено к удалению |
-| **[rem]** | Removed: удалено в указанной версии |
-| **[проверить]** | Утверждение не подтверждено в рамках подготовки конспекта; сверить с документацией вашей версии |
+| **[2.x]** | Behavior is current for NiFi 2.x |
+| **[1.x]** | Behavior of 1.x; changed or removed in 2.x |
+| **[dep]** | Deprecated: still works but is marked for removal |
+| **[rem]** | Removed: removed in the indicated version |
+| **[verify]** | The statement was not confirmed while preparing the notes; check it against the documentation for your version |
 
-### Принципы достоверности
+### Principles of reliability
 
-1. Факты о релизах, удалённых компонентах и миграции подтверждены по [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance) и [NiFi 2.0 Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals).
-2. Остальные описания (параметры процессоров, свойства `nifi.properties`) основаны на официальных руководствах: [User Guide](https://nifi.apache.org/docs/nifi-docs/html/user-guide.html), [Administration Guide](https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html), [Expression Language Guide](https://nifi.apache.org/docs/nifi-docs/html/expression-language-guide.html), [RecordPath Guide](https://nifi.apache.org/docs/nifi-docs/html/record-path-guide.html), [NiFi In Depth](https://nifi.apache.org/docs/nifi-docs/html/nifi-in-depth.html), а также [справочнике компонентов](https://nifi.apache.org/components/). Имена и значения по умолчанию некоторых свойств могут отличаться в вашей минорной версии. Точные значения смотрите во встроенной документации (**Help → Documentation** в UI) своей версии.
-3. Числовые рекомендации (heap, потоки) — это стартовые точки для замеров, а не нормативы.
-4. Перечень источников и список пунктов, требующих сверки, находится в Приложении B (в конце документа Day 3).
+1. Facts about releases, removed components, and migration are confirmed against the [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), the [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance), and the [NiFi 2.0 Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals).
+2. The remaining descriptions (processor parameters, `nifi.properties` properties) are based on the official guides: [User Guide](https://nifi.apache.org/docs/nifi-docs/html/user-guide.html), [Administration Guide](https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html), [Expression Language Guide](https://nifi.apache.org/docs/nifi-docs/html/expression-language-guide.html), [RecordPath Guide](https://nifi.apache.org/docs/nifi-docs/html/record-path-guide.html), [NiFi In Depth](https://nifi.apache.org/docs/nifi-docs/html/nifi-in-depth.html), and the [component reference](https://nifi.apache.org/components/). Names and default values of some properties may differ in your minor version. Check the exact values in the built-in documentation (**Help → Documentation** in the UI) of your version.
+3. Numeric recommendations (heap, threads) are starting points for measurements, not norms.
+4. The list of sources and the list of items that require verification are in Appendix B (at the end of the Day 3 document).
 
 ---
 
@@ -45,22 +43,22 @@ title: "Day 1 — Apache NiFi Fundamentals"
 
 ### 1.1.1 Data in motion vs data at rest
 
-**Data at rest** — данные, лежащие в хранилище (БД, data lake, файловая система). Типичные инструменты: SQL-движки, Spark в batch-режиме. Единица работы — запрос или job над ограниченным набором.
+**Data at rest** is data that sits in storage (a database, a data lake, a file system). Typical tools: SQL engines, Spark in batch mode. The unit of work is a query or a job over a bounded set.
 
-**Data in motion** — данные, которые перемещаются между системами: события, логи, сообщения, строки CDC. Единица работы — событие/пакет; важны latency, порядок, гарантии доставки, управление перегрузкой (backpressure), происхождение (lineage).
+**Data in motion** is data that moves between systems: events, logs, messages, CDC rows. The unit of work is an event or a batch; what matters is latency, ordering, delivery guarantees, overload control (backpressure), and provenance (lineage).
 
-NiFi решает задачи **динамической маршрутизации и доставки** данных между гетерогенными системами: принять, проверить, при необходимости преобразовать, обогатить, доставить и сохранить историю происхождения. Это инструмент **data movement**, а не вычислительный движок аналитики. Тяжёлые агрегации и joins по большим окнам лучше оставлять Spark/Flink/SQL-движку, а в NiFi делать лёгкую обработку (фильтрация, нормализация, маршрутизация, форматные преобразования).
+NiFi solves the problem of **dynamic routing and delivery** of data between heterogeneous systems: receive, validate, transform if necessary, enrich, deliver, and keep the history of origin. It is a **data movement** tool, not an analytics compute engine. Heavy aggregations and joins over large windows are better left to Spark/Flink/an SQL engine, while NiFi should do lightweight processing (filtering, normalization, routing, format conversion).
 
-| Критерий | Data at rest | Data in motion (NiFi) |
+| Criterion | Data at rest | Data in motion (NiFi) |
 |---|---|---|
-| Единица обработки | таблица / файл / набор | FlowFile (событие или пакет событий) |
-| Ключевая метрика | время выполнения job | throughput, latency, backlog |
-| Отказы | перезапуск job | retry, back pressure, повтор доставки |
-| Прозрачность | логи job | Data Provenance для каждого FlowFile |
+| Unit of processing | table / file / set | FlowFile (an event or a batch of events) |
+| Key metric | job execution time | throughput, latency, backlog |
+| Failures | job restart | retry, back pressure, redelivery |
+| Transparency | job logs | Data Provenance for every FlowFile |
 
-### 1.1.2 Архитектура NiFi
+### 1.1.2 NiFi architecture
 
-Apache NiFi работает как Java-приложение в JVM на каждом узле. Основные элементы (подробнее — [NiFi In Depth](https://nifi.apache.org/docs/nifi-docs/html/nifi-in-depth.html) и [Overview](https://nifi.apache.org/docs/nifi-docs/html/overview.html)):
+Apache NiFi runs as a Java application in a JVM on every node. The main elements (for more detail see [NiFi In Depth](https://nifi.apache.org/docs/nifi-docs/html/nifi-in-depth.html) and the [Overview](https://nifi.apache.org/docs/nifi-docs/html/overview.html)):
 
 ```text
 ┌───────────────────────────── JVM (NiFi node) ─────────────────────────────┐
@@ -70,182 +68,182 @@ Apache NiFi работает как Java-приложение в JVM на каж
 │  │ Process Sessions ─ Connections (queues) ─ Bulletin repository        │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │  FlowFile Repository   Content Repository     Provenance Repository        │
-│  (WAL: attributes +    (claims на диске,      (события; индексируются      │
-│   pointer на content)   immutable-контент)      для поиска)                │
+│  (WAL: attributes +    (claims on disk,       (events; indexed             │
+│   pointer to content)   immutable content)      for search)                │
 │  Extensions: Processors, Controller Services, Reporting Tasks, Parameter   │
-│  Providers, Flow Registry Clients (NAR-пакеты; Python extensions в 2.x)    │
+│  Providers, Flow Registry Clients (NAR packages; Python extensions in 2.x) │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Flow Controller** — «мозг» узла. Он планирует выполнение процессоров, выдаёт им потоки (threads) из пула, управляет очередями и репозиториями. Процессор не владеет потоком: Flow Controller запускает его метод `onTrigger` по расписанию, а процессор через **ProcessSession** берёт FlowFile из входящих очередей и передаёт в исходящие.
+The **Flow Controller** is the "brain" of the node. It schedules the execution of processors, hands them threads from the pool, and manages queues and repositories. A processor does not own a thread: the Flow Controller invokes its `onTrigger` method on a schedule, and the processor uses a **ProcessSession** to take FlowFiles from its incoming queues and pass them to the outgoing ones.
 
-**Thread pool.** В NiFi 2.x остался единственный пул: *time-driven*. Event-driven scheduling был экспериментальным, не дал заметного выигрыша и удалён в 2.0 ([источник — статья П. Виллара](https://medium.com/cloudera-inc/getting-ready-for-apache-nifi-2-0-5a5e6a67f450), [Cloudera: Behavioral changes](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-behavioral-changes.html); удаление event-driven пула и необходимость переключить такие компоненты на *Timer Driven* подтверждены документацией дистрибутива на базе NiFi 2.0; в Apache Migration Guidance отдельной строки об этом нет). Практический вывод: до миграции переключите компоненты со стратегией *Event Driven* на *Timer Driven*.
+**Thread pool.** In NiFi 2.x only one pool remains: *time-driven*. Event-driven scheduling was experimental, did not deliver a noticeable gain, and was removed in 2.0 ([source — an article by P. Villard](https://medium.com/cloudera-inc/getting-ready-for-apache-nifi-2-0-5a5e6a67f450), [Cloudera: Behavioral changes](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-behavioral-changes.html); the removal of the event-driven pool and the need to switch such components to *Timer Driven* are confirmed by the documentation of a distribution based on NiFi 2.0; the Apache Migration Guidance has no separate line about this). Practical takeaway: before migration, switch components that use the *Event Driven* strategy to *Timer Driven*.
 
-**Bulletins.** Это сообщения о проблемах, которые компоненты публикуют (ошибка записи, недоступность БД). Они видны как красный значок на компоненте, на **Bulletin Board** и через API; хранятся в памяти (Bulletin Repository) и вытесняются по времени. В 2.7.0 добавлены очистка bulletins и stack trace в bulletin board ([Release Notes 2.7.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
+**Bulletins.** These are messages about problems that components publish (a write error, an unavailable database). They are visible as a red icon on the component, on the **Bulletin Board**, and through the API; they are kept in memory (the Bulletin Repository) and are evicted over time. In 2.7.0, clearing bulletins and a stack trace in the bulletin board were added ([Release Notes 2.7.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 
-### 1.1.3 Репозитории и жизненный цикл FlowFile
+### 1.1.3 Repositories and the FlowFile lifecycle
 
-Три репозитория — основа гарантий NiFi.
+Three repositories are the basis of NiFi's guarantees.
 
-| Репозиторий | Что хранит | Реализация по умолчанию | Ключевые свойства `nifi.properties` |
+| Repository | What it stores | Default implementation | Key `nifi.properties` properties |
 |---|---|---|---|
-| **FlowFile Repository** | Состояние каждого FlowFile: атрибуты, ссылка на content claim, в какой очереди находится | `WriteAheadFlowFileRepository` (write-ahead log + периодические checkpoints) | `nifi.flowfile.repository.directory`, `nifi.flowfile.repository.checkpoint.interval`, `nifi.flowfile.repository.always.sync` |
-| **Content Repository** | Байты контента в виде *content claims* (неизменяемые, append-only файлы-контейнеры) | `FileSystemRepository` | `nifi.content.repository.directory.default` (можно несколько директорий), `nifi.content.repository.archive.*`, `nifi.content.claim.max.appendable.size` |
-| **Provenance Repository** | События происхождения (RECEIVE, SEND, ROUTE, CONTENT_MODIFIED, DROP и т. д.) с индексом для поиска | `WriteAheadProvenanceRepository` | `nifi.provenance.repository.directory.default`, `nifi.provenance.repository.max.storage.time`, `nifi.provenance.repository.max.storage.size`, `nifi.provenance.repository.index.*` |
+| **FlowFile Repository** | The state of each FlowFile: attributes, a reference to the content claim, and which queue it is in | `WriteAheadFlowFileRepository` (write-ahead log + periodic checkpoints) | `nifi.flowfile.repository.directory`, `nifi.flowfile.repository.checkpoint.interval`, `nifi.flowfile.repository.always.sync` |
+| **Content Repository** | The content bytes as *content claims* (immutable, append-only container files) | `FileSystemRepository` | `nifi.content.repository.directory.default` (several directories are possible), `nifi.content.repository.archive.*`, `nifi.content.claim.max.appendable.size` |
+| **Provenance Repository** | Provenance events (RECEIVE, SEND, ROUTE, CONTENT_MODIFIED, DROP, etc.) with a search index | `WriteAheadProvenanceRepository` | `nifi.provenance.repository.directory.default`, `nifi.provenance.repository.max.storage.time`, `nifi.provenance.repository.max.storage.size`, `nifi.provenance.repository.index.*` |
 
-Замечания по версиям:
+Notes on versions:
 
-- `PersistentProvenanceRepository` и legacy-классы удалены в 2.0 ([Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals)). `WriteAheadProvenanceRepository` доступна с 1.2.0 ([Release Notes 1.2.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
-- **[rem 2.0.0]** Поддержка шифрования репозиториев удалена ([Release Notes 2.0.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), раздел Breaking Changes). Это важно для миграции (Block 2.4) и для раздела Encryption (Block 3.3).
+- `PersistentProvenanceRepository` and the legacy classes were removed in 2.0 ([Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals)). `WriteAheadProvenanceRepository` has been available since 1.2.0 ([Release Notes 1.2.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
+- **[rem 2.0.0]** Support for repository encryption was removed ([Release Notes 2.0.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), the Breaking Changes section). This matters for migration (Block 2.4) and for the Encryption section (Block 3.3).
 
-#### Принцип copy-on-write и неизменяемость контента
+#### The copy-on-write principle and content immutability
 
-Контент записанного claim **не модифицируется**. Когда процессор «меняет» контент (например, `ConvertRecord`), он читает старый claim и пишет **новый**; FlowFile получает ссылку на новый claim. Следствия:
+The content of a written claim is **never modified**. When a processor "changes" content (for example, `ConvertRecord`), it reads the old claim and writes a **new** one; the FlowFile receives a reference to the new claim. Consequences:
 
-1. Клонирование FlowFile (например, при ветвлении на две связи) не копирует байты, а лишь добавляет ссылку на тот же claim (счётчик ссылок).
-2. Операции, меняющие только атрибуты (`UpdateAttribute`, `RouteOnAttribute`), дёшевы: контент не трогается.
-3. Каждая трансформация контента — это I/O чтения и записи. Цепочки из многих процессоров, переписывающих контент, увеличивают нагрузку на диск. Это мотивирует использовать Record-based processing с минимальным числом «перезаписывающих» шагов.
-4. Место на диске освобождается, когда на claim не остаётся ссылок; удалённый контент может некоторое время лежать в **archive** (если включён), что нужно учитывать при расчёте ёмкости.
+1. Cloning a FlowFile (for example, when branching into two connections) does not copy the bytes but only adds a reference to the same claim (a reference counter).
+2. Operations that change only attributes (`UpdateAttribute`, `RouteOnAttribute`) are cheap: the content is not touched.
+3. Every content transformation is read and write I/O. Chains of many processors that rewrite content increase the load on the disk. This motivates using Record-based processing with a minimal number of "rewriting" steps.
+4. Disk space is freed when no references to a claim remain; deleted content may stay in the **archive** for some time (if enabled), which must be taken into account when calculating capacity.
 
-#### Жизненный цикл FlowFile (упрощённо)
+#### FlowFile lifecycle (simplified)
 
 ```text
-Источник (например, ListenHTTP / ConsumeKafka / GetFile)
-  │ 1. session.create() → новый FlowFile; событие provenance RECEIVE / CREATE
-  │ 2. session.write(...) → контент в новый claim
+Source (for example, ListenHTTP / ConsumeKafka / GetFile)
+  │ 1. session.create() → a new FlowFile; provenance event RECEIVE / CREATE
+  │ 2. session.write(...) → content goes into a new claim
   │ 3. session.transfer(ff, REL_SUCCESS)
   │ 4. session.commit():
-  │       a) обновление FlowFile Repository (WAL)  ← точка durability
-  │       b) запись provenance-событий
-  │       c) FlowFile попадает в очередь Connection
+  │       a) update the FlowFile Repository (WAL)  ← durability point
+  │       b) write provenance events
+  │       c) the FlowFile lands in the Connection queue
   ▼
 Connection (queue): back pressure, prioritizers, expiration, load balancing
   ▼
-Следующий процессор: session.get() → обработка → commit/rollback
+Next processor: session.get() → processing → commit/rollback
   ▼
-Терминальный процессор / автозавершение связи → событие DROP; claim освобождается
+Terminal processor / auto-terminated relationship → DROP event; the claim is released
 ```
 
-**Семантика гарантий.** Внутри NiFi обработка организована транзакциями сессии. При `rollback` (исключение в процессоре) FlowFile возвращается во входящую очередь (с penalization в ряде случаев), поэтому внутри узла реализуется модель **at-least-once**: данные не теряются при сбое между шагами, но могут быть обработаны повторно, если сбой произошёл после побочного эффекта во внешней системе, но до commit. Это ключевой момент для интеграций (Kafka, БД, REST): идемпотентность записи на приёмнике — задача проектировщика flow.
+**Guarantee semantics.** Inside NiFi, processing is organized by session transactions. On `rollback` (an exception in a processor), the FlowFile returns to the incoming queue (with penalization in some cases), so within a node the **at-least-once** model is implemented: data is not lost on a failure between steps, but it may be processed again if the failure occurred after a side effect in an external system but before the commit. This is the key point for integrations (Kafka, databases, REST): idempotent writes at the destination are the flow designer's responsibility.
 
-Durability зависит от настроек синхронизации: по умолчанию `nifi.flowfile.repository.always.sync=false` и `nifi.content.repository.always.sync=false`. Данные сбрасываются на диск операционной системой асинхронно; при крахе ОС/питания возможна потеря последних изменений. `true` повышает надёжность ценой throughput (имена и значения по умолчанию подтверждены документацией FlowFile Repository, [Administration Guide](https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html), и примером реальной конфигурации: `always.sync=false` у FlowFile и Content Repository, `nifi.queue.swap.threshold=20000`, архив Content Repository — 7 дней или 50 % тома). Интервал checkpoint FlowFile Repository в документации и в поставляемых конфигурациях встречается разный (`2 mins` в описании, `20 secs` в примере конфигурации), поэтому смотрите значение в своём `nifi.properties`.
+Durability depends on the sync settings: by default `nifi.flowfile.repository.always.sync=false` and `nifi.content.repository.always.sync=false`. Data is flushed to disk by the operating system asynchronously; on an OS crash or power loss the latest changes may be lost. `true` increases reliability at the cost of throughput (the names and default values are confirmed by the FlowFile Repository documentation, the [Administration Guide](https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html), and by an example of a real configuration: `always.sync=false` for the FlowFile and Content Repositories, `nifi.queue.swap.threshold=20000`, the Content Repository archive — 7 days or 50% of the volume). The checkpoint interval of the FlowFile Repository differs between the documentation and the shipped configurations (`2 mins` in the description, `20 secs` in the example configuration), so check the value in your own `nifi.properties`.
 
-#### Swapping и FlowFile в памяти
+#### Swapping and FlowFiles in memory
 
-Метаданные FlowFile (атрибуты) живут в heap. Чтобы большие очереди не вызывали OutOfMemory, NiFi **выгружает (swap)** FlowFile из очередей на диск при превышении порога `nifi.queue.swap.threshold` (по умолчанию 20 000 на очередь). Практический вывод: миллионы мелких FlowFile опасны для heap и для скорости; гораздо лучше сотни крупных FlowFile с пачками записей (Record-based processing, MergeRecord).
+FlowFile metadata (attributes) lives in the heap. So that large queues do not cause OutOfMemory, NiFi **swaps** FlowFiles out of queues to disk when the `nifi.queue.swap.threshold` threshold is exceeded (20,000 per queue by default). Practical takeaway: millions of small FlowFiles are dangerous for the heap and for speed; hundreds of large FlowFiles with batches of records are much better (Record-based processing, MergeRecord).
 
-### 1.1.4 Ключевые понятия
+### 1.1.4 Key concepts
 
-| Понятие | Описание | Практические детали |
+| Concept | Description | Practical details |
 |---|---|---|
-| **FlowFile** | Единица данных: *атрибуты* (key-value в памяти/WAL) + *content* (поток байт в Content Repository) | Системные атрибуты: `uuid`, `filename`, `path`, `fileSize`, `mime.type` (если установлен) |
-| **Processor** | Единица работы: ingest, transform, route, deliver | Имеет свойства, relationships, scheduling, concurrent tasks, run duration, penalty/yield |
-| **Relationship** | Именованный выход процессора (`success`, `failure`, `retry`, `matched`…) | Каждую relationship нужно либо соединить, либо **auto-terminate**, иначе процессор невалиден |
-| **Connection** | Очередь между процессорами/портами | Back pressure, prioritizers, FlowFile expiration, load balancing |
-| **Process Group** | Контейнер компонентов; вложенность; Input/Output Ports | Единица модульности, версионирования, параметризации и (в 2.x) исполнения в Stateless режиме |
-| **Controller Service** | Общий конфигурируемый сервис (DBCP pool, SSL Context, Record Reader/Writer, Schema Registry) | Область видимости — группа, в которой создан (и вложенные); требует *Enable* |
-| **Parameter Context** | Именованный набор параметров (в т. ч. sensitive), привязываемый к Process Group | Ссылка `#{param}` в свойствах; поддерживает наследование (с 1.15.0) |
-| **Reporting Task** | Периодическая задача уровня контроллера (метрики, мониторинг) | Например, `PrometheusReportingTask`, `MonitorDiskUsage` |
-| **Parameter Provider** | Загрузка параметров из внешнего хранилища (Vault, AWS/GCP Secrets) | Введены в 1.18.0 |
-| **Flow Registry Client** | Интеграция с реестром версий flow (NiFi Registry, GitHub, GitLab, Bitbucket, Azure DevOps) | Подробнее в Block 1.4 |
+| **FlowFile** | The unit of data: *attributes* (key-value in memory/WAL) + *content* (a byte stream in the Content Repository) | System attributes: `uuid`, `filename`, `path`, `fileSize`, `mime.type` (if set) |
+| **Processor** | The unit of work: ingest, transform, route, deliver | Has properties, relationships, scheduling, concurrent tasks, run duration, penalty/yield |
+| **Relationship** | A named output of a processor (`success`, `failure`, `retry`, `matched`…) | Every relationship must either be connected or **auto-terminated**, otherwise the processor is invalid |
+| **Connection** | A queue between processors/ports | Back pressure, prioritizers, FlowFile expiration, load balancing |
+| **Process Group** | A container of components; nesting; Input/Output Ports | The unit of modularity, versioning, parameterization, and (in 2.x) execution in Stateless mode |
+| **Controller Service** | A shared configurable service (DBCP pool, SSL Context, Record Reader/Writer, Schema Registry) | Its scope is the group where it was created (and nested groups); requires *Enable* |
+| **Parameter Context** | A named set of parameters (including sensitive ones) bound to a Process Group | Referenced as `#{param}` in properties; supports inheritance (since 1.15.0) |
+| **Reporting Task** | A periodic controller-level task (metrics, monitoring) | For example, `PrometheusReportingTask`, `MonitorDiskUsage` |
+| **Parameter Provider** | Loading parameters from an external store (Vault, AWS/GCP Secrets) | Introduced in 1.18.0 |
+| **Flow Registry Client** | Integration with a flow version registry (NiFi Registry, GitHub, GitLab, Bitbucket, Azure DevOps) | More in Block 1.4 |
 
-Про Variable Registry: **[rem 2.0]** переменные (Variables) и Variable Registry удалены в пользу Parameter Contexts ([Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals)); в Expression Language вместо `VARIABLE_REGISTRY` доступен scope `ENVIRONMENT` (системные свойства JVM и переменные окружения) ([Migration Guidance, 2.0.0-M1](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+About the Variable Registry: **[rem 2.0]** variables (Variables) and the Variable Registry were removed in favor of Parameter Contexts ([Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals)); in Expression Language the `ENVIRONMENT` scope (JVM system properties and environment variables) is available instead of `VARIABLE_REGISTRY` ([Migration Guidance, 2.0.0-M1](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
 
-### 1.1.5 Типовые сценарии
+### 1.1.5 Typical scenarios
 
-1. **Stream ingestion.** Приём событий по HTTP (`ListenHTTP`/`HandleHttpRequest`), из Kafka (`ConsumeKafka`), MQTT; нормализация и маршрутизация в хранилища.
-2. **Log shipping.** Приём syslog (`ListenSyslog`), tail файлов (`TailFile`), разбор, фильтрация (отбрасывание шума), доставка в Splunk/Elastic/Kafka/S3. Splunk рассматривается в Block 2.3.
-3. **Event pipelines.** Валидация против схемы, обогащение (`LookupRecord`), раздельная доставка в несколько приёмников, DLQ для некорректных событий.
-4. **Batch-интеграции.** List/Fetch-паттерн (`ListFile`+`FetchFile`, `ListSFTP`+`FetchSFTP`, `ListS3`+`FetchS3Object`) с состоянием (state) для инкрементальной загрузки.
+1. **Stream ingestion.** Receiving events over HTTP (`ListenHTTP`/`HandleHttpRequest`), from Kafka (`ConsumeKafka`), or MQTT; normalization and routing into storage systems.
+2. **Log shipping.** Receiving syslog (`ListenSyslog`), tailing files (`TailFile`), parsing, filtering (dropping noise), delivery to Splunk/Elastic/Kafka/S3. Splunk is covered in Block 2.3.
+3. **Event pipelines.** Validation against a schema, enrichment (`LookupRecord`), separate delivery to several destinations, a DLQ for invalid events.
+4. **Batch integrations.** The List/Fetch pattern (`ListFile`+`FetchFile`, `ListSFTP`+`FetchSFTP`, `ListS3`+`FetchS3Object`) with state for incremental loading.
 
-### Lab 1: интерфейс NiFi и первый flow
+### Lab 1: the NiFi UI and a first flow
 
-**Цель.** Освоить UI NiFi, создать, запустить и отследить простейший flow, увидеть provenance.
+**Goal.** Get to know the NiFi UI, create, run, and trace the simplest flow, and see provenance.
 
-**Ожидаемый результат.** Flow `GenerateFlowFile → UpdateAttribute → LogAttribute`, статистика очередей, события provenance и содержимое FlowFile в Content Viewer.
+**Expected result.** The flow `GenerateFlowFile → UpdateAttribute → LogAttribute`, queue statistics, provenance events, and the FlowFile content in the Content Viewer.
 
-**Архитектура решения.**
+**Solution architecture.**
 
 ```text
 GenerateFlowFile ──success──► UpdateAttribute ──success──► LogAttribute (auto-terminate success)
 ```
 
-**Процессоры и конфигурация.**
+**Processors and configuration.**
 
-| Процессор | Свойство | Значение |
+| Processor | Property | Value |
 |---|---|---|
 | `GenerateFlowFile` | Scheduling → Run Schedule | `5 sec` |
-| | File Size | `0 B` (если задан Custom Text) |
+| | File Size | `0 B` (if Custom Text is set) |
 | | Custom Text | `{"id": ${random():mod(1000)}, "ts": "${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")}"}` |
 | | Mime Type | `application/json` |
 | `UpdateAttribute` | Dynamic property `lab.stage` | `ingested` |
 | | Dynamic property `event.id` | `${UUID()}` |
 | `LogAttribute` | Log Level | `info`; Relationship `success` → Auto-terminate |
 
-**Последовательность.**
+**Sequence.**
 
-1. Добавьте процессоры перетаскиванием иконки Processor на холст (поиск по имени).
-2. Соедините связью `success`; в диалоге Connection отметьте только `success`.
-3. Для `LogAttribute` в *Settings → Automatically Terminate Relationships* включите `success`.
-4. Запустите (Start). Наблюдайте счётчики *In/Out*, *Tasks/Time*, очередь на связи.
-5. ПКМ на связи → **List queue** → просмотр атрибутов и контента (при остановленном приёмнике — остановите `UpdateAttribute`, очередь заполнится).
-6. ПКМ на процессоре → **View data provenance** → откройте событие и **Lineage graph**.
+1. Add the processors by dragging the Processor icon onto the canvas (search by name).
+2. Connect them with a `success` connection; in the Connection dialog check only `success`.
+3. For `LogAttribute`, enable `success` under *Settings → Automatically Terminate Relationships*.
+4. Start the flow (Start). Watch the *In/Out* counters, *Tasks/Time*, and the queue on the connection.
+5. Right-click the connection → **List queue** → view attributes and content (to see it with the destination stopped, stop `UpdateAttribute` and the queue will fill).
+6. Right-click the processor → **View data provenance** → open an event and the **Lineage graph**.
 
-**Что происходит с FlowFile.** `GenerateFlowFile` создаёт FlowFile (событие `CREATE`); `UpdateAttribute` фиксирует `ATTRIBUTES_MODIFIED`; `LogAttribute` пишет в `nifi-app.log` и FlowFile завершается (`DROP`).
+**What happens to the FlowFile.** `GenerateFlowFile` creates the FlowFile (a `CREATE` event); `UpdateAttribute` records `ATTRIBUTES_MODIFIED`; `LogAttribute` writes to `nifi-app.log` and the FlowFile terminates (`DROP`).
 
-**Проверка.** В `logs/nifi-app.log` (на стенде: `make logs s=nifi`) появляются записи `LogAttribute` с атрибутами `lab.stage=ingested`; в provenance видны три события на один `uuid`; в Content Viewer — JSON вида `{"id": 598, "ts": "2026-11-19T16:00:05.141Z"}`.
+**Verification.** In `logs/nifi-app.log` (on the lab stand: `make logs s=nifi`) `LogAttribute` entries with the attributes `lab.stage=ingested` appear; provenance shows three events for one `uuid`; in the Content Viewer — JSON of the form `{"id": 598, "ts": "2026-11-19T16:00:05.141Z"}`.
 
-**Типичные ошибки.** Процессор остаётся с жёлтым треугольником (невалиден): нет подключённых/auto-terminated relationships или не заданы обязательные свойства. Очередь «не двигается»: приёмник остановлен или достигнут back pressure. В контенте вместо даты сырой текст `${now():format(...)}` — Expression Language не разобрал выражение: строку формата с литералом `'T'` пишите в **двойных** кавычках (`format("yyyy-MM-dd'T'...")`); вариант `format('yyyy-MM-dd\'T\'...')` в NiFi 2.12 не вычисляется. Процессор при этом остаётся валидным — ошибка видна только по содержимому FlowFile.
+**Common mistakes.** The processor keeps a yellow triangle (it is invalid): there are no connected/auto-terminated relationships, or required properties are not set. The queue "does not move": the destination is stopped or back pressure has been reached. Instead of a date, the content contains the raw text `${now():format(...)}` — Expression Language did not parse the expression: write the format string with the literal `'T'` in **double** quotes (`format("yyyy-MM-dd'T'...")`); the variant `format('yyyy-MM-dd\'T\'...')` is not evaluated in NiFi 2.12. The processor remains valid in this case — the error is visible only in the FlowFile content.
 
-**Эталонное решение:** `nifi/flows/lab1-first-flow.json` (Приложение A.8).
+**Reference solution:** `nifi/flows/lab1-first-flow.json` (Appendix A.8).
 
 ---
 
 ## Block 1.2: Building data flows
 
-### 1.2.1 Ingestion разных типов данных
+### 1.2.1 Ingestion of different types of data
 
-| Источник | Основные компоненты | Состояние / инкремент | Примечания |
+| Source | Main components | State / increment | Notes |
 |---|---|---|---|
-| **Файлы (локальные/SFTP/SMB/S3)** | `ListFile` + `FetchFile`, `GetFile`, `ListSFTP` + `FetchSFTP`, `ListS3` + `FetchS3Object` | `List*` хранят state (последние метки времени/ключи) | List/Fetch предпочтительнее `Get*`: List можно запускать на Primary Node Only, а Fetch распределять по кластеру через load balancing |
-| **HTTP/REST (входящие)** | `ListenHTTP`, `HandleHttpRequest` + `HandleHttpResponse` | — | Для приёма событий; настройте TLS и аутентификацию |
-| **HTTP/REST (исходящие)** | `InvokeHTTP` | — | Подробно в Block 2.1 |
-| **Базы данных** | `ExecuteSQLRecord`, `QueryDatabaseTableRecord`, `GenerateTableFetch` | Maximum-value columns в state | Подробно в Block 2.1 |
-| **Messaging** | `ConsumeKafka`, `ConsumeJMS`, `ConsumeMQTT`, `ConsumeAMQP` | Offsets/acks на стороне брокера | Kafka — Block 2.1 |
-| **Логи/сети** | `TailFile`, `ListenSyslog`, `ListenTCP`, `ListenUDP` | Позиция чтения в state | |
+| **Files (local/SFTP/SMB/S3)** | `ListFile` + `FetchFile`, `GetFile`, `ListSFTP` + `FetchSFTP`, `ListS3` + `FetchS3Object` | `List*` keep state (the latest timestamps/keys) | List/Fetch is preferable to `Get*`: List can run on Primary Node Only, while Fetch can be distributed across the cluster through load balancing |
+| **HTTP/REST (inbound)** | `ListenHTTP`, `HandleHttpRequest` + `HandleHttpResponse` | — | For receiving events; configure TLS and authentication |
+| **HTTP/REST (outbound)** | `InvokeHTTP` | — | Covered in detail in Block 2.1 |
+| **Databases** | `ExecuteSQLRecord`, `QueryDatabaseTableRecord`, `GenerateTableFetch` | Maximum-value columns in state | Covered in detail in Block 2.1 |
+| **Messaging** | `ConsumeKafka`, `ConsumeJMS`, `ConsumeMQTT`, `ConsumeAMQP` | Offsets/acks on the broker side | Kafka — Block 2.1 |
+| **Logs/network** | `TailFile`, `ListenSyslog`, `ListenTCP`, `ListenUDP` | The read position in state | |
 
-**Паттерн List/Fetch.** `List*` формирует FlowFile без контента (только атрибуты, описывающие объект), затем `Fetch*` читает содержимое. Благодаря этому листинг выполняется на одном узле (Primary Node Only), а дорогая загрузка — на всех узлах кластера после балансировки очереди. Из NiFi 1.14 процессоры, запланированные на *Primary Node Only* и имеющие входящие соединения, становятся невалидными ([Migration Guidance, 1.14.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+**The List/Fetch pattern.** `List*` produces a FlowFile without content (only attributes that describe the object), and then `Fetch*` reads the content. As a result, listing runs on one node (Primary Node Only), while the expensive loading runs on all nodes of the cluster after the queue is balanced. Since NiFi 1.14, processors scheduled as *Primary Node Only* that have incoming connections become invalid ([Migration Guidance, 1.14.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
 
-### 1.2.2 Маршрутизация и фильтрация
+### 1.2.2 Routing and filtering
 
-#### Expression Language (EL) — основы
+#### Expression Language (EL) — basics
 
-EL вычисляется для значений свойств, помеченных как *Supports Expression Language*; в документации свойства указан scope: `NONE`, `ENVIRONMENT`, `FLOWFILE_ATTRIBUTES`. Полное описание — [Expression Language Guide](https://nifi.apache.org/docs/nifi-docs/html/expression-language-guide.html).
+EL is evaluated for the values of properties marked as *Supports Expression Language*; the scope is given in the property documentation: `NONE`, `ENVIRONMENT`, `FLOWFILE_ATTRIBUTES`. The full description is in the [Expression Language Guide](https://nifi.apache.org/docs/nifi-docs/html/expression-language-guide.html).
 
 ```text
-${filename}                                   // значение атрибута
-${filename:toUpper()}                         // цепочка функций
-${fileSize:gt(1048576)}                       // булево: размер > 1 МБ
+${filename}                                   // attribute value
+${filename:toUpper()}                         // function chain
+${fileSize:gt(1048576)}                       // boolean: size > 1 MB
 ${mime.type:equals('application/json')}
 ${kafka.topic:startsWith('orders.')}
-${now():format('yyyy-MM-dd')}                 // текущая дата
-${http.query.param.limit:replaceNull('100')}  // значение по умолчанию
+${now():format('yyyy-MM-dd')}                 // current date
+${http.query.param.limit:replaceNull('100')}  // default value
 ${severity:equals('ERROR'):or(${severity:equals('FATAL')})}
 ${literal(5):plus(3)}
-#{db.url}                                     // ссылка на параметр (Parameter Context), не EL
+#{db.url}                                     // parameter reference (Parameter Context), not EL
 ```
 
 #### RouteOnAttribute
 
-`RouteOnAttribute` направляет FlowFile по именованным relationships на основании EL-предикатов. Контент не читается, поэтому процессор очень дешёв.
+`RouteOnAttribute` directs a FlowFile to named relationships based on EL predicates. The content is not read, so the processor is very cheap.
 
-| Свойство | Назначение |
+| Property | Purpose |
 |---|---|
-| **Routing Strategy** | `Route to Property name` (каждое динамическое свойство = relationship); `Route to 'match' if all match`; `Route to 'match' if any matches` |
-| Dynamic property (имя = relationship) | EL-выражение, возвращающее boolean |
-| Relationship `unmatched` | Всё, что не подошло ни под одно условие |
+| **Routing Strategy** | `Route to Property name` (each dynamic property = a relationship); `Route to 'match' if all match`; `Route to 'match' if any matches` |
+| Dynamic property (name = relationship) | An EL expression that returns a boolean |
+| Relationship `unmatched` | Everything that did not match any condition |
 
-Пример конфигурации (`Route to Property name`):
+Example configuration (`Route to Property name`):
 
 ```text
 big_json      = ${mime.type:equals('application/json'):and(${fileSize:gt(10485760)})}
@@ -253,61 +251,61 @@ small_json    = ${mime.type:equals('application/json'):and(${fileSize:le(1048576
 csv           = ${filename:endsWith('.csv')}
 ```
 
-**Ограничение.** `RouteOnAttribute` видит только атрибуты. Для маршрутизации по содержимому записей используйте `RouteOnContent` (регулярные выражения, сканирует контент), `QueryRecord`/`PartitionRecord` (разбиение по значениям полей без Split) или предварительно извлеките значение в атрибут (`EvaluateJsonPath`, `ExtractText`) — но извлечение в атрибут имеет смысл только для небольших значений (см. раздел про производительность).
+**Limitation.** `RouteOnAttribute` sees only attributes. To route by the content of records, use `RouteOnContent` (regular expressions, scans the content), `QueryRecord`/`PartitionRecord` (splitting by field values without Split), or extract the value into an attribute beforehand (`EvaluateJsonPath`, `ExtractText`) — but extracting into an attribute makes sense only for small values (see the section on performance).
 
-### 1.2.3 Слияние потоков (merging), back pressure, prioritization
+### 1.2.3 Merging flows, back pressure, prioritization
 
-**Слияние.** Несколько входящих связей на один процессор допустимы (fan-in); процессор берёт FlowFile из любой. Для объединения самих *данных* используются `MergeContent` (байтовая склейка, с форматами binary concatenation/TAR/ZIP/Avro) и `MergeRecord` (запись-ориентированная склейка с учётом схемы; подробный справочник по его свойствам и правилам готовности bin'а — Day 2, раздел 2.2.6). Ключевые параметры слияния: *Minimum/Maximum Number of Entries (Records)*, *Minimum/Maximum Group Size*, **Max Bin Age** (принудительный сброс по времени — важен, чтобы хвост данных не застревал), *Correlation Attribute Name*, *Merge Strategy* (`Bin-Packing Algorithm` или `Defragment`).
+**Merging.** Several incoming connections into one processor are allowed (fan-in); the processor takes a FlowFile from any of them. To merge the *data* itself, use `MergeContent` (byte concatenation, with the formats binary concatenation/TAR/ZIP/Avro) and `MergeRecord` (record-oriented merging that takes the schema into account; a detailed reference on its properties and the rules for when a bin is ready is in Day 2, section 2.2.6). The key merge parameters are: *Minimum/Maximum Number of Entries (Records)*, *Minimum/Maximum Group Size*, **Max Bin Age** (a forced flush by time — important so that the tail of the data does not get stuck), *Correlation Attribute Name*, and *Merge Strategy* (`Bin-Packing Algorithm` or `Defragment`).
 
-> Историческая особенность: в NiFi 1.8 `MergeRecord` начал честно соблюдать *Minimum Number of Records*; если задать minimum меньше maximum, выпуск может содержать больше мелких FlowFile. Для крупных выходных файлов задавайте minimum ближе к maximum ([Migration Guidance, 1.8.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+> A historical note: in NiFi 1.8, `MergeRecord` began to honor *Minimum Number of Records* strictly; if the minimum is set lower than the maximum, the output may contain more small FlowFiles. For large output files, set the minimum closer to the maximum ([Migration Guidance, 1.8.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
 
 #### Back pressure
 
-Back pressure — механизм защиты от переполнения: у каждой Connection есть **Object Threshold** и **Size Threshold**. Новые подключения получают значения по умолчанию **10 000 FlowFile и 1 GB** (введено в 1.0.0, [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). Когда любой порог достигнут, процессор-источник этой связи **перестаёт планироваться**, пока очередь не освободится.
+Back pressure is a protection mechanism against overflow: every Connection has an **Object Threshold** and a **Size Threshold**. New connections get the default values of **10,000 FlowFiles and 1 GB** (introduced in 1.0.0, [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). When either threshold is reached, the source processor of that connection **stops being scheduled** until the queue frees up.
 
-Важное следствие: достаточно, чтобы **одна из исходящих связей** процессора была заполнена, и он остановится целиком, даже если остальные связи свободны. Это критично для failure-очередей (Block 3.1).
+An important consequence: it is enough for **one of the outgoing connections** of a processor to be full, and the processor stops entirely, even if the other connections are free. This is critical for failure queues (Block 3.1).
 
-| Параметр Connection | Назначение |
+| Connection parameter | Purpose |
 |---|---|
-| Back Pressure Object Threshold | Максимум FlowFile в очереди (по умолчанию 10 000) |
-| Back Pressure Data Size Threshold | Максимум суммарного размера (по умолчанию 1 GB) |
-| FlowFile Expiration | Через сколько удалять неотработанные FlowFile (по умолчанию `0 sec` = не удалять) |
-| Prioritizers | Порядок выборки из очереди |
-| Load Balance Strategy | Распределение по узлам кластера (Block 1.4) |
+| Back Pressure Object Threshold | The maximum number of FlowFiles in the queue (10,000 by default) |
+| Back Pressure Data Size Threshold | The maximum total size (1 GB by default) |
+| FlowFile Expiration | After how long to delete unprocessed FlowFiles (`0 sec` by default = do not delete) |
+| Prioritizers | The order in which items are taken from the queue |
+| Load Balance Strategy | Distribution across the cluster nodes (Block 1.4) |
 
 #### Prioritization
 
-Prioritizers применяются на уровне очереди:
+Prioritizers are applied at the queue level:
 
-| Prioritizer | Поведение |
+| Prioritizer | Behavior |
 |---|---|
-| `FirstInFirstOutPrioritizer` | По времени попадания в очередь (по порядку) |
-| `NewestFlowFileFirstPrioritizer` | Сначала новейшие (снижает latency свежих событий при backlog) |
-| `OldestFlowFileFirstPrioritizer` | Сначала старейшие по возрасту lineage |
-| `PriorityAttributePrioritizer` | По атрибуту `priority` (меньшее значение — выше приоритет) |
+| `FirstInFirstOutPrioritizer` | By the time of entering the queue (in order) |
+| `NewestFlowFileFirstPrioritizer` | Newest first (reduces the latency of fresh events during a backlog) |
+| `OldestFlowFileFirstPrioritizer` | Oldest first by lineage age |
+| `PriorityAttributePrioritizer` | By the `priority` attribute (a smaller value means a higher priority) |
 
-Prioritizers не гарантируют строгий глобальный порядок при нескольких concurrent tasks и в кластере: порядок обработки определяется ещё и параллелизмом. Если порядок критичен (например, CDC для одного ключа), используйте партиционирование по ключу, один поток на ключ (partition by attribute + 1 concurrent task) или `EnforceOrder`.
+Prioritizers do not guarantee a strict global order with several concurrent tasks and in a cluster: the processing order is also determined by parallelism. If order is critical (for example, CDC for a single key), use partitioning by key, one thread per key (partition by attribute + 1 concurrent task), or `EnforceOrder`.
 
-### 1.2.4 Практики проектирования flow
+### 1.2.4 Flow design practices
 
-**Именование.** Единый стандарт: `<Действие> <Объект> [<Источник/Приёмник>]`, например `Consume orders from Kafka`, `Validate order schema`, `Route invalid orders to DLQ`. Имена должны быть понятны без открытия конфигурации. Для связей давайте имена только когда это добавляет смысла (`valid`, `invalid`).
+**Naming.** A single standard: `<Action> <Object> [<Source/Destination>]`, for example `Consume orders from Kafka`, `Validate order schema`, `Route invalid orders to DLQ`. Names should be understandable without opening the configuration. Name connections only when it adds meaning (`valid`, `invalid`).
 
-**Документирование.** Используйте поле **Comments** у компонентов и **Labels** на холсте; описывайте контракт группы (входы/выходы, форматы, SLA). Включайте описание Process Group.
+**Documentation.** Use the **Comments** field of components and **Labels** on the canvas; describe the contract of a group (inputs/outputs, formats, SLA). Include a description of the Process Group.
 
-**Модульность.**
+**Modularity.**
 
-- **Process Group** как функциональный модуль: *ingest*, *validate*, *transform*, *deliver*, *error handling*. Общение между группами — через Input/Output Ports.
-- **Parameter Context** для всех значений, зависящих от окружения (URL, пути, топики, имена таблиц, credentials как sensitive parameters). Наследование контекстов (`base` → `prod`) позволяет хранить общие значения отдельно.
-- Один Controller Service — один смысл; создавайте сервисы на уровне Process Group, а не root, если они не нужны глобально.
-- Выделяйте error handling в переиспользуемую группу (подробно в Block 3.1).
+- A **Process Group** as a functional module: *ingest*, *validate*, *transform*, *deliver*, *error handling*. Groups communicate through Input/Output Ports.
+- A **Parameter Context** for all environment-dependent values (URLs, paths, topics, table names, credentials as sensitive parameters). Context inheritance (`base` → `prod`) lets you keep common values separately.
+- One Controller Service — one meaning; create services at the Process Group level rather than at root, unless they are needed globally.
+- Isolate error handling in a reusable group (covered in detail in Block 3.1).
 
-**Антипаттерны.** «Спагетти» из сотен процессоров на одном холсте; жёстко зашитые URL и пароли; извлечение больших фрагментов контента в атрибуты; бесконечные связи `failure → тот же процессор` без ограничения числа повторов; процессоры без имён.
+**Anti-patterns.** "Spaghetti" of hundreds of processors on one canvas; hard-coded URLs and passwords; extracting large fragments of content into attributes; endless `failure → the same processor` connections without a limit on the number of retries; unnamed processors.
 
-### Lab 2: flow из нескольких источников с маршрутизацией
+### Lab 2: a flow from several sources with routing
 
-**Цель.** Принять данные из нескольких источников (файлы, HTTP, генератор) и смаршрутизировать их по атрибутам.
+**Goal.** Receive data from several sources (files, HTTP, a generator) and route it by attributes.
 
-**Архитектура.**
+**Architecture.**
 
 ```text
 [PG: ingest]                                   [PG: route]
@@ -317,26 +315,26 @@ Prioritizers не гарантируют строгий глобальный п�
                                                                   └─ unmatched ─► LogAttribute / PutFile (quarantine)
 ```
 
-**Конфигурация.**
+**Configuration.**
 
-| Компонент | Ключевые свойства |
+| Component | Key properties |
 |---|---|
-| `ListFile` | Input Directory `#{ingest.dir}`; File Filter `.*\.(json|csv)`; Listing Strategy по умолчанию (tracking timestamps) |
-| `FetchFile` | File to Fetch `${absolute.path}/${filename}`; Completion Strategy `None` (лабораторный режим) |
-| `ListenHTTP` | Listening Port `8081`; Base Path `events`; **HTTP Headers for Attributes `Content-Type`**; Для лабораторной без TLS (в production — SSL Context Service) |
-| `UpdateAttribute` (на каждом входе) | `source` = `file` / `http` / `generator`; на входе HTTP дополнительно `mime.type` = `${'Content-Type':substringBefore(';'):trim()}` — `ListenHTTP` сам `mime.type` не выставляет |
+| `ListFile` | Input Directory `#{ingest.dir}`; File Filter `.*\.(json|csv)`; the default Listing Strategy (tracking timestamps) |
+| `FetchFile` | File to Fetch `${absolute.path}/${filename}`; Completion Strategy `None` (lab mode) |
+| `ListenHTTP` | Listening Port `8081`; Base Path `events`; **HTTP Headers for Attributes `Content-Type`**; for the lab without TLS (in production — an SSL Context Service) |
+| `UpdateAttribute` (on every input) | `source` = `file` / `http` / `generator`; on the HTTP input additionally `mime.type` = `${'Content-Type':substringBefore(';'):trim()}` — `ListenHTTP` does not set `mime.type` itself |
 | `GenerateFlowFile` | Custom Text — JSON; Mime Type `application/json` |
 | `RouteOnAttribute` | Routing Strategy `Route to Property name`; `json`=`${mime.type:equals('application/json'):or(${filename:endsWith('.json')})}`, `csv`=`${filename:endsWith('.csv')}` |
 | `PutFile` (quarantine) | Directory `#{quarantine.dir}` |
-| Parameter Context `lab-params` | `ingest.dir=/opt/nifi/data/in`, `quarantine.dir=/opt/nifi/data/quarantine` (на хосте стенда — `nifi/data/in`, `nifi/data/quarantine`, см. Приложение A.5) |
+| Parameter Context `lab-params` | `ingest.dir=/opt/nifi/data/in`, `quarantine.dir=/opt/nifi/data/quarantine` (on the lab stand host — `nifi/data/in`, `nifi/data/quarantine`, see Appendix A.5) |
 
-**Порядок построения.**
+**Build order.**
 
-1. Создайте Parameter Context `lab-params` и привяжите к группам (*Configure Process Group → Parameter Context*).
-2. Постройте группу `ingest`, внутри — три источника и выходной порт.
-3. Постройте группу `route`; соедините порт группы `ingest` с входным портом `route`.
-4. Настройте приоритет `NewestFlowFileFirstPrioritizer` на связи после объединения (для демонстрации).
-5. Отправьте тестовое событие и положите файлы (команды с хоста стенда, из корня репозитория):
+1. Create the Parameter Context `lab-params` and bind it to the groups (*Configure Process Group → Parameter Context*).
+2. Build the `ingest` group: three sources and an output port inside.
+3. Build the `route` group; connect the port of the `ingest` group to the input port of `route`.
+4. Set the `NewestFlowFileFirstPrioritizer` priority on the connection after the merge (for demonstration).
+5. Send a test event and put in files (commands from the lab stand host, from the repository root):
 
 ```bash
 curl -X POST -H 'Content-Type: application/json' \
@@ -345,58 +343,58 @@ echo '{"id":10,"type":"file"}' > nifi/data/in/sample.json
 printf 'id,type\n2,view\n' > nifi/data/in/sample.csv
 ```
 
-**Проверка.** В очередях `json`/`csv` появляются FlowFile; атрибут `source` соответствует источнику; HTTP-событие уходит в `json` с `mime.type=application/json`; события provenance показывают событие `ROUTE`.
+**Verification.** FlowFiles appear in the `json`/`csv` queues; the `source` attribute matches the source; the HTTP event goes to `json` with `mime.type=application/json`; the provenance events show a `ROUTE` event.
 
-**Ошибки.** `ListenHTTP` не отвечает — порт занят или не проброшен в контейнер (на стенде порт 8081 проброшен только у single NiFi); `ListFile` не видит файлы — права пользователя NiFi на директорию; `unmatched` растёт — не заданы mime.type/filename (проверьте атрибуты через List queue). Частый случай: HTTP-события уходят в `unmatched`, потому что `ListenHTTP` не переносит заголовок `Content-Type` в `mime.type` — нужны `HTTP Headers for Attributes` и `UpdateAttribute` из таблицы выше.
+**Mistakes.** `ListenHTTP` does not respond — the port is taken or not forwarded into the container (on the stand, port 8081 is forwarded only for the single NiFi); `ListFile` does not see the files — the NiFi user's permissions on the directory; `unmatched` keeps growing — mime.type/filename are not set (check the attributes through List queue). A frequent case: HTTP events go to `unmatched` because `ListenHTTP` does not carry the `Content-Type` header into `mime.type` — you need `HTTP Headers for Attributes` and the `UpdateAttribute` from the table above.
 
-**Эталонное решение:** `nifi/flows/lab2-multi-source-routing.json`.
+**Reference solution:** `nifi/flows/lab2-multi-source-routing.json`.
 
 ---
 
 ## Block 1.3: Record-based processing
 
-### 1.3.1 Концепция Record
+### 1.3.1 The Record concept
 
-В классической модели «один FlowFile = один объект»: для JSON-массива из 10 000 событий приходилось делать `SplitJson` (10 000 FlowFile), затем обрабатывать каждый. Это порождает 10 000 записей в FlowFile Repository, столько же provenance-событий, 10 000 вызовов `onTrigger` на каждом шаге и серьёзную нагрузку на heap.
+In the classic "one FlowFile = one object" model, a JSON array of 10,000 events required a `SplitJson` (10,000 FlowFiles) and then processing each one. This produces 10,000 entries in the FlowFile Repository, as many provenance events, 10,000 `onTrigger` calls at every step, and a serious load on the heap.
 
-**Record-oriented processing** рассматривает FlowFile как **набор записей (records)** одного формата. Формат (JSON, CSV, Avro, Parquet, XML…) абстрагирован двумя Controller Services:
+**Record-oriented processing** treats a FlowFile as a **set of records** in one format. The format (JSON, CSV, Avro, Parquet, XML…) is abstracted by two Controller Services:
 
-- **Record Reader** — десериализует байты в поток записей (`JsonTreeReader`, `CSVReader`, `AvroReader`, `ParquetReader`, `XMLReader`, `GrokReader`…).
-- **Record Writer** — сериализует записи в байты (`JsonRecordSetWriter`, `CSVRecordSetWriter`, `AvroRecordSetWriter`, `ParquetRecordSetWriter`…).
+- A **Record Reader** deserializes bytes into a stream of records (`JsonTreeReader`, `CSVReader`, `AvroReader`, `ParquetReader`, `XMLReader`, `GrokReader`…).
+- A **Record Writer** serializes records into bytes (`JsonRecordSetWriter`, `CSVRecordSetWriter`, `AvroRecordSetWriter`, `ParquetRecordSetWriter`…).
 
-Схема (**Schema**) описывает поля и типы. Процессор работает с записями потоково (streaming): одна запись в памяти за раз, поэтому большие FlowFile обрабатываются без загрузки целиком (если конкретный процессор не накапливает данные: `QueryRecord` и `MergeRecord` имеют свои нюансы).
+A **Schema** describes the fields and types. The processor works with records in a streaming fashion: one record in memory at a time, so large FlowFiles are processed without being loaded entirely (unless a specific processor accumulates data: `QueryRecord` and `MergeRecord` have their own nuances).
 
 ```text
-FlowFile (NDJSON, 100k записей)
-   │ JsonTreeReader ──► поток Record
-   │          └── процессор: ConvertRecord / UpdateRecord / QueryRecord / ValidateRecord …
+FlowFile (NDJSON, 100k records)
+   │ JsonTreeReader ──► stream of Records
+   │          └── processor: ConvertRecord / UpdateRecord / QueryRecord / ValidateRecord …
    │ JsonRecordSetWriter / AvroRecordSetWriter ◄──
    ▼
-FlowFile (другой формат или схема, 1 FlowFile, 1 запись в репозитории)
+FlowFile (another format or schema, 1 FlowFile, 1 entry in the repository)
 ```
 
-### 1.3.2 Reader, Writer, Schema и Schema Registry
+### 1.3.2 Reader, Writer, Schema, and Schema Registry
 
-**Schema Access Strategy (у Reader)** определяет, откуда берётся схема входных данных:
+The **Schema Access Strategy (of the Reader)** determines where the schema of the input data comes from:
 
-| Стратегия | Источник схемы | Когда использовать |
+| Strategy | Schema source | When to use |
 |---|---|---|
-| `Infer Schema` | Выводится из самих данных | Прототипирование; нестрогие данные; не production-ориентир (см. 1.3.3) |
-| `Use 'Schema Name' Property` | Имя схемы из атрибута (`schema.name`) разрешается через Schema Registry | Production: много типов данных с общим реестром |
-| `Use 'Schema Text' Property` | Схема (Avro JSON) прямо в свойстве | Единичные стабильные схемы |
-| `Schema Reference Reader` и др. | Ссылка на схему в данных/заголовке (например, Confluent wire format) | Интеграция с Confluent Schema Registry |
+| `Infer Schema` | Derived from the data itself | Prototyping; loosely structured data; not a production reference (see 1.3.3) |
+| `Use 'Schema Name' Property` | The schema name from an attribute (`schema.name`) is resolved through a Schema Registry | Production: many data types with a shared registry |
+| `Use 'Schema Text' Property` | The schema (Avro JSON) directly in the property | Individual stable schemas |
+| `Schema Reference Reader`, etc. | A reference to the schema in the data/header (for example, the Confluent wire format) | Integration with the Confluent Schema Registry |
 
-**Schema Write Strategy (у Writer)** определяет, как схема сопровождает выход: `Do Not Write Schema`, `Set 'schema.name' Attribute`, `Embed Avro Schema`, `Inherit Record Schema` и др. Writer также может использовать собственную схему, отличную от входной (поэтому `ConvertRecord` — это преобразование формата **и** схемы).
+The **Schema Write Strategy (of the Writer)** determines how the schema accompanies the output: `Do Not Write Schema`, `Set 'schema.name' Attribute`, `Embed Avro Schema`, `Inherit Record Schema`, and others. A Writer can also use its own schema that differs from the input one (which is why `ConvertRecord` is a conversion of the format **and** the schema).
 
-**Schema Registry** — Controller Service, хранящий схемы:
+A **Schema Registry** is a Controller Service that stores schemas:
 
-| Сервис | Особенность |
+| Service | Characteristics |
 |---|---|
-| `AvroSchemaRegistry` | Схемы хранятся прямо в конфигурации сервиса (динамические свойства `имя = Avro schema JSON`); просто, версионируется вместе с flow |
-| `ConfluentSchemaRegistry` | Внешний реестр Confluent |
-| `AmazonGlueSchemaRegistry` и др. | Облачные реестры (в 1.23+/2.x) |
+| `AvroSchemaRegistry` | Schemas are stored directly in the service configuration (dynamic properties `name = Avro schema JSON`); simple, versioned together with the flow |
+| `ConfluentSchemaRegistry` | An external Confluent registry |
+| `AmazonGlueSchemaRegistry`, etc. | Cloud registries (in 1.23+/2.x) |
 
-Пример Avro-схемы, зарегистрированной в `AvroSchemaRegistry` как `order.v1`:
+An example of an Avro schema registered in `AvroSchemaRegistry` as `order.v1`:
 
 ```json
 {
@@ -413,215 +411,215 @@ FlowFile (другой формат или схема, 1 FlowFile, 1 запис�
 }
 ```
 
-Атрибут `schema.name=order.v1` устанавливается `UpdateAttribute` после ingest.
+The attribute `schema.name=order.v1` is set by `UpdateAttribute` after ingest.
 
-> Примечание по 2.x. Парсинг и форматирование дат/времени в Record-компонентах переведён с `SimpleDateFormat` на `DateTimeFormatter` (**2.0.0-M2**, [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); шаблоны формата должны соответствовать синтаксису `java.time`.
+> A note on 2.x. Parsing and formatting of dates/times in Record components was switched from `SimpleDateFormat` to `DateTimeFormatter` (**2.0.0-M2**, [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); format patterns must conform to the `java.time` syntax.
 
-### 1.3.3 Record-процессоры против Split-процессоров
+### 1.3.3 Record processors versus Split processors
 
-| Аспект | Split-подход (`SplitJson`, `SplitText`, …) | Record-подход (`ConvertRecord`, `QueryRecord`, `PartitionRecord`, …) |
+| Aspect | Split approach (`SplitJson`, `SplitText`, …) | Record approach (`ConvertRecord`, `QueryRecord`, `PartitionRecord`, …) |
 |---|---|---|
-| Число FlowFile | N (по числу записей) | 1 (или несколько партиций) |
-| Нагрузка на FlowFile Repository / provenance | Высокая | Низкая |
-| Расход heap на метаданные | Растёт пропорционально N | Константа |
-| Контент перезаписывается | На каждом шаге для каждой записи | Один раз на шаг для всего FlowFile |
-| Схема и типы | Нет (JSONPath по строкам) | Есть; валидация и приведение типов |
-| Фильтрация/маршрутизация | `EvaluateJsonPath` + `RouteOnAttribute` | SQL-запросом в `QueryRecord`, `PartitionRecord` |
-| Агрегация обратно | `MergeContent` (Defragment) | Не требуется или `MergeRecord` |
+| Number of FlowFiles | N (one per record) | 1 (or several partitions) |
+| Load on the FlowFile Repository / provenance | High | Low |
+| Heap usage for metadata | Grows in proportion to N | Constant |
+| Content is rewritten | At every step for every record | Once per step for the whole FlowFile |
+| Schema and types | None (JSONPath over strings) | Yes; validation and type coercion |
+| Filtering/routing | `EvaluateJsonPath` + `RouteOnAttribute` | An SQL query in `QueryRecord`, `PartitionRecord` |
+| Aggregating back | `MergeContent` (Defragment) | Not required, or `MergeRecord` |
 
-Типовая замена:
+A typical replacement:
 
 ```text
-БЫЛО:  SplitJson ► EvaluateJsonPath ► RouteOnAttribute ► ReplaceText ► MergeContent ► PutX
-СТАЛО: QueryRecord (фильтр + проекция + маршрутизация) ► UpdateRecord (при необходимости) ► PutXRecord
+BEFORE: SplitJson ► EvaluateJsonPath ► RouteOnAttribute ► ReplaceText ► MergeContent ► PutX
+AFTER:  QueryRecord (filter + projection + routing) ► UpdateRecord (if needed) ► PutXRecord
 ```
 
-Когда Split всё же оправдан: нужна обработка записи как независимой единицы с отдельным результатом (например, по одной записи вызывается REST API с независимым retry); либо необходимо ограничить размер пачки (`SplitRecord` с *Records Per Split* — это уже record-вариант разбиения).
+When Split is still justified: a record needs to be processed as an independent unit with a separate result (for example, a REST API is called per record with an independent retry); or the batch size needs to be limited (`SplitRecord` with *Records Per Split* is already the record-based variant of splitting).
 
-### 1.3.4 JSON Tree Reader: Infer Schema, ограничения, явная схема
+### 1.3.4 JSON Tree Reader: Infer Schema, limitations, and an explicit schema
 
-`JsonTreeReader` читает JSON-объекты как записи; поддерживает одиночный объект, массив объектов и **NDJSON** (несколько объектов подряд, по одному в строке) — один и тот же Reader принимает все три раскладки.
+`JsonTreeReader` reads JSON objects as records; it supports a single object, an array of objects, and **NDJSON** (several objects in a row, one per line) — the same Reader accepts all three layouts.
 
-**Infer Schema.** Reader анализирует данные FlowFile и строит схему из значений. Это удобно при прототипировании, но имеет ограничения:
+**Infer Schema.** The Reader analyzes the FlowFile data and builds a schema from the values. This is convenient for prototyping but has limitations:
 
-1. **Дополнительный проход по данным.** Для вывода схемы Reader должен просмотреть данные до начала собственно обработки; на больших FlowFile это заметная накладная (CPU/I/O).
-2. **Нестабильность схемы между FlowFile.** Тип поля выводится по значениям *этого* FlowFile: поле, содержащее `1`, `2`, `3`, выведется как целое; если в другом FlowFile встретится `1.5`, тип будет другим. Поле, которое во всех записях `null`, выводится без полезного типа. Результат: разные схемы у соседних FlowFile, ошибки при записи в БД/Avro, разные выходные структуры.
-3. **Необратимость решений.** Writer с `Inherit Record Schema` повторит «случайную» схему: ошибки обнаружатся только в приёмнике.
-4. **Нет контракта.** Нельзя гарантировать обязательность полей, форматы дат, десятичную точность (decimal), значения по умолчанию.
-5. **Особенности с датами и временем.** Строка вида `2026-11-15T10:00:00Z` может остаться строкой или быть распознана как timestamp в зависимости от настроек форматов Reader.
+1. **An extra pass over the data.** To infer the schema, the Reader must scan the data before the actual processing begins; on large FlowFiles this is a noticeable overhead (CPU/I/O).
+2. **Schema instability between FlowFiles.** A field's type is inferred from the values in *this* FlowFile: a field containing `1`, `2`, `3` is inferred as an integer; if another FlowFile contains `1.5`, the type will be different. A field that is `null` in all records is inferred without a useful type. The result: different schemas for neighboring FlowFiles, errors when writing to a database/Avro, and different output structures.
+3. **Irreversibility of decisions.** A Writer with `Inherit Record Schema` will repeat the "accidental" schema: the errors are discovered only at the destination.
+4. **No contract.** You cannot guarantee that fields are required, date formats, decimal precision, or default values.
+5. **Specifics with dates and times.** A string such as `2026-11-15T10:00:00Z` may remain a string or be recognized as a timestamp, depending on the Reader's format settings.
 
-**Что подтверждено справочником `JsonTreeReader`** ([справочник](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-record-serialization-services-nar/1.5.0/org.apache.nifi.json.JsonTreeReader/index.html), [описание в 2.x](https://docs.snowflake.com/en/en/user-guide/data-integration/openflow/controllers/jsontreereader)):
+**What the `JsonTreeReader` reference confirms** ([reference](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-record-serialization-services-nar/1.5.0/org.apache.nifi.json.JsonTreeReader/index.html), [description in 2.x](https://docs.snowflake.com/en/en/user-guide/data-integration/openflow/controllers/jsontreereader)):
 
-- **Schema Access Strategy по умолчанию — `Infer Schema`.** То есть, если вы ничего не меняли, Reader выводит схему из данных каждого FlowFile.
-- Reader принимает «JSON-per-line» (NDJSON), одиночные объекты и массивы; элементы массива становятся отдельными записями.
-- При заданной схеме **поля JSON, которых нет в схеме, пропускаются**, а поля схемы, которых нет в JSON, получают `null`. Следствие: при явной схеме всё, что нужно дальше (в том числе для Jolt и `QueryRecord`), должно быть описано в схеме Reader'а.
-- Для `Infer Schema` можно подключить **кэш схем**: без него вывод схемы повторяется для каждого FlowFile; с ним найденная схема переиспользуется. Для потоков с однородными данными это дешёвая оптимизация, но она не заменяет явную схему как контракт.
+- **The default Schema Access Strategy is `Infer Schema`.** That is, if you have not changed anything, the Reader infers the schema from the data of every FlowFile.
+- The Reader accepts "JSON-per-line" (NDJSON), single objects, and arrays; the elements of an array become separate records.
+- When a schema is set, **JSON fields that are not in the schema are skipped**, and schema fields that are not in the JSON get `null`. Consequence: with an explicit schema, everything needed downstream (including for Jolt and `QueryRecord`) must be described in the Reader's schema.
+- A **schema cache** can be attached for `Infer Schema`: without it, schema inference is repeated for every FlowFile; with it, the schema that was found is reused. For streams with uniform data this is a cheap optimization, but it does not replace an explicit schema as a contract.
 
-**Когда задавать схему явно:** любые production-потоки; запись в БД и колоночные форматы (Avro/Parquet); валидация (`ValidateRecord`); совместный доступ нескольких команд к данным; необходимость эволюции схемы под контролем.
+**When to set the schema explicitly:** any production flows; writing to a database and columnar formats (Avro/Parquet); validation (`ValidateRecord`); shared access to the data by several teams; the need to evolve the schema in a controlled way.
 
-Основные свойства `JsonTreeReader`:
+The main properties of `JsonTreeReader`:
 
-| Свойство | Назначение |
+| Property | Purpose |
 |---|---|
-| Schema Access Strategy | См. таблицу выше |
-| Schema Registry / Schema Name / Schema Text | Параметры выбранной стратегии |
-| Starting Field Strategy (`Root Node` / `Nested Field`) + Starting Field Name | Чтение записей из вложенного массива (например, `$.data.items`) |
-| Schema Application Strategy | К каким узлам применить схему при вложенном старте |
-| Date / Time / Timestamp Format | Шаблоны парсинга строк |
-| Allow Comments | Допуск комментариев в JSON |
-| Max String Length | Максимальная длина строкового значения при разборе (по умолчанию `20 MB`); защита от чрезмерно больших значений |
-| Infer Schema Cache | Необязательный кэш схем для Schema Access Strategy `Infer Schema`: если задан, сначала ищется подходящая схема в кэше, иначе схема выводится заново **для каждого FlowFile** |
+| Schema Access Strategy | See the table above |
+| Schema Registry / Schema Name / Schema Text | Parameters of the chosen strategy |
+| Starting Field Strategy (`Root Node` / `Nested Field`) + Starting Field Name | Reading records from a nested array (for example, `$.data.items`) |
+| Schema Application Strategy | To which nodes to apply the schema when starting from a nested field |
+| Date / Time / Timestamp Format | String parsing patterns |
+| Allow Comments | Allow comments in JSON |
+| Max String Length | The maximum length of a string value when parsing (`20 MB` by default); protection against excessively large values |
+| Infer Schema Cache | An optional schema cache for the `Infer Schema` Schema Access Strategy: if set, a suitable schema is looked up in the cache first; otherwise the schema is inferred again **for every FlowFile** |
 
-В 2.10.0 «улучшена снисходительность JSON-читателей и гибкость JSON Writer» ([Release Notes 2.10.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); при обновлении проверяйте регрессионно поведение на «грязных» данных.
+In 2.10.0, "the leniency of the JSON readers and the flexibility of the JSON Writer were improved" ([Release Notes 2.10.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); when upgrading, regression-test the behavior on "dirty" data.
 
-### 1.3.5 Настройка Reader и Writer для производительности
+### 1.3.5 Configuring the Reader and Writer for performance
 
-1. **Явная схема** вместо Infer (избегаем дополнительного прохода и нестабильных типов).
-2. **Минимум преобразований.** Если читаете и пишете JSON с той же схемой, не добавляйте лишний `ConvertRecord`.
-3. **Writer.** У `JsonRecordSetWriter`: `Pretty Print JSON = false`; `Output Grouping`: `Array` или `One Line Per Object` (NDJSON). Для потоковой доставки в Splunk/Kafka/логи NDJSON удобнее массива: его можно резать по строкам, конкатенировать и обрабатывать потоково. `Suppress Null Values`: `Never Suppress` / `Always Suppress` / `Suppress Missing Values` — влияет на размер выхода и на совместимость с приёмником.
-4. **Схема Writer.** Явная схема с нужным порядком полей определяет порядок вывода (см. Block 2.2).
-5. **Формат.** Бинарные форматы (Avro, Parquet) дешевле текстового JSON по размеру и CPU разбора; внутри цепочки можно конвертировать в Avro и обратно в JSON на границе.
-6. **Размер FlowFile.** Много записей в одном FlowFile — хорошо, но гигантские FlowFile (гигабайты) затрудняют параллелизм и retry. Обычно целятся в десятки-сотни МБ на FlowFile; подбирайте под приёмники.
-7. **Concurrent Tasks.** Record-процессоры безопасно масштабируются по `Concurrent Tasks`; ограничение — число FlowFile в очереди (при одном огромном FlowFile параллелизм бесполезен). Разбейте вход на партиции (`PartitionRecord`/`SplitRecord` с большим *Records Per Split*).
-8. **Кэширование схем.** Reader/Writer как Controller Service создаются один раз и переиспользуются; не создавайте отдельный сервис на каждый процессор без необходимости.
+1. **An explicit schema** instead of Infer (avoids the extra pass and unstable types).
+2. **A minimum of conversions.** If you read and write JSON with the same schema, do not add an unnecessary `ConvertRecord`.
+3. **The Writer.** For `JsonRecordSetWriter`: `Pretty Print JSON = false`; `Output Grouping`: `Array` or `One Line Per Object` (NDJSON). For streaming delivery to Splunk/Kafka/logs, NDJSON is more convenient than an array: it can be cut by lines, concatenated, and processed in a streaming fashion. `Suppress Null Values`: `Never Suppress` / `Always Suppress` / `Suppress Missing Values` — affects the output size and compatibility with the destination.
+4. **The Writer schema.** An explicit schema with the required field order determines the output order (see Block 2.2).
+5. **Format.** Binary formats (Avro, Parquet) are cheaper than text JSON in size and parsing CPU; within the chain you can convert to Avro and back to JSON at the boundary.
+6. **FlowFile size.** Many records in one FlowFile is good, but giant FlowFiles (gigabytes) hinder parallelism and retry. The usual target is tens to hundreds of MB per FlowFile; tune it to the destinations.
+7. **Concurrent Tasks.** Record processors scale safely with `Concurrent Tasks`; the limit is the number of FlowFiles in the queue (with one huge FlowFile, parallelism is useless). Split the input into partitions (`PartitionRecord`/`SplitRecord` with a large *Records Per Split*).
+8. **Schema caching.** A Reader/Writer as a Controller Service is created once and reused; do not create a separate service for every processor without need.
 
-### 1.3.6 Основные Record-процессоры (обзор)
+### 1.3.6 The main Record processors (overview)
 
-| Процессор | Назначение |
+| Processor | Purpose |
 |---|---|
-| `ConvertRecord` | Формат/схема → формат/схема |
-| `QueryRecord` | SQL (Apache Calcite) над записями FlowFile (`FROM FLOWFILE`); каждый динамический property = relationship с результатом запроса |
-| `UpdateRecord` | Изменение значений полей по RecordPath |
-| `JoltTransformRecord` | Структурные преобразования через Jolt (размещён в `nifi-jolt-nar` с 2.0.0-M2) |
-| `ValidateRecord` | Проверка записей на схему; relationships `valid`, `invalid`, `failure` |
-| `PartitionRecord` | Разбиение по значениям полей в отдельные FlowFile с атрибутами |
-| `LookupRecord` | Обогащение через Lookup Service |
-| `MergeRecord` | Склейка мелких FlowFile в крупные |
-| `SplitRecord` | Разбиение на пачки записей (когда это необходимо) |
-| `RemoveRecordField` | Удаление полей (добавлен в 1.23.0) |
-| `ForkRecord` | Разворачивание вложенных массивов |
+| `ConvertRecord` | Format/schema → format/schema |
+| `QueryRecord` | SQL (Apache Calcite) over the records of a FlowFile (`FROM FLOWFILE`); each dynamic property = a relationship with the query result |
+| `UpdateRecord` | Changing field values by RecordPath |
+| `JoltTransformRecord` | Structural transformations through Jolt (located in `nifi-jolt-nar` since 2.0.0-M2) |
+| `ValidateRecord` | Checking records against a schema; relationships `valid`, `invalid`, `failure` |
+| `PartitionRecord` | Splitting by field values into separate FlowFiles with attributes |
+| `LookupRecord` | Enrichment through a Lookup Service |
+| `MergeRecord` | Merging small FlowFiles into large ones |
+| `SplitRecord` | Splitting into batches of records (when necessary) |
+| `RemoveRecordField` | Removing fields (added in 1.23.0) |
+| `ForkRecord` | Unfolding nested arrays |
 
-### 1.3.7 Справочник: Split-процессоры, введение в QueryRecord и RecordPath
+### 1.3.7 Reference: Split processors, an introduction to QueryRecord and RecordPath
 
-Этот раздел нужен для Lab 3: в ней вы сравниваете Split-подход с Record-подходом, поэтому важно понимать, **что именно делает каждый Split-процессор** и чем его можно заменить. Описание свойств основано на справочниках компонентов NiFi ([SplitText](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.9.2/org.apache.nifi.processors.standard.SplitText/index.html), [SplitRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.17.0/org.apache.nifi.processors.standard.SplitRecord/), [SplitJson](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.2.0/org.apache.nifi.processors.standard.SplitJson/index.html)); в вашей версии имена и значения по умолчанию сверяйте во встроенной документации.
+This section is needed for Lab 3: in it you compare the Split approach with the Record approach, so it is important to understand **what exactly each Split processor does** and what can replace it. The description of the properties is based on the NiFi component references ([SplitText](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.9.2/org.apache.nifi.processors.standard.SplitText/index.html), [SplitRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.17.0/org.apache.nifi.processors.standard.SplitRecord/), [SplitJson](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.2.0/org.apache.nifi.processors.standard.SplitJson/index.html)); in your version, check the names and default values in the built-in documentation.
 
-#### Три Split-процессора: сравнение
+#### The three Split processors: a comparison
 
 | | `SplitText` | `SplitRecord` | `SplitJson` |
 |---|---|---|---|
-| Что делит | Текст **по строкам** | Данные в любом формате, который читает Record Reader | **Массив** внутри одного JSON-документа, указанный выражением JsonPath |
-| «Понимает» структуру данных | Нет, только строки и размеры | Да (схема, Reader/Writer) | Да, но только JSON |
-| Типовой вход | Логи, CSV, NDJSON «как текст» | JSON, NDJSON, CSV, Avro, Parquet и др. | Один JSON с массивом (`{"items":[…]}`) |
-| Размер части | Число строк и/или байт | Число записей (`Records Per Split`) | Всегда один элемент массива на FlowFile |
-| Формат результата | Тот же текст | Формат Record Writer (можно сразу сменить формат) | JSON-фрагмент или скаляр |
+| What it splits | Text **by lines** | Data in any format that a Record Reader can read | An **array** inside one JSON document, specified by a JsonPath expression |
+| "Understands" the data structure | No, only lines and sizes | Yes (schema, Reader/Writer) | Yes, but only JSON |
+| Typical input | Logs, CSV, NDJSON "as text" | JSON, NDJSON, CSV, Avro, Parquet, etc. | One JSON with an array (`{"items":[…]}`) |
+| Size of a part | The number of lines and/or bytes | The number of records (`Records Per Split`) | Always one array element per FlowFile |
+| Output format | The same text | The Record Writer format (the format can be changed right away) | A JSON fragment or a scalar |
 | Relationships | `splits`, `original`, `failure` | `splits`, `original`, `failure` | `split`, `original`, `failure` |
 
-Все три процессора пишут атрибуты **фрагментов**: `fragment.identifier` (одинаков для всех частей одного родителя), `fragment.index` (порядковый номер), `fragment.count` (сколько частей) и `segment.original.filename` (имя родительского FlowFile). По ним `MergeContent`/`MergeRecord` в режиме **Defragment** собирают части обратно (для Defragment обязательны `fragment.identifier` и `fragment.count`).
+All three processors write **fragment** attributes: `fragment.identifier` (the same for all parts of one parent), `fragment.index` (the sequence number), `fragment.count` (how many parts), and `segment.original.filename` (the name of the parent FlowFile). Using these, `MergeContent`/`MergeRecord` in **Defragment** mode assemble the parts back (Defragment requires `fragment.identifier` and `fragment.count`).
 
 #### SplitText
 
-Делит текстовый файл по границам строк. Подходит для NDJSON и логов, когда нужно **нарезать пачки по N строк**, не разбирая содержимое.
+Splits a text file on line boundaries. Suitable for NDJSON and logs when you need to **cut batches of N lines** without parsing the content.
 
-| Свойство | Назначение |
+| Property | Purpose |
 |---|---|
-| **Line Split Count** | Сколько строк в каждой части (без строк заголовка). Значение `0` допустимо только вместе с *Maximum Fragment Size* |
-| **Maximum Fragment Size** | Максимальный размер части в байтах, включая заголовок. Если заданы оба ограничения, деление происходит по тому, которое достигнуто первым. Строка, превышающая лимит сама по себе, уходит в отдельную часть, превышающую лимит |
-| **Header Line Count** | Сколько первых строк считать заголовком; они **дублируются в каждую часть** (удобно для CSV) |
-| **Header Line Marker Characters** | Альтернатива: строки, начинающиеся с указанных символов, считаются заголовком (игнорируется, если *Header Line Count* не нулевой) |
-| **Remove Trailing Newlines** | Убирать ли перевод строки в конце части (по умолчанию `true`). Если части потом будут склеиваться, ставьте `false` |
+| **Line Split Count** | How many lines go into each part (excluding header lines). The value `0` is allowed only together with *Maximum Fragment Size* |
+| **Maximum Fragment Size** | The maximum size of a part in bytes, including the header. If both limits are set, the split happens at whichever is reached first. A line that exceeds the limit on its own goes into a separate part that exceeds the limit |
+| **Header Line Count** | How many initial lines to treat as the header; they are **duplicated into every part** (convenient for CSV) |
+| **Header Line Marker Characters** | An alternative: lines that start with the specified characters are treated as the header (ignored if *Header Line Count* is non-zero) |
+| **Remove Trailing Newlines** | Whether to remove the line break at the end of a part (`true` by default). If the parts will be merged later, set `false` |
 
-Атрибут результата: `text.line.count` (число строк в части) и перечисленные выше `fragment.*`.
+Result attributes: `text.line.count` (the number of lines in the part) and the `fragment.*` attributes listed above.
 
-**Рекомендации.**
+**Recommendations.**
 
-- Делите **крупными пачками** (`Line Split Count` = тысячи строк), а не по одной строке: это уже полурешение проблемы мелких FlowFile.
-- Справочник предупреждает: если разбиение даёт очень много частей, возможна повышенная нагрузка на память (в памяти хранятся FlowFile с атрибутами, а не контент), поэтому при необходимости применяют **двухэтапное разбиение**: сначала крупные куски, затем мельче.
-- `SplitText` **не понимает JSON**: он разрежет «красиво отформатированный» многострочный JSON посередине объекта. Для таких данных нужен `SplitRecord` или `SplitJson`.
+- Split into **large batches** (`Line Split Count` = thousands of lines) rather than one line at a time: that is already half the solution to the small-FlowFile problem.
+- The reference warns: if the split produces a very large number of parts, memory load may increase (what is kept in memory is FlowFiles with attributes, not the content), so when necessary a **two-stage split** is used: large pieces first, then smaller ones.
+- `SplitText` **does not understand JSON**: it will cut a "nicely formatted" multi-line JSON in the middle of an object. For such data you need `SplitRecord` or `SplitJson`.
 
 #### SplitRecord
 
-Делит FlowFile в record-ориентированном формате на несколько FlowFile по **числу записей**. Reader читает вход, Writer пишет результат — поэтому одним действием можно и разбить, и сменить формат.
+Splits a FlowFile in a record-oriented format into several FlowFiles by the **number of records**. The Reader reads the input and the Writer writes the result — so in one action you can both split and change the format.
 
-| Свойство | Назначение |
+| Property | Purpose |
 |---|---|
-| **Record Reader** | Как читать вход |
-| **Record Writer** | Как писать каждую часть |
-| **Records Per Split** | Сколько записей в каждой части; поддерживает Expression Language по атрибутам FlowFile |
+| **Record Reader** | How to read the input |
+| **Record Writer** | How to write each part |
+| **Records Per Split** | How many records go into each part; supports Expression Language over FlowFile attributes |
 
-Relationships: `splits` (части), `original` (исходный FlowFile после успешного деления), `failure` (если FlowFile не удалось прочитать/преобразовать, он возвращается без изменений). Атрибуты: `mime.type`, `record.count` (записей в части), `fragment.*`, `segment.original.filename`.
+Relationships: `splits` (the parts), `original` (the source FlowFile after a successful split), `failure` (if the FlowFile could not be read/converted, it is returned unchanged). Attributes: `mime.type`, `record.count` (records in the part), `fragment.*`, `segment.original.filename`.
 
-**Когда нужен.** Не для «одной записи на FlowFile» (это антипаттерн), а для **управления размером пакетов**: огромный FlowFile надо разбить на части по 10 000–100 000 записей, чтобы они обрабатывались параллельно несколькими потоками или узлами (Block 1.3.5, п. 7).
+**When it is needed.** Not for "one record per FlowFile" (that is an anti-pattern), but for **controlling batch sizes**: a huge FlowFile has to be split into parts of 10,000–100,000 records so that they are processed in parallel by several threads or nodes (Block 1.3.5, item 7).
 
 #### SplitJson
 
-Делит JSON-документ по **массиву**, найденному выражением JsonPath. Каждый элемент массива становится отдельным FlowFile.
+Splits a JSON document by an **array** found by a JsonPath expression. Each element of the array becomes a separate FlowFile.
 
-| Свойство | Назначение |
+| Property | Purpose |
 |---|---|
-| **JsonPath Expression** | Путь к массиву, например `$.items` |
-| **Null Value Representation** | Как представлять `null`: пустая строка (по умолчанию) или строка `null` |
-| **Max String Length** | Максимальная длина строкового значения при разборе (по умолчанию 20 MB) |
+| **JsonPath Expression** | The path to the array, for example `$.items` |
+| **Null Value Representation** | How to represent `null`: an empty string (the default) or the string `null` |
+| **Max String Length** | The maximum length of a string value when parsing (20 MB by default) |
 
-Relationships: `split` (элементы), `original`, `failure` — в `failure` уходит FlowFile, если это не валидный JSON или путь не найден (либо не указывает на массив).
+Relationships: `split` (the elements), `original`, `failure` — a FlowFile goes to `failure` if it is not valid JSON or the path is not found (or does not point to an array).
 
-**Особенности.** Процессор рассчитан на **один JSON-документ** и разбирает его целиком; на NDJSON (много документов подряд) он не предназначен. Он создаёт **по FlowFile на элемент**, то есть ведёт к проблеме мелких FlowFile из Block 1.1.3, если массив большой.
+**Specifics.** The processor is designed for **one JSON document** and parses it entirely; it is not intended for NDJSON (many documents in a row). It creates **a FlowFile per element**, which leads to the small-FlowFile problem from Block 1.1.3 if the array is large.
 
-#### Как выбрать
+#### How to choose
 
-| Задача | Что использовать |
+| Task | What to use |
 |---|---|
-| Нарезать логи/NDJSON/CSV на пачки по N строк без разбора содержимого | `SplitText` с большим `Line Split Count` |
-| Нарезать данные любого формата на пачки по N **записей** или сразу сменить формат | `SplitRecord` |
-| Из одного JSON `{"items":[…]}` получить отдельные объекты для независимой обработки | `SplitJson` — или, лучше, `ForkRecord`/`QueryRecord`, если независимость не нужна |
-| Отфильтровать, спроецировать, маршрутизировать записи | **Не Split**: `QueryRecord`, `PartitionRecord`, `UpdateRecord` |
+| Cut logs/NDJSON/CSV into batches of N lines without parsing the content | `SplitText` with a large `Line Split Count` |
+| Cut data in any format into batches of N **records** or change the format right away | `SplitRecord` |
+| From a single JSON `{"items":[…]}`, get separate objects for independent processing | `SplitJson` — or, better, `ForkRecord`/`QueryRecord` if independence is not needed |
+| Filter, project, and route records | **Not Split**: `QueryRecord`, `PartitionRecord`, `UpdateRecord` |
 
-**Когда Split всё же оправдан:** нужен независимый результат/retry/вызов внешнего API на каждый элемент; нужно ограничить размер пакета перед приёмником; формат не поддерживается Reader'ами. Во всех остальных случаях выигрыш даёт Record-подход.
+**When Split is still justified:** an independent result/retry/external API call is needed for each element; the batch size needs to be limited before the destination; the format is not supported by Readers. In all other cases the Record approach gives the gain.
 
-#### Введение в QueryRecord
+#### An introduction to QueryRecord
 
-`QueryRecord` — главный «заменитель» цепочки `Split → EvaluateJsonPath → RouteOnAttribute`. Идея: вы пишете **SQL-запрос** над записями FlowFile (таблица называется `FLOWFILE`), и результат запроса становится содержимым выходного FlowFile.
+`QueryRecord` is the main "replacement" for the chain `Split → EvaluateJsonPath → RouteOnAttribute`. The idea: you write an **SQL query** over the records of a FlowFile (the table is called `FLOWFILE`), and the query result becomes the content of the output FlowFile.
 
-- Каждое **динамическое свойство** процессора — это одна **relationship**: имя свойства = имя relationship, значение = SQL `SELECT`. Должно быть хотя бы одно свойство.
-- SQL — ANSI SQL на базе Apache Calcite.
-- Нужны Record Reader и Record Writer.
+- Each **dynamic property** of the processor is one **relationship**: the property name = the relationship name, the value = an SQL `SELECT`. There must be at least one property.
+- The SQL is ANSI SQL based on Apache Calcite.
+- A Record Reader and a Record Writer are required.
 
-Три типичных запроса (каждый — отдельное свойство/relationship):
+Three typical queries (each one a separate property/relationship):
 
 ```sql
--- relationship "errors": только ошибки, только нужные поля
+-- relationship "errors": only errors, only the needed fields
 SELECT ts, svc, msg FROM FLOWFILE WHERE level = 'ERROR'
 
--- relationship "normal": всё, кроме DEBUG
+-- relationship "normal": everything except DEBUG
 SELECT * FROM FLOWFILE WHERE level <> 'DEBUG'
 
--- relationship "stats": агрегат по сервисам
+-- relationship "stats": an aggregate by service
 SELECT svc, COUNT(*) AS cnt FROM FLOWFILE GROUP BY svc
 ```
 
-Один FlowFile с 100 000 записей обрабатывается без единого Split; в результате три relationship получают данные нужной формы. Полный справочник (свойства, поведение при пустых результатах, схема результата, стоимость) — в Day 2, раздел 2.2.6.
+A single FlowFile with 100,000 records is processed without a single Split; as a result, the three relationships receive data in the required shape. The full reference (properties, behavior on empty results, the result schema, cost) is in Day 2, section 2.2.6.
 
-#### Мини-врезка: RecordPath
+#### A mini-insert: RecordPath
 
-Многие Record-процессоры (`UpdateRecord`, `PartitionRecord`, `LookupRecord`, `RemoveRecordField`) указывают поля с помощью **RecordPath** — языка путей по полям записи ([RecordPath Guide](https://nifi.apache.org/docs/nifi-docs/html/record-path-guide.html)). Основы:
+Many Record processors (`UpdateRecord`, `PartitionRecord`, `LookupRecord`, `RemoveRecordField`) specify fields using **RecordPath** — a path language over the fields of a record ([RecordPath Guide](https://nifi.apache.org/docs/nifi-docs/html/record-path-guide.html)). The basics:
 
-| Конструкция | Смысл | Пример |
+| Construct | Meaning | Example |
 |---|---|---|
-| `/field` | Поле верхнего уровня | `/level` |
-| `/parent/child` | Вложенное поле | `/user/id` |
-| `//field` | Поле с таким именем на любом уровне вложенности | `//id` |
-| `/array[*]` | Все элементы массива | `/items[*]/sku` |
-| `..` | Родитель текущего узла | `../id` |
+| `/field` | A top-level field | `/level` |
+| `/parent/child` | A nested field | `/user/id` |
+| `//field` | A field with that name at any nesting level | `//id` |
+| `/array[*]` | All elements of an array | `/items[*]/sku` |
+| `..` | The parent of the current node | `../id` |
 
-Подробный разбор RecordPath и функций (`concat`, `format` и др.) — в Day 2, раздел 2.2.6 (вместе с `UpdateRecord`).
+A detailed treatment of RecordPath and its functions (`concat`, `format`, etc.) is in Day 2, section 2.2.6 (together with `UpdateRecord`).
 
 
-### Lab 3: замена Split-flow на Record-flow и сравнение throughput
+### Lab 3: replacing a Split-based flow with a Record-based one and comparing throughput
 
-**Цель.** Количественно сравнить два варианта обработки одного набора данных.
+**Goal.** Quantitatively compare two variants of processing the same data set.
 
-**Исходные данные.** `GenerateRecord` (процессор появился в 1.20.0) создаёт FlowFile с N случайных записей по заданной схеме. Либо `GenerateFlowFile` с NDJSON-текстом.
+**Source data.** `GenerateRecord` (the processor appeared in 1.20.0) creates a FlowFile with N random records according to a given schema. Or `GenerateFlowFile` with NDJSON text.
 
-Нужны **две схемы**. Схема генератора (`Schema Text` у `GenerateRecord`, Writer — `JsonRecordSetWriter` с `Output Grouping = One Line Per Object`): `currency` объявлен enum, иначе генератор выдаёт случайные строки и фильтр по валюте не сработает:
+**Two schemas** are needed. The generator schema (`Schema Text` of `GenerateRecord`, the Writer is `JsonRecordSetWriter` with `Output Grouping = One Line Per Object`): `currency` is declared as an enum, otherwise the generator produces random strings and the currency filter will not work:
 
 ```json
 {"type": "record", "name": "GeneratedOrder", "fields": [
@@ -632,7 +630,7 @@ SELECT svc, COUNT(*) AS cnt FROM FLOWFILE GROUP BY svc
 ]}
 ```
 
-Схема Reader (`JsonTreeReader`, `Use 'Schema Text' Property`) — та же, но `currency` объявлен строкой: SQL-движок `QueryRecord` (Apache Calcite) не сравнивает enum со строками в `IN` / `NOT IN`:
+The Reader schema (`JsonTreeReader`, `Use 'Schema Text' Property`) is the same, but `currency` is declared as a string: the SQL engine of `QueryRecord` (Apache Calcite) does not compare an enum with strings in `IN` / `NOT IN`:
 
 ```json
 {"type": "record", "name": "Order", "fields": [
@@ -643,20 +641,20 @@ SELECT svc, COUNT(*) AS cnt FROM FLOWFILE GROUP BY svc
 ]}
 ```
 
-**Вариант A (Split-based).**
+**Variant A (Split-based).**
 
 ```text
 GenerateRecord ► SplitRecord(Records Per Split=1) ► EvaluateJsonPath ► RouteOnAttribute ► UpdateAttribute ► MergeContent ► LogAttribute
 ```
 
-**Вариант B (Record-based).**
+**Variant B (Record-based).**
 
 ```text
 GenerateRecord ► QueryRecord ─ valid ─► UpdateRecord ► LogAttribute
                               └ rejected ─► LogAttribute
 ```
 
-QueryRecord, динамическое свойство `valid`:
+QueryRecord, the dynamic property `valid`:
 
 ```sql
 SELECT order_id, customer, amount, currency
@@ -664,104 +662,104 @@ FROM FLOWFILE
 WHERE amount > 0 AND currency IN ('EUR', 'USD')
 ```
 
-и `rejected`:
+and `rejected`:
 
 ```sql
 SELECT * FROM FLOWFILE WHERE amount <= 0 OR currency NOT IN ('EUR', 'USD')
 ```
 
-**Методика замера.**
+**Measurement method.**
 
-1. Одинаковый вход: например, 100 FlowFile по 100 000 записей (настраивается в `GenerateRecord`: *Number of Records*). Учтите масштаб: вариант A превращает такой вход в ~10 млн FlowFile, что не помещается в учебный heap (на стенде 1–2 ГБ). На ноутбуке начинайте с 1 FlowFile по 10 000 записей (*Run Once* у генератора) и увеличивайте объём, следя за heap и back pressure.
-2. Заморозьте начальные условия: чистые очереди, одинаковые `Concurrent Tasks`.
-3. Запустите вариант A, дождитесь обработки всех данных; запишите: время обработки, значения *Tasks/Time*, *Bytes Read/Written*, число FlowFile в очередях, heap и GC (System Diagnostics), число provenance-событий.
-4. Остановите, очистите очереди, запустите вариант B с теми же входными данными; повторите замеры.
-5. Повторите 3 раза и берите медиану.
+1. The same input: for example, 100 FlowFiles of 100,000 records each (configured in `GenerateRecord`: *Number of Records*). Mind the scale: variant A turns such an input into ~10 million FlowFiles, which does not fit into the training heap (1–2 GB on the stand). On a laptop, start with 1 FlowFile of 10,000 records (*Run Once* on the generator) and increase the volume while watching the heap and back pressure.
+2. Freeze the initial conditions: clean queues, the same `Concurrent Tasks`.
+3. Run variant A and wait until all the data is processed; record: the processing time, the *Tasks/Time* values, *Bytes Read/Written*, the number of FlowFiles in the queues, heap and GC (System Diagnostics), and the number of provenance events.
+4. Stop, clear the queues, run variant B with the same input data; repeat the measurements.
+5. Repeat 3 times and take the median.
 
-**Ожидаемое поведение (качественно).** Вариант B обрабатывает данные заметно быстрее и с меньшей нагрузкой на heap/GC; число provenance-событий и записей в FlowFile Repository на порядки меньше. Абсолютные значения зависят от железа — **цифры нужно получить в вашем окружении**, а не брать из учебника.
+**Expected behavior (qualitatively).** Variant B processes the data noticeably faster and with less load on the heap/GC; the number of provenance events and entries in the FlowFile Repository is orders of magnitude smaller. The absolute values depend on the hardware — **the numbers must be obtained in your environment**, not taken from a textbook.
 
-**Проверка корректности.** Сумма записей в `valid` и `rejected` = входному числу; атрибуты `record.count` (`QueryRecord` ставит его на выходные FlowFile) совпадают. Например, при 10 000 записей на входе: `valid` 4910 + `rejected` 5090 (событие `ROUTE` у `QueryRecord` в provenance).
+**Correctness check.** The sum of the records in `valid` and `rejected` = the input count; the `record.count` attributes (`QueryRecord` sets it on the output FlowFiles) match. For example, with 10,000 records on the input: `valid` 4910 + `rejected` 5090 (the `ROUTE` event of `QueryRecord` in provenance).
 
-**Типичные ошибки.** `QueryRecord` падает с ошибкой SQL — имя таблицы должно быть `FLOWFILE`; тип поля не совпал (decimal vs double) — задайте схему явно; ошибка `Values passed to NOT IN operator must have compatible types` — поле в схеме Reader объявлено enum, объявите его строкой; в варианте A `MergeContent` ждёт нужного числа элементов — задайте *Max Bin Age*. Одинаковые имена процессоров в вариантах A и B (например, два `LogAttribute (valid)`) путают при поиске в provenance — давайте им разные имена.
+**Common mistakes.** `QueryRecord` fails with an SQL error — the table name must be `FLOWFILE`; the field type did not match (decimal vs double) — set the schema explicitly; the error `Values passed to NOT IN operator must have compatible types` — the field is declared as an enum in the Reader schema, declare it as a string; in variant A, `MergeContent` waits for the required number of elements — set *Max Bin Age*. Identical processor names in variants A and B (for example, two `LogAttribute (valid)`) cause confusion when searching in provenance — give them different names.
 
-**Эталонное решение:** `nifi/flows/lab3-split-vs-record.json`.
+**Reference solution:** `nifi/flows/lab3-split-vs-record.json`.
 
 ---
 
 ## Block 1.4: Installation, cluster configuration and setup
 
-### Конфигурационные файлы NiFi: обзор
+### NiFi configuration files: an overview
 
-Основная конфигурация лежит в каталоге `NIFI_HOME/conf/`. Ниже — краткий справочник; расположение репозиториев и полное дерево каталогов — в разделе 1.4.5.
+The main configuration lives in the `NIFI_HOME/conf/` directory. Below is a short reference; the location of the repositories and the full directory tree are in section 1.4.5.
 
-| Файл | Назначение | Что внутри | Заметки для кластера |
+| File | Purpose | What is inside | Notes for a cluster |
 |---|---|---|---|
-| `nifi.properties` | **Главный файл настроек узла** | Порты и хост веб-сервера, TLS (keystore/truststore), пути и параметры трёх репозиториев, кластер (`nifi.cluster.*`), ZooKeeper (`nifi.zookeeper.*`), Site-to-Site (`nifi.remote.*`), `nifi.sensitive.props.key`, пути к другим конфигам (`authorizers.xml`, `login-identity-providers.xml`, `state-management.xml`), архивирование flow | У каждого узла свой файл: часть значений одинакова (sensitive key, настройки кластера), часть индивидуальна (адрес узла, пути, сертификаты). Изменения вступают в силу после перезапуска узла |
-| `bootstrap.conf` | Параметры **запуска JVM** и процесса-супервизора (Bootstrap) | `java.arg.N` (heap `-Xms`/`-Xmx`, параметры GC, `-XX:+HeapDumpOnOutOfMemoryError`), путь к Java, таймаут корректной остановки | Правится при тюнинге памяти (Block 3.4); перезапуск обязателен |
-| `flow.json.gz` | **Сохранённый flow**: процессоры, связи, Process Group, Controller Services, Parameter Contexts | JSON в сжатом виде; sensitive-значения зашифрованы ключом из `nifi.sensitive.props.key` | Одинаков на всех узлах кластера; вручную не редактируется. В 2.x единственный формат (`flow.xml.gz` не используется) |
-| `authorizers.xml` | **Авторизация**: откуда берутся пользователи и группы, где хранятся политики | User Group Provider, Access Policy Provider, Authorizer; начальный администратор (*Initial Admin Identity*) и идентичности узлов кластера | Должен быть согласован между узлами |
-| `login-identity-providers.xml` | **Аутентификация** по логину/паролю | Настройки провайдера: LDAP/AD, Single User и др. Используется, когда выбран соответствующий провайдер в `nifi.properties` | Одинаков на узлах кластера |
-| `users.xml`, `authorizations.xml` | Пользователи/группы и политики доступа, если используются **файловые** провайдеры | Создаются и обновляются NiFi (имена файлов задаются в `authorizers.xml`) | В кластере должны совпадать; **входят в backup** (Block 3.1.5) |
-| `state-management.xml` | **Хранение состояния компонентов** (state) | Local state provider (на диске узла, `state/local`) и cluster state provider (ZooKeeper или Kubernetes) | Параметры подключения кластерного провайдера — на всех узлах одинаково |
-| `logback.xml` | **Логирование** | Файлы журналов (`nifi-app.log`, `nifi-user.log`, `nifi-bootstrap.log`, `nifi-request.log`, `nifi-deprecation.log`), уровни, ротация | Уровни логов часто меняют при отладке; logback обычно подхватывает изменения без перезапуска (**[проверить]** у вас) |
-| `zookeeper.properties` | Настройки **встроенного ZooKeeper** | Порты, каталог данных, список серверов | Только для лабораторных; в production используется внешний ансамбль ZooKeeper. В 2.x интеграция с ZooKeeper вынесена в отдельный NAR (2.6.0) |
-| `archive/` (каталог) | **Архив предыдущих версий flow** | Копии `flow.json.gz` с метками времени (`nifi.flow.configuration.archive.*`) | Первая линия отката конфигурации (Block 3.1/3.2) |
-| Keystore/truststore (например, `keystore.p12`, `truststore.p12`) или PEM-файлы | **TLS-материал** узла | Сертификат и закрытый ключ узла, доверенные сертификаты | Индивидуальны для каждого узла (SAN = имя узла); хранить с ограниченными правами |
-| `bin/nifi-env.sh` (вне `conf/`) | Переменные окружения для скриптов запуска (например, `JAVA_HOME`) | Экспорт переменных | Нужен, если Java не определяется автоматически (**[проверить]** в вашей версии) |
+| `nifi.properties` | **The main node settings file** | Web server ports and host, TLS (keystore/truststore), paths and parameters of the three repositories, cluster (`nifi.cluster.*`), ZooKeeper (`nifi.zookeeper.*`), Site-to-Site (`nifi.remote.*`), `nifi.sensitive.props.key`, paths to the other configs (`authorizers.xml`, `login-identity-providers.xml`, `state-management.xml`), flow archiving | Each node has its own file: some values are the same (the sensitive key, cluster settings), some are individual (the node address, paths, certificates). Changes take effect after the node restarts |
+| `bootstrap.conf` | Parameters for **starting the JVM** and the supervisor process (Bootstrap) | `java.arg.N` (heap `-Xms`/`-Xmx`, GC parameters, `-XX:+HeapDumpOnOutOfMemoryError`), the path to Java, the graceful shutdown timeout | Edited when tuning memory (Block 3.4); a restart is mandatory |
+| `flow.json.gz` | **The saved flow**: processors, connections, Process Groups, Controller Services, Parameter Contexts | Compressed JSON; sensitive values are encrypted with the key from `nifi.sensitive.props.key` | The same on all cluster nodes; not edited by hand. In 2.x it is the only format (`flow.xml.gz` is not used) |
+| `authorizers.xml` | **Authorization**: where users and groups come from, where policies are stored | User Group Provider, Access Policy Provider, Authorizer; the initial administrator (*Initial Admin Identity*) and the identities of the cluster nodes | Must be consistent between nodes |
+| `login-identity-providers.xml` | **Authentication** by login/password | Provider settings: LDAP/AD, Single User, etc. Used when the corresponding provider is selected in `nifi.properties` | The same on the cluster nodes |
+| `users.xml`, `authorizations.xml` | Users/groups and access policies, if **file-based** providers are used | Created and updated by NiFi (the file names are set in `authorizers.xml`) | Must match across the cluster; **included in the backup** (Block 3.1.5) |
+| `state-management.xml` | **Storage of component state** | The local state provider (on the node's disk, `state/local`) and the cluster state provider (ZooKeeper or Kubernetes) | The connection parameters of the cluster provider are the same on all nodes |
+| `logback.xml` | **Logging** | Log files (`nifi-app.log`, `nifi-user.log`, `nifi-bootstrap.log`, `nifi-request.log`, `nifi-deprecation.log`), levels, rotation | Log levels are often changed during debugging; logback usually picks up changes without a restart (**[verify]** on your system) |
+| `zookeeper.properties` | Settings of the **embedded ZooKeeper** | Ports, the data directory, the list of servers | Only for labs; production uses an external ZooKeeper ensemble. In 2.x the ZooKeeper integration was moved into a separate NAR (2.6.0) |
+| `archive/` (directory) | **An archive of previous flow versions** | Time-stamped copies of `flow.json.gz` (`nifi.flow.configuration.archive.*`) | The first line of configuration rollback (Block 3.1/3.2) |
+| Keystore/truststore (for example, `keystore.p12`, `truststore.p12`) or PEM files | The node's **TLS material** | The node's certificate and private key, trusted certificates | Individual for each node (SAN = the node's name); store with restricted permissions |
+| `bin/nifi-env.sh` (outside `conf/`) | Environment variables for the startup scripts (for example, `JAVA_HOME`) | Variable exports | Needed if Java is not detected automatically (**[verify]** in your version) |
 
-Устаревшее и удалённое в 2.x: `flow.xml.gz` (заменён `flow.json.gz`), `bootstrap-notification-services.xml` (Bootstrap Notification Services удалены в 2.0.0-M2), шифрование значений в `nifi.properties` через `encrypt-config` (удалено в 2.0.0-M4) — подробности в Block 2.4 и Block 3.3.
+Obsolete and removed in 2.x: `flow.xml.gz` (replaced by `flow.json.gz`), `bootstrap-notification-services.xml` (Bootstrap Notification Services were removed in 2.0.0-M2), encryption of values in `nifi.properties` through `encrypt-config` (removed in 2.0.0-M4) — details in Block 2.4 and Block 3.3.
 
-**Основные группы свойств `nifi.properties`.**
+**The main property groups of `nifi.properties`.**
 
-| Группа (префикс) | За что отвечает |
+| Group (prefix) | What it is responsible for |
 |---|---|
-| `nifi.web.*` | Адрес и порты HTTPS (по умолчанию 8443), прокси-хосты, настройки Jetty |
-| `nifi.security.*` | Keystore/truststore, режим аутентификации и авторизации |
-| `nifi.flow.configuration.*` | Путь к `flow.json.gz`, архивирование flow |
-| `nifi.flowfile.repository.*`, `nifi.content.repository.*`, `nifi.provenance.repository.*` | Расположение и параметры репозиториев |
-| `nifi.queue.*` | Пороги swap очередей |
-| `nifi.cluster.*` | Роль узла в кластере, адреса, load balancing, flow election |
-| `nifi.zookeeper.*` | Подключение к ZooKeeper |
+| `nifi.web.*` | The HTTPS address and ports (8443 by default), proxy hosts, Jetty settings |
+| `nifi.security.*` | Keystore/truststore, the authentication and authorization mode |
+| `nifi.flow.configuration.*` | The path to `flow.json.gz`, flow archiving |
+| `nifi.flowfile.repository.*`, `nifi.content.repository.*`, `nifi.provenance.repository.*` | The location and parameters of the repositories |
+| `nifi.queue.*` | Queue swap thresholds |
+| `nifi.cluster.*` | The node's role in the cluster, addresses, load balancing, flow election |
+| `nifi.zookeeper.*` | The connection to ZooKeeper |
 | `nifi.remote.*` | Site-to-Site |
-| `nifi.sensitive.props.*` | Ключ и алгоритм шифрования sensitive-значений |
-| `nifi.state.management.*` | Путь к `state-management.xml` и провайдеры состояния |
+| `nifi.sensitive.props.*` | The key and algorithm for encrypting sensitive values |
+| `nifi.state.management.*` | The path to `state-management.xml` and the state providers |
 
-**Практические правила.**
+**Practical rules.**
 
-1. Изменения в конфигурации выполняйте через систему управления конфигурациями (Ansible, Helm values, образы), а не руками на узлах: так узлы остаются согласованными.
-2. Не меняйте файлы «на ходу» без перезапуска там, где он нужен (`nifi.properties`, `bootstrap.conf`); после правки проверяйте `nifi-app.log` на ошибки старта.
-3. Секреты (пароли keystore, `nifi.sensitive.props.key`) не храните в репозитории с конфигурацией и не публикуйте в логах; ограничьте права на файлы (`chmod 600/640`, владелец — пользователь NiFi).
-4. Перед правкой делайте копию файла; перед миграцией — полный backup `conf/` (Block 2.4 и 3.1.5).
+1. Make configuration changes through a configuration management system (Ansible, Helm values, images), not by hand on the nodes: this keeps the nodes consistent.
+2. Do not change files "on the fly" without a restart where one is needed (`nifi.properties`, `bootstrap.conf`); after editing, check `nifi-app.log` for startup errors.
+3. Do not keep secrets (keystore passwords, `nifi.sensitive.props.key`) in the repository with the configuration and do not publish them in logs; restrict file permissions (`chmod 600/640`, the owner is the NiFi user).
+4. Make a copy of a file before editing it; before a migration, make a full backup of `conf/` (Block 2.4 and 3.1.5).
 
 ### 1.4.1 Single node vs cluster
 
-| Аспект | Single node | Cluster |
+| Aspect | Single node | Cluster |
 |---|---|---|
-| Масштабирование | Вертикальное | Горизонтальное (добавление узлов) |
-| Доступность | Единая точка отказа | Отказ узла не останавливает кластер; данные застрявшего узла обрабатываются после его возврата |
-| Сложность | Низкая | ZooKeeper (или Kubernetes leader election), TLS между узлами, балансировка |
-| Единое управление flow | — | Изменение flow применяется ко всем узлам |
-| Когда выбирать | Разработка, малые нагрузки, простые источники | Throughput > одного узла, HA, rolling-обслуживание |
+| Scaling | Vertical | Horizontal (adding nodes) |
+| Availability | A single point of failure | A node failure does not stop the cluster; the data of a stuck node is processed after it returns |
+| Complexity | Low | ZooKeeper (or Kubernetes leader election), TLS between nodes, balancing |
+| Unified flow management | — | A flow change is applied to all nodes |
+| When to choose | Development, small loads, simple sources | Throughput > one node, HA, rolling maintenance |
 
-Важно: кластер NiFi — это **набор независимых узлов с одинаковым flow**, а не единая очередь. Каждый узел обрабатывает *свои* FlowFile; данные между узлами перемещаются только через настроенный load balancing или Site-to-Site. Отказ узла означает, что данные в его репозиториях недоступны, пока узел не вернётся (или пока его диски не будут подключены к замене) — отдельное планирование надёжности хранилища (RAID, репликация томов).
+Important: a NiFi cluster is a **set of independent nodes with the same flow**, not a single queue. Each node processes *its own* FlowFiles; data moves between nodes only through configured load balancing or Site-to-Site. A node failure means that the data in its repositories is unavailable until the node returns (or until its disks are attached to a replacement) — storage reliability (RAID, volume replication) needs to be planned separately.
 
-### 1.4.2 Роли в кластере и координация
+### 1.4.2 Cluster roles and coordination
 
-NiFi использует **zero-master clustering** (с 1.0.0): выделенного менеджера нет, роли избираются.
+NiFi uses **zero-master clustering** (since 1.0.0): there is no dedicated manager; roles are elected.
 
-| Роль | Функция |
+| Role | Function |
 |---|---|
-| **Cluster Coordinator** | Принимает heartbeats, управляет членством (connect/disconnect), реплицирует изменения запросов UI на все узлы, объединяет ответы |
-| **Primary Node** | Единственный узел, на котором работают процессоры с планированием *Primary Node Only* (например, `List*`, `QueryDatabaseTableRecord`) |
-| Остальные узлы | Выполняют flow, участвуют в load balancing |
+| **Cluster Coordinator** | Receives heartbeats, manages membership (connect/disconnect), replicates UI request changes to all nodes, merges the responses |
+| **Primary Node** | The only node on which processors scheduled as *Primary Node Only* run (for example, `List*`, `QueryDatabaseTableRecord`) |
+| The remaining nodes | Execute the flow, take part in load balancing |
 
-Выбор Coordinator и Primary Node реализуется через **leader election**: по умолчанию через Apache ZooKeeper; в 2.x доступна также реализация на **Kubernetes Leases/ConfigMaps** (Kubernetes-based leader election и state management введены в 2.0.0-M1, [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). В 2.6.0 интеграция с ZooKeeper вынесена в отдельный NAR-модуль ([Release Notes 2.6.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
+The election of the Coordinator and the Primary Node is implemented through **leader election**: by default through Apache ZooKeeper; in 2.x an implementation based on **Kubernetes Leases/ConfigMaps** is also available (Kubernetes-based leader election and state management were introduced in 2.0.0-M1, [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). In 2.6.0 the ZooKeeper integration was moved into a separate NAR module ([Release Notes 2.6.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 
-ZooKeeper используется также как **cluster state provider**: он хранит *cluster-scoped* state компонентов (например, указатели `List*`). *Local* state хранится на диске узла (`state/local`).
+ZooKeeper is also used as the **cluster state provider**: it stores the *cluster-scoped* state of components (for example, `List*` pointers). *Local* state is stored on the node's disk (`state/local`).
 
-**Flow election.** При старте кластера узлы голосуют за «правильный» flow: ждут `nifi.cluster.flow.election.max.wait.time` или `nifi.cluster.flow.election.max.candidates` узлов; побеждает flow с наибольшим числом голосов. Узел, чей flow отличается, при подключении **синхронизируется** с кластерным flow, предварительно сохранив резервную копию своего (с 1.16.0 допускается подключение даже при существенных различиях, [Release Notes 1.16.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
+**Flow election.** When a cluster starts, the nodes vote for the "correct" flow: they wait for `nifi.cluster.flow.election.max.wait.time` or for `nifi.cluster.flow.election.max.candidates` nodes; the flow with the most votes wins. A node whose flow differs **synchronizes** with the cluster flow when it connects, after first saving a backup copy of its own (since 1.16.0, connecting is permitted even with substantial differences, [Release Notes 1.16.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 
-Ключевые свойства `nifi.properties` для кластера:
+Key `nifi.properties` properties for a cluster:
 
 ```properties
 nifi.cluster.is.node=true
@@ -776,39 +774,39 @@ nifi.zookeeper.root.node=/nifi
 nifi.state.management.configuration.file=./conf/state-management.xml
 ```
 
-Особенности 2.x:
+2.x specifics:
 
-- Начиная с **2.12.0**, при включённом TLS свойства `nifi.cluster.load.balance.host` и `nifi.cluster.node.address` **должны** быть DNS-именами (для TLS Endpoint Identification) ([Migration Guidance, 2.12.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
-- Все узлы кластера должны иметь корректные сертификаты (со SAN, соответствующим имени хоста); взаимная аутентификация (mTLS) между узлами обязательна (с 1.8.0 защищённая связь требует двустороннего SSL).
-- Встроенный ZooKeeper подходит только для лабораторных; в production используйте внешний ансамбль из 3 или 5 узлов.
-- Для проверки: UI → **Cluster** (меню) показывает узлы, роли, heartbeat, статусы (CONNECTED, DISCONNECTED, OFFLOADED).
+- Starting with **2.12.0**, when TLS is enabled the properties `nifi.cluster.load.balance.host` and `nifi.cluster.node.address` **must** be DNS names (for TLS Endpoint Identification) ([Migration Guidance, 2.12.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+- All cluster nodes must have correct certificates (with a SAN matching the host name); mutual authentication (mTLS) between nodes is mandatory (since 1.8.0 a secure connection requires two-way SSL).
+- The embedded ZooKeeper is suitable only for labs; in production use an external ensemble of 3 or 5 nodes.
+- To verify: the UI → **Cluster** (menu) shows the nodes, roles, heartbeat, and statuses (CONNECTED, DISCONNECTED, OFFLOADED).
 
-### 1.4.3 Load balancing между узлами
+### 1.4.3 Load balancing between nodes
 
-Load balancing настраивается **на уровне Connection** (с 1.8.0): вкладка *Settings → Load Balance Strategy*.
+Load balancing is configured **at the Connection level** (since 1.8.0): the *Settings → Load Balance Strategy* tab.
 
-| Стратегия | Поведение | Когда использовать |
+| Strategy | Behavior | When to use |
 |---|---|---|
-| `Do not load balance` | FlowFile остаётся на узле, где создан | Источники, дающие равномерную нагрузку на каждом узле |
-| `Round robin` | Равномерно по узлам | Выравнивание после источника на одном узле (`List*`, `ConsumeKafka` с малым числом партиций) |
-| `Partition by attribute` | Значение атрибута определяет узел (хеш) | Нужна «привязка» связанных данных к узлу (агрегация, `MergeRecord` по ключу, порядок по ключу) |
-| `Single node` | Все FlowFile на один узел | Сериализация доступа к ресурсу, глобальная агрегация |
+| `Do not load balance` | The FlowFile stays on the node where it was created | Sources that produce an even load on every node |
+| `Round robin` | Evenly across nodes | Evening out after a source on a single node (`List*`, `ConsumeKafka` with a small number of partitions) |
+| `Partition by attribute` | The attribute value determines the node (a hash) | Related data needs to be "pinned" to a node (aggregation, `MergeRecord` by key, ordering by key) |
+| `Single node` | All FlowFiles go to one node | Serializing access to a resource, global aggregation |
 
-Дополнительно: сжатие (`Load Balance Compression`: не сжимать / только атрибуты / контент и атрибуты). Балансировка идёт через порт `nifi.cluster.load.balance.port` (6342 по умолчанию), его нужно открыть между узлами.
+Additionally: compression (`Load Balance Compression`: do not compress / attributes only / content and attributes). Balancing goes through the port `nifi.cluster.load.balance.port` (6342 by default); it must be open between the nodes.
 
-Практические замечания: load balancing — это дополнительный сетевой I/O и запись в репозитории принимающего узла; не включайте его «на всякий случай» на каждой связи. Типичное решение — один раз распределить данные после источника, дальше обрабатывать локально. Начиная с 2.3.0 исправлено распределение FlowFile при `partition by attribute` ([Release Notes 2.3.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); после 2.10.0 исправлены редкие проблемы при offload/балансировке ([Release Notes 2.10.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
+Practical notes: load balancing is additional network I/O and a write to the repositories of the receiving node; do not enable it "just in case" on every connection. A typical solution is to distribute the data once after the source and then process it locally. Since 2.3.0, the distribution of FlowFiles with `partition by attribute` has been fixed ([Release Notes 2.3.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); rare problems during offload/balancing were fixed after 2.10.0 ([Release Notes 2.10.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 
-**Offload.** Перед обслуживанием узел можно **Offload**: он прекращает приём новых данных и передаёт свои FlowFile другим узлам; после этого узел безопасно останавливать (Cluster dialog → Disconnect → Offload).
+**Offload.** Before maintenance a node can be **Offloaded**: it stops accepting new data and passes its FlowFiles to the other nodes; after that the node can be safely stopped (the Cluster dialog → Disconnect → Offload).
 
-### 1.4.4 Варианты развёртывания: Docker, Helm, Ansible
+### 1.4.4 Deployment options: Docker, Helm, Ansible
 
-| Вариант | Что есть официально | Комментарий |
+| Option | What is available officially | Comment |
 |---|---|---|
-| **Docker** | Официальные образы [`apache/nifi`](https://hub.docker.com/r/apache/nifi) | Образ настраивается переменными окружения (в том числе `SINGLE_USER_CREDENTIALS_USERNAME`/`PASSWORD`, `NIFI_JVM_HEAP_INIT`/`NIFI_JVM_HEAP_MAX`, `NIFI_WEB_HTTPS_PORT`, `NIFI_SENSITIVE_PROPS_KEY`, `NIFI_ELECTION_MAX_WAIT`, `NIFI_ELECTION_MAX_CANDIDATES`); каталог установки — `/opt/nifi/nifi-current`. Версию Java смотрите в описании выбранного тега образа (для 2.x нужна Java 21) |
-| **Kubernetes / Helm** | Насколько известно, Apache не поставляет официальный Helm chart | Используются сообщественные решения: [cetic/helm-nifi](https://github.com/cetic/helm-nifi) — **архивирован и не поддерживается**, последняя версия chart ориентирована на NiFi 1.23.2; операторы [Stackable](https://stackable.tech/en/apache-nifi2-key-updates-stackable/) и [NiFiKop](https://github.com/konpyutaika/nifikop). Отсутствие официального chart подтверждено обсуждением в [рассылке пользователей NiFi (ноябрь 2024)](https://www.mail-archive.com/users@nifi.apache.org/msg16771.html); на текущий момент проверьте повторно. Для кластера в Kubernetes в 2.x есть Kubernetes leader election (не нужен ZooKeeper) |
-| **Ansible** | Нет официальной роли в проекте (**[проверить]**) | Используйте собственные роли/сообщественные: установка Java 21, распаковка дистрибутива, шаблонизация `nifi.properties`, сертификаты |
+| **Docker** | The official [`apache/nifi`](https://hub.docker.com/r/apache/nifi) images | The image is configured through environment variables (including `SINGLE_USER_CREDENTIALS_USERNAME`/`PASSWORD`, `NIFI_JVM_HEAP_INIT`/`NIFI_JVM_HEAP_MAX`, `NIFI_WEB_HTTPS_PORT`, `NIFI_SENSITIVE_PROPS_KEY`, `NIFI_ELECTION_MAX_WAIT`, `NIFI_ELECTION_MAX_CANDIDATES`); the installation directory is `/opt/nifi/nifi-current`. Check the Java version in the description of the chosen image tag (2.x needs Java 21) |
+| **Kubernetes / Helm** | As far as is known, Apache does not ship an official Helm chart | Community solutions are used: [cetic/helm-nifi](https://github.com/cetic/helm-nifi) — **archived and not maintained**, the latest chart version targets NiFi 1.23.2; the [Stackable](https://stackable.tech/en/apache-nifi2-key-updates-stackable/) and [NiFiKop](https://github.com/konpyutaika/nifikop) operators. The absence of an official chart is confirmed by a discussion on the [NiFi users mailing list (November 2024)](https://www.mail-archive.com/users@nifi.apache.org/msg16771.html); re-check it as of today. For a cluster in Kubernetes, 2.x has Kubernetes leader election (ZooKeeper is not needed) |
+| **Ansible** | There is no official role in the project (**[verify]**) | Use your own/community roles: installing Java 21, unpacking the distribution, templating `nifi.properties`, certificates |
 
-Docker, минимальная одноузловая лаборатория (учебный режим; для production — свои сертификаты и секреты):
+Docker, a minimal single-node lab (training mode; for production — your own certificates and secrets):
 
 ```bash
 docker run --name nifi -p 8443:8443 -d \
@@ -817,108 +815,108 @@ docker run --name nifi -p 8443:8443 -d \
   apache/nifi:latest
 ```
 
-Пароль Single User должен быть длиной не менее 12 символов, иначе NiFi сгенерирует случайные имя и пароль (поведение описано в README образа; сгенерированные данные пишутся в лог: `docker logs nifi | grep Generated`). UI доступен по `https://localhost:8443/nifi`; сертификат самоподписанный.
+The Single User password must be at least 12 characters long, otherwise NiFi will generate a random user name and password (the behavior is described in the image README; the generated credentials are written to the log: `docker logs nifi | grep Generated`). The UI is available at `https://localhost:8443/nifi`; the certificate is self-signed.
 
-Рекомендации по контейнерам:
+Recommendations for containers:
 
-- Репозитории и `conf/` вынесите на **volumes**; контейнер должен быть заменяемым, данные — нет.
-- `nifi.sensitive.props.key` должен быть **одинаковым** на всех узлах кластера и храниться в секрет-хранилище.
-- Закрепляйте точную версию образа (не `latest`) для воспроизводимости.
-- Для Kubernetes обеспечьте **stable identity** (StatefulSet) и persistent volumes для репозиториев каждого узла.
+- Move the repositories and `conf/` onto **volumes**; the container should be replaceable, the data should not.
+- `nifi.sensitive.props.key` must be **the same** on all cluster nodes and stored in a secret store.
+- Pin the exact image version (not `latest`) for reproducibility.
+- For Kubernetes, provide **stable identity** (a StatefulSet) and persistent volumes for the repositories of each node.
 
-### 1.4.5 Конфигурационные файлы, репозитории и их расположение
+### 1.4.5 Configuration files, repositories, and their locations
 
-Структура установки (`NIFI_HOME`):
+The installation structure (`NIFI_HOME`):
 
 ```text
 NIFI_HOME/
 ├── bin/                         nifi.sh (start|stop|restart|status|dump|diagnostics ...), nifi.cmd (Windows)
 ├── conf/
-│   ├── nifi.properties          основная конфигурация (порты, TLS, репозитории, кластер)
-│   ├── bootstrap.conf           JVM-аргументы, Java, параметры bootstrap
-│   ├── logback.xml              логирование
-│   ├── state-management.xml     провайдеры state (local / cluster)
+│   ├── nifi.properties          main configuration (ports, TLS, repositories, cluster)
+│   ├── bootstrap.conf           JVM arguments, Java, bootstrap parameters
+│   ├── logback.xml              logging
+│   ├── state-management.xml     state providers (local / cluster)
 │   ├── authorizers.xml          authorizer, user group provider, access policy provider
-│   ├── login-identity-providers.xml   LDAP / single-user и т. д.
-│   ├── flow.json.gz             текущий flow (в 2.x — единственный формат)
-│   ├── users.xml, authorizations.xml  внутренние пользователи и политики (File providers)
-│   └── archive/                 архив предыдущих версий flow
-├── lib/                         библиотеки и NAR фреймворка
-├── extensions/                  пользовательские NAR (горячая загрузка)
-├── python/                      Python-расширения (2.x)
+│   ├── login-identity-providers.xml   LDAP / single-user, etc.
+│   ├── flow.json.gz             the current flow (in 2.x — the only format)
+│   ├── users.xml, authorizations.xml  internal users and policies (File providers)
+│   └── archive/                 archive of previous flow versions
+├── lib/                         framework libraries and NARs
+├── extensions/                  custom NARs (hot loading)
+├── python/                      Python extensions (2.x)
 ├── flowfile_repository/
 ├── content_repository/
 ├── provenance_repository/
-├── database_repository/         история изменений flow (Flow Configuration History)
+├── database_repository/         flow change history (Flow Configuration History)
 ├── state/                       local state
-├── work/                        распакованные NAR, документация
+├── work/                        unpacked NARs, documentation
 └── logs/                        nifi-app.log, nifi-bootstrap.log, nifi-user.log, nifi-request.log, nifi-deprecation.log
 ```
 
-Факты о конфигурации:
+Facts about the configuration:
 
-- В 2.x `flow.xml.gz` не используется; в `nifi.properties` свойство `nifi.flow.configuration.file` должно ссылаться на `flow.json.gz` ([Migration Guidance, 2.0.0-M1](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
-- NiFi **архивирует** предыдущие версии flow в `conf/archive` (`nifi.flow.configuration.archive.enabled`, `.max.time`, `.max.storage`) — это ваша первая линия отката конфигурации (Block 3.1/3.2).
-- `nifi.sensitive.props.key` — ключ шифрования чувствительных свойств в `flow.json.gz`. **Потеря ключа = невозможность расшифровать sensitive-значения** (потребуется ввести их заново). Он обязателен с 1.14.0 ([Migration Guidance, 1.13→1.14](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
-- JVM-параметры (heap и т. д.) — `bootstrap.conf` (`java.arg.N`). В поставке по умолчанию heap небольшой (порядка 512 МБ); для реальных нагрузок необходимо увеличить (Block 3.4).
-- Порты (по умолчанию): web HTTPS `8443`; load balancing `6342`; cluster node protocol — задаётся `nifi.cluster.node.protocol.port`; Site-to-Site — `nifi.remote.input.socket.port`. Полный перечень — Administration Guide.
-- Репозитории размещайте на **отдельных томах** (минимум: FlowFile Repository отдельно от Content; Provenance отдельно) — подробнее в Block 3.4.
+- In 2.x `flow.xml.gz` is not used; in `nifi.properties` the property `nifi.flow.configuration.file` must point to `flow.json.gz` ([Migration Guidance, 2.0.0-M1](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+- NiFi **archives** previous flow versions in `conf/archive` (`nifi.flow.configuration.archive.enabled`, `.max.time`, `.max.storage`) — this is your first line of configuration rollback (Block 3.1/3.2).
+- `nifi.sensitive.props.key` is the key for encrypting sensitive properties in `flow.json.gz`. **Losing the key = being unable to decrypt the sensitive values** (you will have to enter them again). It has been mandatory since 1.14.0 ([Migration Guidance, 1.13→1.14](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
+- JVM parameters (heap, etc.) are in `bootstrap.conf` (`java.arg.N`). In the distribution the default heap is small (on the order of 512 MB); for real workloads it must be increased (Block 3.4).
+- Ports (defaults): web HTTPS `8443`; load balancing `6342`; the cluster node protocol is set by `nifi.cluster.node.protocol.port`; Site-to-Site — `nifi.remote.input.socket.port`. The full list is in the Administration Guide.
+- Place the repositories on **separate volumes** (at a minimum: the FlowFile Repository separate from Content; Provenance separate) — more in Block 3.4.
 
-### 1.4.6 Версионирование flow и управление изменениями
+### 1.4.6 Flow versioning and change management
 
-**Flow Registry Client** — подключаемый компонент для хранения версий Process Group. Поддерживаемые реализации (с историей):
+A **Flow Registry Client** is a pluggable component for storing Process Group versions. The supported implementations (with history):
 
-| Клиент | Статус / версия |
+| Client | Status / version |
 |---|---|
-| **NiFi Registry** | Исторически стандартный реестр; **[dep]** объявлен deprecated в **2.8.0** с рекомендацией использовать git-based клиентов ([Release Notes 2.8.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), [Migration Guidance 2.8.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)) |
-| **GitHub** | Доступен с 2.0.0-M3 (GitHub-репозиторий как «реестр»; ветки поддерживаются) |
-| **GitLab** | Добавлен в 2.0.0 |
-| **Bitbucket** | Добавлен в 2.4.0 (Data Center — с 2.7.0) |
-| **Azure DevOps (Git)** | Добавлен в 2.6.0 |
+| **NiFi Registry** | Historically the standard registry; **[dep]** declared deprecated in **2.8.0** with a recommendation to use git-based clients ([Release Notes 2.8.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), [Migration Guidance 2.8.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)) |
+| **GitHub** | Available since 2.0.0-M3 (a GitHub repository as the "registry"; branches are supported) |
+| **GitLab** | Added in 2.0.0 |
+| **Bitbucket** | Added in 2.4.0 (Data Center — since 2.7.0) |
+| **Azure DevOps (Git)** | Added in 2.6.0 |
 
-(Источники: [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes).) Начиная с 2.10.0: поддержка создания веток и *Author+Committer* для git-клиентов; в 2.11.0 — начальная поддержка rebase.
+(Sources: [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes).) Starting with 2.10.0: support for creating branches and *Author+Committer* for git clients; in 2.11.0 — initial rebase support.
 
-**Рабочий процесс.**
+**Workflow.**
 
-1. Process Group → **Version → Start version control**: выбираете клиент, bucket/ветку, имя flow.
-2. После изменений группа показывает значок *locally modified*; **Show local changes** отображает diff; **Commit local changes** фиксирует новую версию; **Revert local changes** откатывает.
-3. На другом окружении: **Import from Registry** или **Change version** на нужную версию. NiFi сам останавливает затронутые компоненты и применяет изменения.
-4. Значения параметров: с 2.5.0 есть опции обработки значений параметров при версионировании в git-клиентах (чтобы не коммитить окружение-специфичные значения) и нормализация JSON flow definitions.
+1. Process Group → **Version → Start version control**: you choose the client, the bucket/branch, and the flow name.
+2. After changes the group shows a *locally modified* icon; **Show local changes** displays the diff; **Commit local changes** records a new version; **Revert local changes** rolls back.
+3. In another environment: **Import from Registry** or **Change version** to the required version. NiFi itself stops the affected components and applies the changes.
+4. Parameter values: since 2.5.0 there are options for handling parameter values during versioning in git clients (so as not to commit environment-specific values) and normalization of JSON flow definitions.
 
-**Практики change management.**
+**Change management practices.**
 
-- Окружения dev → test → prod; одна и та же версия flow, различие — только в Parameter Context.
-- Секреты — только sensitive parameters / Parameter Providers; не в Git.
-- Review изменений в git (pull requests) вместо правок в UI на prod; на prod ограничить права на изменение (Block 3.3).
-- **Flow Analysis Rules** (API введён в 2.0.0-M1) позволяют автоматически проверять соблюдение стандартов проектирования (в Apache NiFi 2.6.0 доступны `DisallowComponentType`, `RestrictBackpressureSettings`, `RequireServerSSLContextService`, `RestrictFlowFileExpiration` — подробно в Day 3, раздел 3.2.6).
-- XML Templates удалены в 2.0; вместо них — JSON flow definitions и версионирование (**[rem 2.0]**).
-- Копирование flow между независимыми развёртываниями: с 2.1.0 UI поддерживает copy/paste flow definitions ([Release Notes 2.1.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
+- Environments dev → test → prod; the same flow version, the only difference being the Parameter Context.
+- Secrets — only sensitive parameters / Parameter Providers; not in Git.
+- Review changes in git (pull requests) instead of edits in the UI on prod; restrict change permissions on prod (Block 3.3).
+- **Flow Analysis Rules** (the API was introduced in 2.0.0-M1) make it possible to automatically check compliance with design standards (Apache NiFi 2.6.0 provides `DisallowComponentType`, `RestrictBackpressureSettings`, `RequireServerSSLContextService`, `RestrictFlowFileExpiration` — details in Day 3, section 3.2.6).
+- XML Templates were removed in 2.0; JSON flow definitions and versioning replace them (**[rem 2.0]**).
+- Copying a flow between independent deployments: since 2.1.0 the UI supports copy/paste of flow definitions ([Release Notes 2.1.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 
 #### Stateless execution (2.x)
 
-С 2.0 любой Process Group можно настроить на **Stateless** выполнение: группа выполняется как транзакция «от источника до стока» без записи промежуточных FlowFile в репозитории; при сбое транзакция откатывается целиком. Это даёт at-least-once/exactly-once-подобную семантику для Kafka→…→Kafka и подобных цепочек, но ограничивает параллелизм/размеры (данные в памяти) ([Release Notes 2.0.0-M1](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). Отметим, что в 2.13.0 API добавлена поддержка in-memory content для Stateless-движка (**[exp]**/новая функциональность — **[проверить]** перед использованием в production).
+Since 2.0, any Process Group can be configured for **Stateless** execution: the group is executed as a "source to sink" transaction without writing intermediate FlowFiles to the repositories; on a failure the transaction is rolled back as a whole. This gives at-least-once/exactly-once-like semantics for Kafka→…→Kafka and similar chains, but limits parallelism/sizes (data is in memory) ([Release Notes 2.0.0-M1](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). Note that in 2.13.0 the API gained support for in-memory content for the Stateless engine (**[exp]**/new functionality — **[verify]** before using it in production).
 
 ---
 
 ## Block 1.5: Day 1 recap and Q&A
 
-### Ключевые выводы
+### Key takeaways
 
-1. **Архитектура.** Flow Controller + три репозитория; контент неизменяем (copy-on-write); at-least-once внутри узла; durability настраивается.
-2. **FlowFile.** Атрибуты в heap/WAL, контент на диске; мелкие FlowFile — враг производительности.
-3. **Построение flow.** List/Fetch, `RouteOnAttribute`, EL; back pressure защищает систему, но один заполненный выход останавливает процессор.
-4. **Record-based.** Один FlowFile = много записей; Reader/Writer/Schema — основа; Infer Schema допустим для прототипов, в production — явные схемы.
-5. **Установка и кластер.** Узлы независимы; координатор и primary избираются; load balancing — на уровне связи; TLS и корректные DNS-имена обязательны.
-6. **Версионирование.** Parameter Contexts + Flow Registry Clients (git); NiFi Registry deprecated с 2.8.0.
+1. **Architecture.** The Flow Controller + three repositories; content is immutable (copy-on-write); at-least-once within a node; durability is configurable.
+2. **FlowFile.** Attributes in the heap/WAL, content on disk; small FlowFiles are the enemy of performance.
+3. **Building flows.** List/Fetch, `RouteOnAttribute`, EL; back pressure protects the system, but one full output stops the processor.
+4. **Record-based.** One FlowFile = many records; Reader/Writer/Schema are the foundation; Infer Schema is acceptable for prototypes, in production use explicit schemas.
+5. **Installation and the cluster.** Nodes are independent; the coordinator and the primary are elected; load balancing is at the connection level; TLS and correct DNS names are mandatory.
+6. **Versioning.** Parameter Contexts + Flow Registry Clients (git); NiFi Registry is deprecated since 2.8.0.
 
-### Вопросы для самопроверки
+### Self-check questions
 
-1. Почему `UpdateAttribute` дешевле `ReplaceText`?
-2. Что произойдёт с процессором, если очередь по связи `failure` достигла порога back pressure, а `success` свободна?
-3. В каких случаях `Infer Schema` приводит к разным схемам у соседних FlowFile?
-4. Чем `Partition by attribute` отличается от `Round robin` и когда нужен каждый?
-5. Какие данные теряются безвозвратно при потере `nifi.sensitive.props.key`?
+1. Why is `UpdateAttribute` cheaper than `ReplaceText`?
+2. What happens to a processor if the queue on the `failure` connection has reached the back pressure threshold while `success` is free?
+3. In which cases does `Infer Schema` lead to different schemas for neighboring FlowFiles?
+4. How does `Partition by attribute` differ from `Round robin`, and when is each needed?
+5. What data is lost irretrievably if `nifi.sensitive.props.key` is lost?
 
-### Предпросмотр Day 2
+### Day 2 preview
 
-Подключения к БД, REST и Kafka (на Record-процессорах), преобразования JSON/NDJSON, доставка в Splunk, а также миграция с NiFi 1.x на 2.x.
+Connections to databases, REST, and Kafka (using Record processors), JSON/NDJSON transformations, delivery to Splunk, and migration from NiFi 1.x to 2.x.

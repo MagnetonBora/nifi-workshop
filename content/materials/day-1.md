@@ -1,10 +1,6 @@
 ---
 title: "Day 1 — Apache NiFi Fundamentals"
 ---
-
-> Document 1 of 3. The structure is based on the course agenda "Apache NiFi Training: Agenda" (21 hours, 3 days). Target version: **Apache NiFi 2.x**; version 1.x is mentioned where it helps to understand the architecture, its evolution, or migration.
-> Related documents: **Day 2** (`day-2.md`), **Day 3** (`day-3.md`). Cross-references such as "Block X.Y" point to the corresponding block in one of the three documents.
-
 ## Contents
 
 - [About this material: versions, sources, notation](#about-this-material-versions-sources-notation)
@@ -37,7 +33,7 @@ Notation used in the text:
 1. Facts about releases, removed components, and migration are confirmed against the [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), the [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance), and the [NiFi 2.0 Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals).
 2. The remaining descriptions (processor parameters, `nifi.properties` properties) are based on the official guides: [User Guide](https://nifi.apache.org/docs/nifi-docs/html/user-guide.html), [Administration Guide](https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html), [Expression Language Guide](https://nifi.apache.org/docs/nifi-docs/html/expression-language-guide.html), [RecordPath Guide](https://nifi.apache.org/docs/nifi-docs/html/record-path-guide.html), [NiFi In Depth](https://nifi.apache.org/docs/nifi-docs/html/nifi-in-depth.html), and the [component reference](https://nifi.apache.org/components/). Names and default values of some properties may differ in your minor version. Check the exact values in the built-in documentation (**Help → Documentation** in the UI) of your version.
 3. Numeric recommendations (heap, threads) are starting points for measurements, not norms.
-4. The list of sources and the list of items that require verification are in Appendix B (at the end of the Day 3 document).
+4. %%The list of sources and the list of items that require verification are in Appendix B (at the end of the Day 3 document).%%
 
 ---
 

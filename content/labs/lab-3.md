@@ -1,8 +1,10 @@
 ---
 title: "Lab 3 — Split-flow против Record-flow"
+aliases:
+  - exercises/lab-3
 ---
 
-> Из материалов [[materials/day-1|Day 1 — Apache NiFi Fundamentals]]. Стенд и загрузка эталонов — на странице [[exercises/index|Exercises]].
+> Из материалов [[materials/day-1|Day 1 — Apache NiFi Fundamentals]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
 
 **Цель.** Количественно сравнить два варианта обработки одного набора данных.
 

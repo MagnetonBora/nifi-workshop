@@ -1,8 +1,10 @@
 ---
 title: "Lab 8 — Тест производительности и тюнинг"
+aliases:
+  - exercises/lab-8
 ---
 
-> Из материалов [[materials/day-3|Day 3 — Production, Security, and Performance]]. Стенд и загрузка эталонов — на странице [[exercises/index|Exercises]].
+> Из материалов [[materials/day-3|Day 3 — Production, Security, and Performance]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
 
 **Цель.** Измерить throughput конвейера из Lab 5, найти узкое место и улучшить показатели.
 
@@ -20,7 +22,7 @@ title: "Lab 8 — Тест производительности и тюнинг"
 4. **Один параметр за раз;** по 3 прогона; медиана.
 5. **Отчёт:** таблица «изменение → эффект → вывод», обновлённые настройки, рекомендации.
 
-**На стенде ([[materials/day-3#приложение-a-лабораторный-стенд-docker-compose|Приложение A]]).**
+**На стенде ([[materials/Appendix-A|Приложение A]]).**
 
 - **Генератор:** `GenerateRecord` (схема лог-события с `user.pwd`, Number of Records `10000`, Run Schedule `1 sec`) перед конвейером Lab 5 — около 10 000 событий/с; нагрузку увеличивают через *Number of Records* и *Run Schedule*. Пока узким местом остаётся генератор, это и есть базовая линия.
 - **Счётчик выхода:** `UpdateCounter` после `MergeRecord` с Delta `${record.count}` — events/s = прирост счётчика (☰ → Counters) за интервал.

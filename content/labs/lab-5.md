@@ -1,8 +1,10 @@
 ---
 title: "Lab 5 — NDJSON transformation pipeline"
+aliases:
+  - exercises/lab-5
 ---
 
-> Из материалов [[materials/day-2|Day 2 — Data Processing and Integrations]]. Стенд и загрузка эталонов — на странице [[exercises/index|Exercises]].
+> Из материалов [[materials/day-2|Day 2 — Data Processing and Integrations]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
 
 **Цель.** Построить конвейер: NDJSON-логи → валидация → удаление секрета → добавление `ingest_ts` в начало объекта → склейка в крупные NDJSON-файлы.
 

@@ -1,8 +1,10 @@
 ---
 title: "Финальная лабораторная — сквозной конвейер"
+aliases:
+  - exercises/final-lab
 ---
 
-> Из материалов [[materials/day-3|Day 3 — Production, Security, and Performance]]. Стенд и загрузка эталонов — на странице [[exercises/index|Exercises]].
+> Из материалов [[materials/day-3|Day 3 — Production, Security, and Performance]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
 
 ## Цель и результат
 
@@ -45,13 +47,13 @@ title: "Финальная лабораторная — сквозной кон�
 | `JsonRecordSetWriter` | `LogEvent.out`, `One Line Per Object`, без Pretty Print |
 | Parameter Context `logs-prod` | `kafka.bootstrap`, `splunk.host`, `splunk.port`, `dlq.topic`, `out.dir` |
 
-Значения для стенда ([[materials/day-3#a5-адреса-для-лабораторных|Приложение A.5]]): `kafka.bootstrap=kafka1:19092`, `splunk.host=splunk-sim`, `splunk.port=5514`, `dlq.topic=logs.dlq`, `out.dir=/opt/nifi/data/final` (резервный сток DLQ; на хосте — `nifi/data/final`).
+Значения для стенда ([[materials/Appendix-A#a5-addresses-for-the-labs|Приложение A.5]]): `kafka.bootstrap=kafka1:19092`, `splunk.host=splunk-sim`, `splunk.port=5514`, `dlq.topic=logs.dlq`, `out.dir=/opt/nifi/data/final` (резервный сток DLQ; на хосте — `nifi/data/final`).
 
 В режиме `RECORD` у `ConsumeKafka` есть relationship **`parse failure`** (сообщения, которые Reader не разобрал) — направьте его в `errors`, иначе процессор невалиден. Для сверки удобно поставить `UpdateCounter` с Delta `${record.count}` в точках «принято» (после `ConsumeKafka`), «доставлено» (перед `PutSplunk`), «отфильтровано» (выход `debug` второго запроса `QueryRecord`: `SELECT * FROM FLOWFILE WHERE level = 'DEBUG'`) и «в DLQ» (в группе `errors`).
 
 ## Последовательность
 
-1. Подготовьте стенд ([[materials/day-3#приложение-a-лабораторный-стенд-docker-compose|Приложение A]]); создайте топики `logs.raw` (например, 6 партиций) и `logs.dlq` — на стенде это делает `make lab-setup`.
+1. Подготовьте стенд ([[materials/Appendix-A|Приложение A]]); создайте топики `logs.raw` (например, 6 партиций) и `logs.dlq` — на стенде это делает `make lab-setup`.
 2. Создайте Parameter Context, Controller Services (схемы!).
 3. Постройте группы в порядке: ingest → validate-transform → deliver → errors; соедините порты.
 4. Настройте back pressure на межгрупповых связях; на связях в `errors` — высокие пороги.

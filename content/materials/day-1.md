@@ -172,7 +172,7 @@ About the Variable Registry: **[rem 2.0]** variables (Variables) and the Variabl
 
 ### Lab 1: the NiFi UI and a first flow
 
-> Step-by-step exercise: [[exercises/lab-1|Lab 1]].
+> Step-by-step lab: [[labs/lab-1|Lab 1]].
 
 **Goal.** Get to know the NiFi UI, create, run, and trace the simplest flow, and see provenance.
 
@@ -319,7 +319,7 @@ Prioritizers do not guarantee a strict global order with several concurrent task
 
 ### Lab 2: a flow from several sources with routing
 
-> Step-by-step exercise: [[exercises/lab-2|Lab 2]].
+> Step-by-step lab: [[labs/lab-2|Lab 2]].
 
 **Goal.** Receive data from several sources (files, HTTP, a generator) and route it by attributes.
 
@@ -635,7 +635,7 @@ A detailed treatment of RecordPath and its functions (`concat`, `format`, etc.) 
 
 ### Lab 3: replacing a Split-based flow with a Record-based one and comparing throughput
 
-> Step-by-step exercise: [[exercises/lab-3|Lab 3]].
+> Step-by-step lab: [[labs/lab-3|Lab 3]].
 
 **Goal.** Quantitatively compare two variants of processing the same data set.
 

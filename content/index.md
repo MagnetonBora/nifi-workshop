@@ -20,7 +20,7 @@ Welcome to this three-day hands-on workshop on Apache NiFi. The course progresse
 
 [[materials/Appendix-B|Appendix B]]
 
-[[exercises/index|Exercises]]
+[[labs/index|Labs]]
 
 # Github repositories
 

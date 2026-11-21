@@ -1,8 +1,10 @@
 ---
 title: "Lab 4 — БД + REST + Kafka на record-обработке"
+aliases:
+  - exercises/lab-4
 ---
 
-> Из материалов [[materials/day-2|Day 2 — Data Processing and Integrations]]. Стенд и загрузка эталонов — на странице [[exercises/index|Exercises]].
+> Из материалов [[materials/day-2|Day 2 — Data Processing and Integrations]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
 
 **Цель.** Собрать flow: события заказов читаются из Kafka, обогащаются данными из REST API, записываются в БД, а результат публикуется в выходной топик.
 
@@ -48,7 +50,7 @@ CREATE TABLE IF NOT EXISTS orders_stage (
 
 Ограничение `CHECK (amount > 0)` — бизнес-правило, на котором `o-1002` уходит в DLQ.
 
-**Parameter Context `lab4-params`** (значения для стенда, [[materials/day-3#a5-адреса-для-лабораторных|Приложение A.5]]): `kafka.bootstrap=kafka1:19092`, `db.url=jdbc:postgresql://postgres:5432/nifi`, `db.user=nifi`, `db.password=nifi` (sensitive), `db.driver=/opt/nifi/drivers/postgresql-42.7.14.jar`, `customers.api=http://customers-api:8000`.
+**Parameter Context `lab4-params`** (значения для стенда, [[materials/Appendix-A#a5-addresses-for-the-labs|Приложение A.5]]): `kafka.bootstrap=kafka1:19092`, `db.url=jdbc:postgresql://postgres:5432/nifi`, `db.user=nifi`, `db.password=nifi` (sensitive), `db.driver=/opt/nifi/drivers/postgresql-42.7.14.jar`, `customers.api=http://customers-api:8000`.
 
 **Controller Services.**
 

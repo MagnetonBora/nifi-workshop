@@ -9,8 +9,8 @@ title: "Day 3 — Production, Security, and Performance"
 - [Block 3.4: Performance tuning, hardware and storage](#block-34-performance-tuning-hardware-and-storage)
 - [Block 3.5: Final hands-on lab: end-to-end pipeline](#block-35-final-hands-on-lab-end-to-end-pipeline)
 - [Block 3.6: Course recap and next steps](#block-36-course-recap-and-next-steps)
-- [Appendix A: The lab stand (Docker Compose)](#appendix-a-the-lab-stand-docker-compose)
-- [Appendix B: List of sources and verification status](#appendix-b-list-of-sources-and-verification-status)
+- [Appendix A: The lab stand (Docker Compose)](Appendix-A.md)
+- [Appendix B: List of sources and verification status](Appendix-B.md)
 
 ---
 

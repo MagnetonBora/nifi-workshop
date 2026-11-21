@@ -1,8 +1,10 @@
 ---
 title: "Lab 7 — Retry и обработка ошибок"
+aliases:
+  - exercises/lab-7
 ---
 
-> Из материалов [[materials/day-3|Day 3 — Production, Security, and Performance]]. Стенд и загрузка эталонов — на странице [[exercises/index|Exercises]].
+> Из материалов [[materials/day-3|Day 3 — Production, Security, and Performance]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
 
 **Цель.** Построить flow, который переживает временные сбои приёмника и не блокируется «плохими» данными.
 

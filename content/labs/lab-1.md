@@ -1,8 +1,10 @@
 ---
 title: "Lab 1 — Интерфейс NiFi и первый flow"
+aliases:
+  - exercises/lab-1
 ---
 
-> Из материалов [[materials/day-1|Day 1 — Apache NiFi Fundamentals]]. Стенд и загрузка эталонов — на странице [[exercises/index|Exercises]].
+> Из материалов [[materials/day-1|Day 1 — Apache NiFi Fundamentals]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
 
 **Цель.** Освоить UI NiFi, создать, запустить и отследить простейший flow, увидеть provenance.
 
@@ -41,4 +43,4 @@ GenerateFlowFile ──success──► UpdateAttribute ──success──► L
 
 **Типичные ошибки.** Процессор остаётся с жёлтым треугольником (невалиден): нет подключённых/auto-terminated relationships или не заданы обязательные свойства. Очередь «не двигается»: приёмник остановлен или достигнут back pressure. В контенте вместо даты сырой текст `${now():format(...)}` — Expression Language не разобрал выражение: строку формата с литералом `'T'` пишите в **двойных** кавычках (`format("yyyy-MM-dd'T'...")`); вариант `format('yyyy-MM-dd\'T\'...')` в NiFi 2.12 не вычисляется. Процессор при этом остаётся валидным — ошибка видна только по содержимому FlowFile.
 
-**Эталонное решение:** [lab1-first-flow.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab1-first-flow.json) ([[materials/day-3#a8-эталонные-решения|Приложение A.8]]).
+**Эталонное решение:** [lab1-first-flow.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab1-first-flow.json) ([[materials/Appendix-A#a8-reference-solutions|Приложение A.8]]).

@@ -1,8 +1,10 @@
 ---
 title: "Lab 6 — Доставка событий в Splunk"
+aliases:
+  - exercises/lab-6
 ---
 
-> Из материалов [[materials/day-2|Day 2 — Data Processing and Integrations]]. Стенд и загрузка эталонов — на странице [[exercises/index|Exercises]].
+> Из материалов [[materials/day-2|Day 2 — Data Processing and Integrations]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
 
 **Цель.** Отправить NDJSON-события из Lab 5 в Splunk либо в эмулированный endpoint и измерить throughput.
 

@@ -1,8 +1,10 @@
 ---
 title: "Lab 2 — Несколько источников и маршрутизация"
+aliases:
+  - exercises/lab-2
 ---
 
-> Из материалов [[materials/day-1|Day 1 — Apache NiFi Fundamentals]]. Стенд и загрузка эталонов — на странице [[exercises/index|Exercises]].
+> Из материалов [[materials/day-1|Day 1 — Apache NiFi Fundamentals]]. Стенд и загрузка эталонов — на странице [[labs/index|Labs]].
 
 **Цель.** Принять данные из нескольких источников (файлы, HTTP, генератор) и смаршрутизировать их по атрибутам.
 
@@ -27,7 +29,7 @@ title: "Lab 2 — Несколько источников и маршрутиз�
 | `GenerateFlowFile` | Custom Text — JSON; Mime Type `application/json` |
 | `RouteOnAttribute` | Routing Strategy `Route to Property name`; `json`=`${mime.type:equals('application/json'):or(${filename:endsWith('.json')})}`, `csv`=`${filename:endsWith('.csv')}` |
 | `PutFile` (quarantine) | Directory `#{quarantine.dir}` |
-| Parameter Context `lab-params` | `ingest.dir=/opt/nifi/data/in`, `quarantine.dir=/opt/nifi/data/quarantine` (на хосте стенда — `nifi/data/in`, `nifi/data/quarantine`, см. [[materials/day-3#a5-адреса-для-лабораторных|Приложение A.5]]) |
+| Parameter Context `lab-params` | `ingest.dir=/opt/nifi/data/in`, `quarantine.dir=/opt/nifi/data/quarantine` (на хосте стенда — `nifi/data/in`, `nifi/data/quarantine`, см. [[materials/Appendix-A#a5-addresses-for-the-labs|Приложение A.5]]) |
 
 **Порядок построения.**
 

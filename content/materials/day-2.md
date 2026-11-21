@@ -1,6 +1,8 @@
-# Apache NiFi — Engineering Study Notes. Day 2: Working with Data (JSON / NDJSON, Records, Kafka, Splunk)
+---
+title: "Day 2 — Data Processing and Integrations"
+---
 
-> Document 2 of 3. Related documents: **Day 1** (`apache_nifi_day1_en.md`), **Day 3** (`apache_nifi_day3_en.md`). The notation ([2.x], [1.x], [dep], [rem], [verify]) and the principles of reliability are at the beginning of Day 1.
+> Document 2 of 3. Related documents: **Day 1** (`day-1.md`), **Day 3** (`day-3.md`). The notation ([2.x], [1.x], [dep], [rem], [verify]) and the principles of reliability are at the beginning of Day 1.
 
 ## Contents
 

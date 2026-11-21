@@ -1,6 +1,8 @@
-# Apache NiFi — Engineering Study Notes. Day 3: Resilience, Security, Performance and Final Lab
+---
+title: "Day 3 — Production, Security, and Performance"
+---
 
-> Document 3 of 3. Related documents: **Day 1** (`apache_nifi_day1_en.md`), **Day 2** (`apache_nifi_day2_en.md`). The notation ([2.x], [1.x], [dep], [rem], [verify]) and the principles of reliability are at the beginning of Day 1.
+> Document 3 of 3. Related documents: **Day 1** (`day-1.md`), **Day 2** (`day-2.md`). The notation ([2.x], [1.x], [dep], [rem], [verify]) and the principles of reliability are at the beginning of Day 1.
 
 ## Contents
 

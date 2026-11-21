@@ -1,7 +1,9 @@
-# Apache NiFi — Engineering Study Notes. Day 1: Foundations, Record Processing and Cluster Setup
+---
+title: "Day 1 — Apache NiFi Fundamentals"
+---
 
 > Document 1 of 3. The structure is based on the course agenda "Apache NiFi Training: Agenda" (21 hours, 3 days). Target version: **Apache NiFi 2.x**; version 1.x is mentioned where it helps to understand the architecture, its evolution, or migration.
-> Related documents: **Day 2** (`apache_nifi_day2_en.md`), **Day 3** (`apache_nifi_day3_en.md`). Cross-references such as "Block X.Y" point to the corresponding block in one of the three documents.
+> Related documents: **Day 2** (`day-2.md`), **Day 3** (`day-3.md`). Cross-references such as "Block X.Y" point to the corresponding block in one of the three documents.
 
 ## Contents
 

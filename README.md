@@ -57,6 +57,146 @@ Day 3 moves from flow development to operational reliability. It covers error ha
 
 The day then addresses TLS, authentication, access policies, audit trails, encryption, and performance tuning of the JVM, thread pools, and storage. It ends with an end-to-end hands-on lab that brings the three days together.
 
+## Workshop Materials
+
+Besides the presentations, the workshop website contains written materials, labs, and solutions:
+
+- [Agenda](content/agenda.md): the schedule for all three days.
+- Day materials: [Day 1](content/materials/day-1.md), [Day 2](content/materials/day-2.md), [Day 3](content/materials/day-3.md).
+- [Appendix A](content/materials/Appendix-A.md): the lab stand, its components, addresses, test data, and reference solutions.
+- [Appendix B](content/materials/Appendix-B.md): the sources used to confirm facts in the materials.
+- [Labs](content/labs/index.md) and [Solutions](content/solutions/index.md).
+
+## Labs
+
+The hands-on part has eight labs and a final end-to-end lab. Every lab has a task, a solution with a component-by-component explanation, and a reference Flow Definition. All labs are verified on Apache NiFi 2.12.0.
+
+| Lab | Day | Topic |
+| --- | --- | --- |
+| [Lab 1](content/labs/lab-1.md) | 1 | The NiFi UI and a first flow |
+| [Lab 2](content/labs/lab-2.md) | 1 | Several sources and routing |
+| [Lab 3](content/labs/lab-3.md) | 1 | A Split flow versus a Record flow |
+| [Lab 4](content/labs/lab-4.md) | 2 | A database + REST + Kafka with record processing |
+| [Lab 5](content/labs/lab-5.md) | 2 | An NDJSON transformation pipeline |
+| [Lab 6](content/labs/lab-6.md) | 2 | Delivering events to Splunk |
+| [Lab 7](content/labs/lab-7.md) | 3 | Retry and error handling |
+| [Lab 8](content/labs/lab-8.md) | 3 | A performance test and tuning |
+| [Final lab](content/labs/final-lab.md) | 3 | An end-to-end pipeline: Kafka → validation and transformation → Splunk → DLQ |
+
+The labs run on the [NiFi playground](https://github.com/MagnetonBora/nifi-playground) stand: NiFi (a single node or a cluster), NiFi Registry, PostgreSQL, Kafka, Prometheus and Grafana, Splunk, and mocks of external systems. It needs Docker with at least 8 GB of memory and `make`:
+
+```bash
+git clone https://github.com/MagnetonBora/nifi-playground.git
+cd nifi-playground
+make up          # NiFi and the whole environment
+make lab-setup   # the table and topics for the labs
+make urls        # addresses and logins
+```
+
+## Running the Website in Docker with make
+
+The website is built with Quartz and runs in a Docker container. The `Makefile` wraps all Docker commands.
+
+### Prerequisites
+
+- Docker (Docker Desktop or Docker Engine) running;
+- `make` (preinstalled on macOS and most Linux distributions).
+
+### Step by Step
+
+1. Clone the repository and go to its directory:
+
+   ```bash
+   git clone https://github.com/MagnetonBora/nifi-workshop.git
+   cd nifi-workshop
+   ```
+
+2. Build the Docker image (named `nifi-workshop` by default). The first build installs npm dependencies and Quartz plugins and takes a few minutes:
+
+   ```bash
+   make build
+   ```
+
+3. Run the container in the background:
+
+   ```bash
+   make up
+   ```
+
+4. Open <http://localhost:8081> in a browser. Quartz builds the site on start, so the first page may take a few seconds to appear. To watch the build progress, run `make logs` (press `Ctrl+C` to stop following).
+
+5. Stop the container when you are done:
+
+   ```bash
+   make stop
+   ```
+
+### Editing the Content
+
+The `content/` directory is mounted into the container, so changes to Markdown files are picked up and the page reloads without rebuilding the image. Port `3001` is used by Quartz for live reload. After changes to `package.json`, `quartz/`, or the Quartz configuration, rebuild the image:
+
+```bash
+make rebuild
+```
+
+### All make Targets
+
+| Command | Description |
+| --- | --- |
+| `make help` | Show the list of targets |
+| `make build` | Build the Docker image |
+| `make up` | Run the container in the background |
+| `make rebuild` | Stop, rebuild, and run the container |
+| `make restart` | Restart the existing container |
+| `make stop` | Stop and remove the container |
+| `make logs` | Follow container logs |
+| `make shell` | Open a shell in the running container |
+| `make clean` | Remove the container and image |
+
+### Configuration
+
+The defaults can be overridden with variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PORT` | `8081` | Host port for the website |
+| `WS_PORT` | `3001` | Host port for live reload |
+| `IMAGE` | `nifi-workshop` | Docker image name |
+| `CONTAINER` | `nifi-workshop` | Container name |
+
+For example, if port `8081` is busy:
+
+```bash
+make up PORT=8090 WS_PORT=3002
+```
+
+### Running without Docker
+
+Use Node.js 22 or later:
+
+```bash
+npm install
+npx quartz plugin install
+npx quartz build --serve
+```
+
+## Repository Structure
+
+```text
+content/
+├── index.md          # website home page
+├── agenda.md         # workshop schedule
+├── intro.pdf         # NobleProg introduction
+├── materials/        # day materials and appendices
+├── labs/             # lab tasks
+├── solutions/        # lab solutions
+├── images/           # images used in the materials
+└── presentation/     # static HTML presentations for the three days
+quartz/               # Quartz framework sources
+quartz.ts, quartz.config.default.yaml   # Quartz configuration
+Dockerfile, Makefile  # local run in Docker
+```
+
 ## Presentation Controls
 
 The presentations are static HTML files and do not require a build step.

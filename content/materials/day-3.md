@@ -33,11 +33,12 @@ title: "Day 3 — Production, Security, and Performance"
 
 **`RetryFlowFile`.** A processor for explicit control of retries in a flow ([a description of the `nifi-standard-nar` component in the Snowflake Openflow documentation mirror](https://docs.snowflake.com/en/user-guide/data-integration/openflow/processors/retryflowfile); the behavior of the counter and relationships is also confirmed by the implementation in [MiNiFi C++](https://apache.googlesource.com/nifi-minifi-cpp/+/656fca6f2331fe43915ebf4c83a56265fcb4790d/extensions/standard-processors/processors/RetryFlowFile.cpp); check separately against the component page on nifi.apache.org for your version). It checks the value of the **attempt counter** (stored in a FlowFile attribute — the *Retry Attribute*) against **Maximum Retries**: while the limit is not exceeded, it increments the counter and sends the FlowFile to `retry`; when it is exceeded — to `retries_exceeded`.
 
-```text
- PutDatabaseRecord ─ retry ──► RetryFlowFile ─ retry ──► (penalize ► back to PutDatabaseRecord)
-        │                            │
-        │                            └ retries_exceeded ► [Dead-letter]   (do NOT return it to the input!)
-        └ failure ──────────────────────────────────────► [Dead-letter]
+```mermaid
+flowchart LR
+  P["PutDatabaseRecord"] -- "retry" --> R["RetryFlowFile"]
+  R -- "retry<br/>(penalize, back to PutDatabaseRecord)" --> P
+  R -- "retries_exceeded<br/>(do NOT return it to the input!)" --> DL["[Dead-letter]"]
+  P -- "failure" --> DL
 ```
 
 | Property | Purpose |
@@ -82,7 +83,7 @@ A practical rule: **framework retry by default**; `RetryFlowFile` — when you n
 
 ### 3.1.3 Keeping the main flow running when failure queues fill up
 
-**The problem.** As stated in Block 1.2, a processor stops being scheduled if **any** of its outgoing connections is filled to the back pressure threshold. Therefore the `failure` queue, which receives "garbage" (for example, due to a schema mismatch), will eventually fill up and **stop the entire main flow**, even though `success` is working.
+**The problem.** As stated in [Block 1.2](day-1.md#block-12-building-data-flows), a processor stops being scheduled if **any** of its outgoing connections is filled to the back pressure threshold. Therefore the `failure` queue, which receives "garbage" (for example, due to a schema mismatch), will eventually fill up and **stop the entire main flow**, even though `success` is working.
 
 **Solutions (combine them).**
 
@@ -98,17 +99,13 @@ A practical rule: **framework retry by default**; `RetryFlowFile` — when you n
 
 **The "Dead Letter" pattern (a typical implementation).**
 
-```text
-...► ValidateRecord ─ valid ─► the main flow
-          │ invalid / failure
-          ▼
-   UpdateAttribute:
-      error.stage   = validate
-      error.time    = ${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX")}
-      error.reason  = ${validation.details:replaceNull('see bulletin')}   // the attribute is filled by ValidateRecord if Validation Details Attribute Name = validation.details is set in it
-      original.name = ${filename}
-          ▼
-   PublishKafka (topic: dlq.<flow>)   or   PutFile /data/dlq/${error.stage}/${now():format('yyyyMMdd')}/${uuid}
+```mermaid
+flowchart TD
+  V["... ValidateRecord"] -- "valid" --> M["the main flow"]
+  V -- "invalid / failure" --> U["UpdateAttribute:<br/>error.stage = validate<br/>error.time = ${now():format(#quot;yyyy-MM-dd'T'HH:mm:ss.SSSXXX#quot;)}<br/>error.reason = ${validation.details:replaceNull('see bulletin')}<br/>original.name = ${filename}"]
+  NOTE["the attribute is filled by ValidateRecord if<br/>Validation Details Attribute Name = validation.details is set in it"] -.-> U
+  U --> K["PublishKafka<br/>(topic: dlq.#lt;flow#gt;)"]
+  U -. "or" .-> F["PutFile<br/>/data/dlq/${error.stage}/${now():format('yyyyMMdd')}/${uuid}"]
 ```
 
 DLQ best practices: keep the **original content unchanged** + the error attributes (in Kafka headers or in an accompanying JSON); limit the retention period; set up a *replay* procedure (a separate flow that reads the DLQ and feeds the data back after the cause is fixed); set up counters (`UpdateCounter`) and alerts on DLQ growth.
@@ -117,39 +114,51 @@ DLQ best practices: keep the **original content unchanged** + the error attribut
 
 **The goal of this subsection.** To learn (1) to stop and start NiFi and individual flows predictably and without data loss, (2) to reduce downtime on restart, (3) to automate the operator's typical actions, and (4) to build flows so that most failures disappear on their own, without calling a human.
 
-Related blocks: back pressure and queues — Block 1.2; cluster roles and offload — Block 1.4; backup/restore — 3.1.5; monitoring and alerts — Block 3.2; the sensitive key and security — Block 3.3.
+Related blocks: back pressure and queues — [Block 1.2](day-1.md#block-12-building-data-flows); cluster roles and offload — [Block 1.4](day-1.md#block-14-installation-cluster-configuration-and-setup); backup/restore — 3.1.5; monitoring and alerts — Block 3.2; the sensitive key and security — Block 3.3.
 
-#### 3.1.4.1 What happens when NiFi stops and starts
+#### What happens when NiFi stops and starts
 
 **Stopping (`bin/nifi.sh stop`).**
 
-```text
-nifi.sh stop
-  └─► The Bootstrap process sends the JVM a stop command
-        └─► Flow Controller: stops scheduling processors (new onTrigger calls do not start)
-              └─► waits for active threads to finish for up to nifi.flowcontroller.graceful.shutdown.period
-                    ├─ the threads finished → sessions commit → FlowFile Repository checkpoint → the JVM exits
-                    └─ they did not finish → forced interruption (termination), unfinished sessions are rolled back
-        └─► Bootstrap waits for the JVM to exit for up to graceful.shutdown.seconds (bootstrap.conf); then it kills the process
+```mermaid
+flowchart TD
+  A["nifi.sh stop"] --> B["The Bootstrap process sends the JVM a stop command"]
+  B --> C["Flow Controller: stops scheduling processors<br/>(new onTrigger calls do not start)"]
+  C --> D["Waits for active threads to finish for up to<br/>nifi.flowcontroller.graceful.shutdown.period"]
+  D -- "the threads finished" --> E["sessions commit → FlowFile Repository checkpoint → the JVM exits"]
+  D -- "they did not finish" --> F["forced interruption (termination),<br/>unfinished sessions are rolled back"]
+  B -.-> G["Bootstrap waits for the JVM to exit for up to<br/>graceful.shutdown.seconds (bootstrap.conf);<br/>then it kills the process"]
 ```
 
 Key parameters:
 
-| Parameter | File | Default value | Meaning |
+| Parameter | File | Default | What it controls |
 |---|---|---|---|
-| `nifi.flowcontroller.graceful.shutdown.period` | `nifi.properties` | `10 secs` | How long to wait for components to finish on shutdown ([Administration Guide, the documentation source](https://github.com/apache/nifi/pull/11488/files)). In the main branch (September 2026, NIFI-16290) the description was clarified: the same value limits the wait for components to stop before a forced interruption during a **node offload** ([the commit](https://mail-archive.com/commits@nifi.apache.org/msg46395.html)); **[verify]** in which release this behavior is available to you |
-| `graceful.shutdown.seconds` | `bootstrap.conf` | `20` in the NiFi Registry documentation (for NiFi, check the value in your own `bootstrap.conf`) | How many seconds Bootstrap waits for a clean exit, after which it terminates the process by force. Changes to `bootstrap.conf` take effect only after NiFi is stopped and started ([description](https://docs.cloudera.com/HDPDocuments/HDF3/HDF-3.0.1/bk_administration/content/bootstrap_properties.html)) |
-| `nifi.flowcontroller.autoResumeState` | `nifi.properties` | `true` | Whether to return components to their previous state (Running/Stopped, Controller Services enabled/disabled) after a restart ([Administration Guide](https://github.com/apache/nifi/pull/11488/files)). In a cluster the value must be the same on all nodes |
+| `nifi.flowcontroller.graceful.shutdown.period` | `nifi.properties` | `10 secs` | How long NiFi waits for components to finish on shutdown |
+| `graceful.shutdown.seconds` | `bootstrap.conf` | `20` **[verify]** | How long Bootstrap waits for the JVM to exit before killing it |
+| `nifi.flowcontroller.autoResumeState` | `nifi.properties` | `true` | Whether components return to their previous state after a restart |
+
+**`nifi.flowcontroller.graceful.shutdown.period`**
+- Source: [Administration Guide, the documentation source](https://github.com/apache/nifi/pull/11488/files).
+- In the main branch (September 2026, NIFI-16290) the description was clarified: the same value also limits the wait for components to stop before a forced interruption during a **node offload** ([the commit](https://mail-archive.com/commits@nifi.apache.org/msg46395.html)). **[verify]** in which release this behavior is available to you.
+
+**`graceful.shutdown.seconds`**
+- `20` is the value from the NiFi Registry documentation; for NiFi, check your own `bootstrap.conf`.
+- Changes take effect only after NiFi is stopped and started ([description](https://docs.cloudera.com/HDPDocuments/HDF3/HDF-3.0.1/bk_administration/content/bootstrap_properties.html)).
+
+**`nifi.flowcontroller.autoResumeState`**
+- Restores Running/Stopped for components and enabled/disabled for Controller Services ([Administration Guide](https://github.com/apache/nifi/pull/11488/files)).
+- In a cluster the value must be the same on all nodes.
 
 **What this means in practice.**
 
 - 10 seconds is **little** for processors that perform long operations (a large `PutDatabaseRecord`, `MergeRecord`, a network write). If a thread did not finish during the wait, it is interrupted; the session is rolled back, the FlowFile returns to the queue, and the operation will be **repeated** after the start. For idempotent destinations this is safe; for non-idempotent ones it is a source of duplicates.
-- Therefore, for a planned stop use a **"soft" sequence** (section 3.1.4.3): first stop the sources and let the pipeline drain, and only then stop the JVM.
-- If `graceful.shutdown.seconds` in Bootstrap is smaller than the actual shutdown time (a large heap, a long checkpoint), Bootstrap will terminate the process by force. Increase the value and align it with the systemd/Kubernetes timeout (see 3.1.4.5).
+- Therefore, for a planned stop use a **"soft" sequence** (see [the order of stopping and starting](#the-order-of-stopping-and-starting-from-sources-to-sinks-and-back)): first stop the sources and let the pipeline drain, and only then stop the JVM.
+- If `graceful.shutdown.seconds` in Bootstrap is smaller than the actual shutdown time (a large heap, a long checkpoint), Bootstrap will terminate the process by force. Increase the value and align it with the systemd/Kubernetes timeout (see [the process supervisor](#the-process-supervisor-systemd-and-kubernetes)).
 
 **Starting.** The sequence: loading the NARs and extensions → reading `flow.json.gz` → restoring the **FlowFile Repository** (reading the WAL and snapshot, restoring the queues and swap files) → indexing/restoring the **Provenance Repository** → initializing the **Content Repository** (checking claims) → (in a cluster) connecting to ZooKeeper, flow election, joining the cluster → with `autoResumeState=true`, enabling Controller Services and starting processors.
 
-#### 3.1.4.2 Managing state after a restart: `autoResumeState`
+#### Managing state after a restart: `autoResumeState`
 
 `autoResumeState=true` (the default) is the ideal mode for **autonomous recovery**: after a crash or a planned restart the flow returns to a working state by itself, and no operator is needed. This property is what implements the "self-recovery" after a power failure, an OOM restart, or a container restart.
 
@@ -157,14 +166,14 @@ But there are situations in which auto-start is **harmful**:
 
 | Situation | The risk with autoResume = true | What to do |
 |---|---|---|
-| Migration/upgrade (Block 2.4) | Components that were not fully migrated start, and sources begin consuming before the flow has been checked | The first start after an upgrade — with `autoResumeState=false`; check the invalid/ghost components; then start manually/with a script |
+| Migration/upgrade ([Block 2.4](day-2.md#block-24-migration-from-nifi-1x-to-2x)) | Components that were not fully migrated start, and sources begin consuming before the flow has been checked | The first start after an upgrade — with `autoResumeState=false`; check the invalid/ghost components; then start manually/with a script |
 | Restoring from a backup on a "foreign" environment | The processors start writing to **production** destinations | Start with `false`, replace the Parameter Context values, then start |
 | Incident investigation | Uncontrolled repeated receipt of "poisonous" data | Start with `false`, examine the queues, then start group by group |
 | A cluster: nodes with different values | Some nodes start, some do not → confusion | The same value on all nodes (manage it through IaC) |
 
-The recommended scheme: **`true` in normal operation; `false` temporarily for the duration of work and recovery** through configuration (when configuration is managed through Ansible/Helm, the value is substituted by an environment parameter). After a restart with `false`, start the components **with a script** (section 3.1.4.4), in the right order.
+The recommended scheme: **`true` in normal operation; `false` temporarily for the duration of work and recovery** through configuration (when configuration is managed through Ansible/Helm, the value is substituted by an environment parameter). After a restart with `false`, start the components **with a script** (see [automation via the REST API](#automation-the-rest-api-and-scripts-instead-of-manual-clicks)), in the right order.
 
-#### 3.1.4.3 The order of stopping and starting: from sources to sinks and back
+#### The order of stopping and starting: from sources to sinks and back
 
 The principle: **when stopping — sources first, then the rest in the direction of the data; when starting — sinks first, then sources.** Then there is no data in the system that has "nowhere to go", and there is no burst of retries.
 
@@ -186,7 +195,7 @@ The principle: **when stopping — sources first, then the rest in the direction
 
 **A special case — queues on disk.** Data in the queues survives a restart. After the sinks start, the accumulated backlog will begin to be processed at full speed; the destination must be ready for a "peak" load. For this use `ControlRate` or temporarily reduce `Concurrent Tasks` on the sinks.
 
-#### 3.1.4.4 Automation: the REST API and scripts instead of manual clicks
+#### Automation: the REST API and scripts instead of manual clicks
 
 Every action in the UI is a call to the REST API (`/nifi-api`), so typical procedures can be automated. Below are illustrative examples; the paths `POST /access/token`, `PUT /flow/process-groups/{id}` (start and stop), `PUT /flow/process-groups/{id}/controller-services` (enabling and disabling services), and `GET /flow/process-groups/{id}/status` are confirmed by REST API descriptions and client libraries; check the request bodies and the structure of the responses against the REST API of your version, especially when using them in production. A secure environment needs authentication (a token, mTLS, or OIDC client credentials — see Block 3.3); **do not keep passwords in scripts**, use the secret store of the CI/orchestrator.
 
@@ -232,7 +241,7 @@ done
 
 Automation brings three results: reproducibility (the same sequence every time), speed (minutes instead of hours of clicking), and the ability to run procedures on a schedule/from CI without a human.
 
-#### 3.1.4.5 The process supervisor: systemd and Kubernetes
+#### The process supervisor: systemd and Kubernetes
 
 In NiFi 1.x, Bootstrap could send notifications about the start, the stop, and an **unexpected crash** of NiFi through Notification Services. In 2.x **the Bootstrap Notification Services were removed** (2.0.0-M2, [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)), and Bootstrap was reworked (monitoring over HTTP, 2.0.0). Consequently, **crash notification and a guaranteed restart must be provided by an external supervisor and monitoring**.
 
@@ -271,9 +280,9 @@ Notes: `TimeoutStopSec` must be **greater** than the time of a clean shutdown (t
 - Use a **StatefulSet** with stable identities and persistent volumes for the repositories; `terminationGracePeriodSeconds` — longer than the time of a clean shutdown; `preStop` can run a "soft" stop script (stop the sources → wait).
 - **Probes:** a `startupProbe` with a large `failureThreshold` (starting NiFi with large repositories takes minutes), otherwise the kubelet will kill a pod that is "still loading"; a `livenessProbe` that is not too aggressive (a GC pause must not lead to a restart); a `readinessProbe` — by API readiness (**[verify]** which endpoints are available without authentication in your configuration; a TCP port check is often used).
 - A **PodDisruptionBudget** (no more than one node unavailable) and a **rolling update one node at a time** with a wait for readiness are recommended.
-- In 2.x **Kubernetes-based leader election** is available without ZooKeeper (Block 1.4).
+- In 2.x **Kubernetes-based leader election** is available without ZooKeeper ([Block 1.4](day-1.md#block-14-installation-cluster-configuration-and-setup)).
 
-#### 3.1.4.6 A cluster rolling restart without downtime
+#### A cluster rolling restart without downtime
 
 The goal is to update/restart the nodes one at a time so that the cluster keeps processing data the whole time.
 
@@ -289,7 +298,7 @@ The goal is to update/restart the nodes one at a time so that the cluster keeps 
 
 **2.x restrictions for a TLS cluster.** Since 2.12.0, `nifi.cluster.node.address` and `nifi.cluster.load.balance.host` must be DNS names; after changing images/addresses, check this first ([Migration Guidance 2.12.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
 
-#### 3.1.4.7 What slows down a restart and how to reduce it
+#### What slows down a restart and how to reduce it
 
 | Factor | Why it slows things down | Measure |
 |---|---|---|
@@ -301,7 +310,7 @@ The goal is to update/restart the nodes one at a time so that the cluster keeps 
 | A slow shutdown (GC pauses, a large heap) | Bootstrap kills the process → a long recovery after a "dirty" exit | Correct timeouts; a clean stop of the sources before the restart |
 | A dirty exit (`kill -9`, a power loss) | Recovery after incomplete writes | Avoid it; use `nifi.sh stop` |
 
-#### 3.1.4.8 Self-recovery at the flow level: so that no human is needed
+#### Self-recovery at the flow level: so that no human is needed
 
 Restarting the process is a last resort. Most failures should be resolved **without a restart**, inside the flow:
 
@@ -312,7 +321,7 @@ Restarting the process is a last resort. Most failures should be resolved **with
 | A lost connection to the database/Kafka | The controller service/client reconnects; the processor repeats `onTrigger` | The Validation Query of DBCP, timeouts; Kafka client reconnect |
 | A processor "hung" on an external call | Timeouts in the processor (Connection/Read Timeout) | Always set explicit timeouts |
 | A controller service did not enable (a dependency was unavailable) | The framework periodically tries to enable the service again (the behavior depends on the version — **[verify]**); fixes are known for the "services do not start after a restart" scenarios ([Release Notes 1.28.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)) | Monitoring the state of the services + an alert |
-| A JVM crash | A supervisor (systemd/Kubernetes) + `autoResumeState=true` + the WAL | 3.1.4.5 |
+| A JVM crash | A supervisor (systemd/Kubernetes) + `autoResumeState=true` + the WAL | [The process supervisor](#the-process-supervisor-systemd-and-kubernetes) |
 | A node dropped out of the cluster | The node automatically returns and the flow synchronizes | Correct heartbeat/timeouts, a stable network |
 | A source is idle (no data) | `MonitorActivity` → an alert | Block 3.2 |
 
@@ -328,7 +337,7 @@ Restarting the process is a last resort. Most failures should be resolved **with
 6. State is kept in state/in Kafka/in the destination, not "in the operator's head" (offsets, `List*` state).
 7. All operations (stop/start/clear/replay) are described in a runbook and automated.
 
-#### 3.1.4.9 Checklists
+#### Checklists
 
 **Before a planned restart:** the sources are stopped; the queues are emptied (or deliberately left); the Controller Services are disabled; a backup of `conf/`, `state/local`, and the keys has been made (3.1.5); there is a rollback plan; the window is agreed.
 
@@ -343,7 +352,7 @@ Restarting the process is a last resort. Most failures should be resolved **with
 - [ ] There is no unexpected growth of the DLQ.
 - [ ] The heap/GC/disk metrics are normal.
 
-#### 3.1.4.10 Common problems after a restart
+#### Common problems after a restart
 
 | Symptom | Probable cause | Solution |
 |---|---|---|
@@ -351,11 +360,11 @@ Restarting the process is a last resort. Most failures should be resolved **with
 | A node does not join the cluster | Different `nifi.sensitive.props.key`; DNS/TLS (SAN, 2.12+); ZooKeeper is unavailable | Check the key, certificates, `nifi.cluster.*`; the `nifi-app.log` logs |
 | A Controller Service does not enable | The database/Kafka is unavailable; wrong parameters | Check the dependency; Disable → Enable |
 | A processor is `invalid` after a restart | An external check (for example, a Kafka topic) does not pass | Check availability and permissions; Verify in the UI |
-| A slow start | Large queues/repositories | See 3.1.4.7 |
+| A slow start | Large queues/repositories | See [what slows down a restart](#what-slows-down-a-restart-and-how-to-reduce-it) |
 | Duplicates at the destination after a restart | At-least-once: interrupted operations are repeated | Destination idempotency |
 | Repeated listing of files/tables | The state was lost/cleared | Restore `state/local` or accept a reload |
 | A burst of Kafka rebalances | A restart of the consumers | A staggered restart (one node at a time), the required version ≥ 2.8.0 |
-| A 2.x node does not start after a rollback from 2.14 | The new local state format | Restore `state/local` from the backup (Block 2.4) |
+| A 2.x node does not start after a rollback from 2.14 | The new local state format | Restore `state/local` from the backup ([Block 2.4](day-2.md#block-24-migration-from-nifi-1x-to-2x)) |
 
 #### Mini-lab 3.1.4: a training restart under load
 
@@ -364,10 +373,10 @@ Restarting the process is a last resort. Most failures should be resolved **with
 **Steps.**
 
 1. Run the pipeline from Lab 7 or Block 3.5 with load.
-2. **A planned restart:** follow runbook 3.1.4.3 (stop the sources → drain → stop → start → sinks → sources). Measure the stop/start time.
+2. **A planned restart:** follow the runbook from [the order of stopping and starting](#the-order-of-stopping-and-starting-from-sources-to-sinks-and-back) (stop the sources → drain → stop → start → sinks → sources). Measure the stop/start time.
 3. **An emergency restart:** send `kill -9` to the NiFi JVM process (**in a lab only**). Observe: the supervisor brings NiFi back up, and with `autoResumeState=true` the flow starts by itself.
 4. Compare the number of records at the input and at the destination; count the duplicates (the event key).
-5. Repeat with `autoResumeState=false` and start the flow with the script from 3.1.4.4.
+5. Repeat with `autoResumeState=false` and start the flow with the script from [automation via the REST API](#automation-the-rest-api-and-scripts-instead-of-manual-clicks).
 6. Formulate conclusions: how many duplicates are acceptable; how long the recovery took; what to automate.
 
 **Verification.** There is no data loss; duplicates were detected and handled by the destination (UPSERT/a key); after the restart there are no invalid components; the recovery time is recorded.
@@ -517,16 +526,21 @@ The strength of the push approach: monitoring data is ordinary **records**, whic
 
 ##### Architecture
 
-```text
- A NiFi node (the monitoring source)                                    A NiFi node/cluster (the monitoring receiver)
-┌──────────────────────────────────────┐   S2S (RAW|HTTP, TLS, compress)  ┌─────────────────────────────────────────────┐
-│ Reporting Tasks (run on a schedule)  │ ───────────────────────────────► │ Input Port "monitoring-in" (root group)     │
-│  • SiteToSiteStatusReportingTask      │  JSON/Avro records (Record Writer)│   │                                         │
-│  • SiteToSiteBulletinReportingTask    │                                   │   ▼                                         │
-│  • SiteToSiteMetricsReportingTask     │                                   │ A monitoring-processing flow:               │
-└──────────────────────────────────────┘                                   │  RouteOnAttribute / QueryRecord ─► alerts   │
-                                                                           │  ─► PutSplunk / PublishKafka / PutDatabase… │
-                                                                           └─────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+  subgraph SRC["A NiFi node (the monitoring source)"]
+    RT["Reporting Tasks (run on a schedule)<br/>• SiteToSiteStatusReportingTask<br/>• SiteToSiteBulletinReportingTask<br/>• SiteToSiteMetricsReportingTask"]
+  end
+  subgraph RCV["A NiFi node/cluster (the monitoring receiver)"]
+    IP["Input Port #quot;monitoring-in#quot; (root group)"]
+    FL["A monitoring-processing flow:<br/>RouteOnAttribute / QueryRecord"]
+    AL["alerts"]
+    ST["PutSplunk / PublishKafka / PutDatabase…"]
+    IP --> FL
+    FL --> AL
+    FL --> ST
+  end
+  RT -- "S2S (RAW#124;HTTP, TLS, compress)<br/>JSON/Avro records (Record Writer)" --> IP
 ```
 
 Options for placing the receiver:
@@ -634,24 +648,21 @@ In the `Record Format` the schema contains fields such as: `appid`, `instanceid`
 1. **An Input Port in the root Process Group** of the receiver (S2S accepts only ports of the root group): the name matches the *Input Port Name* in the task (for example, `monitoring-in`). The port must be **started**.
 2. **The S2S configuration in the receiver's `nifi.properties`** (the names are confirmed by an example of a real 2.x configuration and the port documentation): `nifi.remote.input.host`, `nifi.remote.input.secure=true`, `nifi.remote.input.socket.port` (for RAW), `nifi.remote.input.http.enabled=true` (for HTTP). The RAW port must be reachable over the network.
 3. **Access permissions (in secure mode):** the identities of the sending nodes (the certificate DNs) must have the global policy **retrieve site-to-site details** and the policy **receive data via site-to-site** on the Input Port. Without them the task will get an authorization denial (a bulletin on the task).
-4. **TLS:** the sender uses an *SSL Context Service* with a certificate that the receiver trusts; the receiver — with a certificate that the sender trusts. For a receiving cluster, the node addresses must match the certificates' SANs (Block 1.4).
+4. **TLS:** the sender uses an *SSL Context Service* with a certificate that the receiver trusts; the receiver — with a certificate that the sender trusts. For a receiving cluster, the node addresses must match the certificates' SANs ([Block 1.4](day-1.md#block-14-installation-cluster-configuration-and-setup)).
 5. In 2.x: `StandardRestrictedSSLContextService` in such tasks sets protocol restrictions; a note — since 2.7.0 it is **[dep]** in favor of the base `SSLContextService` (see [Migration Guidance 2.7.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)); check which type the UI of your version offers.
 
 ##### Step-by-step configuration (using Status + Bulletin → Splunk as an example)
 
 **1) The receiver (the monitoring NiFi).**
 
-```text
-Input Port "monitoring-in"  (root group, Running)
-   │
-   ▼
-UpdateAttribute:  schema/the flow type  (optional; they can be distinguished by record fields)
-   │
-   ▼
-PartitionRecord ── by the field componentType/bulletinLevel (optional)
-   │
-   ├─► QueryRecord "alerts"  : a filter for critical records ─► the alert chain
-   └─► MergeRecord (NDJSON) ─► PutSplunk / InvokeHTTP→HEC  (long-term storage/trends)
+```mermaid
+flowchart TD
+  IP["Input Port #quot;monitoring-in#quot;<br/>(root group, Running)"] --> UA["UpdateAttribute:<br/>schema/the flow type<br/>(optional; they can be distinguished by record fields)"]
+  UA --> PR["PartitionRecord<br/>by the field componentType/bulletinLevel (optional)"]
+  PR --> Q["QueryRecord #quot;alerts#quot;:<br/>a filter for critical records"]
+  Q --> AC["the alert chain"]
+  PR --> M["MergeRecord (NDJSON)"]
+  M --> DST["PutSplunk / InvokeHTTP→HEC<br/>(long-term storage/trends)"]
 ```
 
 **2) The sender (the production NiFi): Global menu → Controller Settings → Reporting Tasks → "+".**
@@ -698,9 +709,9 @@ FROM FLOWFILE
 WHERE jvmheap_usage > 0.85
 ```
 
-(SQL needs a Reader with a schema matching the input data. For S2S records, the simplest is to use `JsonTreeReader` with **Schema Access Strategy = Infer Schema** on the lab stand and an **explicit schema** in production — per Block 1.3.)
+(SQL needs a Reader with a schema matching the input data. For S2S records, the simplest is to use `JsonTreeReader` with **Schema Access Strategy = Infer Schema** on the lab stand and an **explicit schema** in production — per [Block 1.3](day-1.md#block-13-record-based-processing).)
 
-**4) Suppressing an "alert storm".** The same failure will arrive in every batch. Filter the repeats: `PartitionRecord` by a key (for example, `bulletinSourceId`) → `DetectDuplicate` (Cache Entry Identifier = `${bulletinSourceId}`; *Age Off Duration* `15 min`) → only `non-duplicate` leads to a notification. For a cluster receiver, use a distributed cache service (in 2.x the services are called `MapCacheServer`/`MapCacheClientService`, see Block 2.4).
+**4) Suppressing an "alert storm".** The same failure will arrive in every batch. Filter the repeats: `PartitionRecord` by a key (for example, `bulletinSourceId`) → `DetectDuplicate` (Cache Entry Identifier = `${bulletinSourceId}`; *Age Off Duration* `15 min`) → only `non-duplicate` leads to a notification. For a cluster receiver, use a distributed cache service (in 2.x the services are called `MapCacheServer`/`MapCacheClientService`, see [Block 2.4](day-2.md#block-24-migration-from-nifi-1x-to-2x)).
 
 **5) Delivering alerts.** `PutEmail`, `InvokeHTTP` to Slack/Teams/PagerDuty/Opsgenie, `PublishKafka` to an `alerts` topic, `PutSplunk`/HEC. Always add context: `platform`, `actorHostname`/`bulletinNodeAddress`, the group name, a link to the component (`Instance URL` + `?processGroupId=...&componentIds=...`).
 
@@ -902,7 +913,7 @@ In newer builds (according to Cloudera, based on Apache NiFi 2.x) the set is wid
 
 #### Registry Clients
 
-**Purpose.** NiFi's connections to **flow version stores** — the basis of Process Group versioning (Block 1.4.6). Through a client you perform *Version → Start version control / Commit / Change version*.
+**Purpose.** NiFi's connections to **flow version stores** — the basis of Process Group versioning ([Block 1.4.6](day-1.md#146-flow-versioning-and-change-management)). Through a client you perform *Version → Start version control / Commit / Change version*.
 
 | Client | Store | Status |
 |---|---|---|
@@ -1198,7 +1209,7 @@ Pros: very high IOPS/throughput of the shared pool, simplicity, fast Lucene merg
 
 **Design.**
 
-1. **The Record approach** instead of Split (Block 1.3) — the biggest improvement for CPU/heap/repositories.
+1. **The Record approach** instead of Split ([Block 1.3](day-1.md#block-13-record-based-processing)) — the biggest improvement for CPU/heap/repositories.
 2. **Fewer steps that rewrite content:** combine transformations (one `QueryRecord`/`JoltTransformRecord` instead of a chain `ReplaceText`→`ReplaceText`).
 3. **Avoid content in attributes** (`EvaluateJsonPath` of large objects, `ExtractText` of large values).
 4. **Large batches on output** (MergeRecord) for destinations that pay for each connection/request (databases, Splunk, HTTP).
@@ -1209,7 +1220,7 @@ Pros: very high IOPS/throughput of the shared pool, simplicity, fast Lucene merg
 
 **Prioritization and throughput control.**
 
-- **Prioritizers** on queues (Block 1.2): `NewestFlowFileFirst` to prioritize fresh data; `PriorityAttributePrioritizer` for traffic classes.
+- **Prioritizers** on queues ([Block 1.2](day-1.md#block-12-building-data-flows)): `NewestFlowFileFirst` to prioritize fresh data; `PriorityAttributePrioritizer` for traffic classes.
 - **ControlRate:** limiting the rate by the number of FlowFiles/size/an attribute value — protecting destinations.
 - **Back pressure** as the main regulator; plan the thresholds by capacity: a threshold by FlowFiles protects the heap, by size — the disk.
 - **Load balancing** is an equalizer, not a cure for all ills.
@@ -1229,7 +1240,7 @@ Pros: very high IOPS/throughput of the shared pool, simplicity, fast Lucene merg
 
 ### Lab 8: a performance test and pipeline tuning
 
-**Goal.** Measure the throughput of the pipeline from Lab 5, find the bottleneck, and improve the indicators.
+**Goal.** Measure the throughput of the pipeline from [Lab 5](day-2.md#lab-5-an-ndjson-transformation-pipeline), find the bottleneck, and improve the indicators.
 
 **Method (step by step).**
 
@@ -1247,7 +1258,7 @@ Pros: very high IOPS/throughput of the shared pool, simplicity, fast Lucene merg
 
 **On the stand (Appendix A).**
 
-- **The generator:** `GenerateRecord` (a log event schema with `user.pwd`, Number of Records `10000`, Run Schedule `1 sec`) before the Lab 5 pipeline — about 10,000 events/s; the load is increased through *Number of Records* and *Run Schedule*. While the generator remains the bottleneck, that is the baseline.
+- **The generator:** `GenerateRecord` (a log event schema with `user.pwd`, Number of Records `10000`, Run Schedule `1 sec`) before the [Lab 5](day-2.md#lab-5-an-ndjson-transformation-pipeline) pipeline — about 10,000 events/s; the load is increased through *Number of Records* and *Run Schedule*. While the generator remains the bottleneck, that is the baseline.
 - **The output counter:** `UpdateCounter` after `MergeRecord` with Delta `${record.count}` — events/s = the growth of the counter (☰ → Counters) over an interval.
 - **Scenario A** — a Reader with `Infer Schema`; **B** — switch the Record Reader of `ValidateRecord` to a `JsonTreeReader` with an explicit schema.
 - **Scenario D** — *Minimum/Maximum Number of Records* of `MergeRecord`.
@@ -1258,12 +1269,14 @@ Pros: very high IOPS/throughput of the shared pool, simplicity, fast Lucene merg
 
 **A results table template.**
 
-```markdown
 | Scenario | Change | events/s | CPU % | GC pause (p95) | I/O await (ms) | Conclusion |
 |---|---|---|---|---|---|---|
 | A | baseline | | | | | |
 | B | explicit schemas | | | | | |
-```
+| C | more Concurrent Tasks on the bottleneck | | | | | |
+| D | larger `MergeRecord` batches | | | | | |
+| E | Provenance on a separate volume / less indexing | | | | | |
+| F | larger heap and thread pool | | | | | |
 
 **Useful commands.**
 

@@ -110,8 +110,8 @@
       <h2 class="section-heading">Properties and relationships</h2>
       <table class="deployment-table">
         <tr><th>Property</th><th>Purpose</th></tr>
-        <tr><td><strong>Retry Attribute</strong></td><td>Name of the counter attribute (default <code>flowfile.retries</code> — verify); holds the current number of attempts</td></tr>
-        <tr><td><strong>Maximum Retries</strong></td><td>Retries allowed before <code>retries_exceeded</code> (default <code>3</code> — verify); supports Expression Language</td></tr>
+        <tr><td><strong>Retry Attribute</strong></td><td>Name of the counter attribute (default <code>flowfile.retries</code>); holds the current number of attempts</td></tr>
+        <tr><td><strong>Maximum Retries</strong></td><td>Retries allowed before <code>retries_exceeded</code> (default <code>3</code>); supports Expression Language</td></tr>
         <tr><td><strong>Penalize Retries</strong></td><td><code>true</code> → the FlowFile is penalized before going to <code>retry</code> (not on <code>retries_exceeded</code>)</td></tr>
         <tr><td><strong>Fail on Non-numerical Overwrite</strong></td><td>Counter is not a number: <code>false</code> → reset to <code>1</code>; <code>true</code> → route to <code>failure</code></td></tr>
         <tr><td>Dynamic properties</td><td>Attributes <strong>added on <code>retries_exceeded</code></strong> (EL supported), e.g. <code>error.stage = retries_exceeded</code></td></tr>
@@ -267,8 +267,8 @@
       <h2 class="section-heading">Shutdown and resume settings</h2>
       <table class="deployment-table">
         <tr><th>Parameter</th><th>File</th><th>Default</th><th>Meaning</th></tr>
-        <tr><td><code>nifi.flowcontroller.graceful.shutdown.period</code></td><td><code>nifi.properties</code></td><td><code>10 secs</code></td><td>How long to wait for components on stop; on newer builds also bounds the wait before forced stop during node <strong>offload</strong></td></tr>
-        <tr><td><code>graceful.shutdown.seconds</code></td><td><code>bootstrap.conf</code></td><td><code>20</code> in NiFi Registry docs (check your NiFi <code>bootstrap.conf</code>)</td><td>Seconds Bootstrap waits for a clean exit before forcing the process down; <code>bootstrap.conf</code> changes apply only after stop and start</td></tr>
+        <tr><td><code>nifi.flowcontroller.graceful.shutdown.period</code></td><td><code>nifi.properties</code></td><td><code>10 secs</code></td><td>How long to wait for components on stop; after 2.12.0 (NIFI-16290) it also bounds the wait before forced stop during node <strong>offload</strong></td></tr>
+        <tr><td><code>graceful.shutdown.seconds</code></td><td><code>bootstrap.conf</code></td><td><code>20</code></td><td>Seconds Bootstrap waits for a clean exit before forcing the process down; <code>bootstrap.conf</code> changes apply only after stop and start</td></tr>
         <tr><td><code>nifi.flowcontroller.autoResumeState</code></td><td><code>nifi.properties</code></td><td><code>true</code></td><td>Restore Running/Stopped and Enabled/Disabled state after restart; must match on all cluster nodes</td></tr>
       </table>
       <ul class="bullets">
@@ -487,7 +487,7 @@ TimeoutStopSec=180</code></pre>
             <li>2.x removed <strong>Bootstrap Notification Services</strong> — crash alerts and restarts are the job of an external supervisor and monitoring.</li>
             <li><code>TimeoutStopSec</code> &gt; graceful period + <code>graceful.shutdown.seconds</code>.</li>
             <li><code>TimeoutStartSec</code> large enough for repository recovery.</li>
-            <li>Verify <code>Type=forking</code> on your distro; alternative: <code>nifi.sh run</code> with <code>Type=simple</code>.</li>
+            <li><code>nifi.sh start</code> forks into the background → <code>Type=forking</code>; <code>nifi.sh run</code> stays in the foreground → <code>Type=simple</code>.</li>
           </ul>
         </div>
       </div>
@@ -502,7 +502,7 @@ TimeoutStopSec=180</code></pre>
         <li><strong>StatefulSet</strong> with stable identities and persistent volumes for the repositories.</li>
         <li><code>terminationGracePeriodSeconds</code> longer than a clean stop; <code>preStop</code> can run the soft-stop script.</li>
         <li><code>startupProbe</code> with a large <code>failureThreshold</code> — otherwise kubelet kills a pod that is still loading.</li>
-        <li><code>livenessProbe</code> not too aggressive (a GC pause must not restart the pod); <code>readinessProbe</code> on API readiness, often a TCP port check.</li>
+        <li><code>livenessProbe</code> not too aggressive (a GC pause must not restart the pod); <code>readinessProbe</code>: a TCP port check or <code>/nifi-api/authentication/configuration</code> — the only API endpoint that answers without a token (the rest return 401).</li>
         <li><strong>PodDisruptionBudget</strong> (at most one node down) and rolling updates one node at a time.</li>
         <li>2.x supports <strong>Kubernetes-based leader election</strong> without ZooKeeper.</li>
       </ul>
@@ -573,7 +573,7 @@ TimeoutStopSec=180</code></pre>
         <tr><td>Bad individual records</td><td>Routed to the DLQ; main flow not blocked</td><td>See 3.1.3</td></tr>
         <tr><td>Lost DB / Kafka connection</td><td>Service/client reconnects; processor retries <code>onTrigger</code></td><td>DBCP Validation Query; timeouts</td></tr>
         <tr><td>Processor hung on an external call</td><td>Connection / Read timeouts</td><td>Always set explicit timeouts</td></tr>
-        <tr><td>Controller Service failed to enable</td><td>Framework retries enabling (version-dependent)</td><td>Monitor service state + alert</td></tr>
+        <tr><td>Controller Service failed to enable</td><td>Service stays in <code>ENABLING</code>; the framework retries about every 30 s</td><td>Monitor service state + alert</td></tr>
       </table>
       <div class="hibox">Restarting the process is the last resort — most failures should be resolved <strong>inside the flow</strong>.</div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
@@ -1057,7 +1057,7 @@ PORT = 9099
         <tr><td><strong>Input Port Name</strong></td><td>Must match the receiver’s Input Port exactly</td></tr>
         <tr><td><strong>SSL Context Service</strong></td><td>TLS for sending — without it the connection is <strong>not protected</strong></td></tr>
         <tr><td><strong>Instance URL</strong></td><td>Goes into event links; default <code>http://${hostname(true)}:8080/nifi</code> — <strong>fix it for HTTPS (8443)</strong></td></tr>
-        <tr><td><strong>Transport Protocol</strong></td><td><code>RAW</code> (default) or <code>HTTP</code>; HTTP proxy host/port/user/password for HTTP</td></tr>
+        <tr><td><strong>Transport Protocol</strong></td><td><code>RAW</code> (default) or <code>HTTP</code>; a proxy for HTTP comes from <em>Proxy Configuration Service</em></td></tr>
         <tr><td><strong>Communications Timeout</strong></td><td><code>30 secs</code></td></tr>
       </table>
       <div class="slide-logo">Apache NiFi · Workshop</div>
@@ -1283,7 +1283,7 @@ PartitionRecord         <span class="cm"># optional: by componentType / bulletin
         <tr><td>Event links point to <code>:8080</code></td><td>Default <em>Instance URL</em></td><td>Set the real HTTPS URL</td></tr>
         <tr><td>Gaps in data</td><td>Task has no queue — data may be lost while the receiver is down</td><td>Not the only alert source; add Prometheus / external health checks</td></tr>
         <tr><td>Feedback loop</td><td>Monitoring flow reports on itself on the same NiFi</td><td>Separate monitoring NiFi or exclude the group by name filter</td></tr>
-        <tr><td>Duplicates from several nodes</td><td>Tasks run on every node</td><td>Split by <code>actorHostname</code> / <code>bulletinNodeAddress</code></td></tr>
+        <tr><td>Duplicates from several nodes</td><td>Tasks run on every node (no Primary Node option)</td><td>Split by <code>actorHostname</code> / <code>bulletinNodeAddress</code></td></tr>
         <tr><td>Secrets in messages</td><td>Bulletin text may contain data or tokenised URLs</td><td>Mask (<code>UpdateRecord</code> / <code>ReplaceText</code>) before sending out</td></tr>
       </table>
       <div class="slide-logo">Apache NiFi · Workshop</div>
@@ -1487,7 +1487,7 @@ PartitionRecord         <span class="cm"># optional: by componentType / bulletin
       </div>
       <ul class="bullets">
         <li>Global menu → <strong>NiFi Settings</strong> (<em>Controller Settings</em> in 1.x): components that belong to no Process Group but serve the whole instance or cluster.</li>
-        <li>Changes are replicated to all cluster nodes; access requires the global <strong>access the controller</strong> policy.</li>
+        <li>Changes are replicated to all cluster nodes and saved in <code>flow.json.gz</code>; access requires the global <strong>access the controller</strong> policy.</li>
       </ul>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
@@ -1540,7 +1540,7 @@ PartitionRecord         <span class="cm"># optional: by componentType / bulletin
         <tr><td><code>ControllerStatusReportingTask</code></td><td>Periodically logs a status summary of the controller and components</td></tr>
       </table>
       <ul class="bullets">
-        <li>Each task has a Scheduling Strategy (Timer driven / CRON), Run Schedule (default around 5 min), Running/Stopped state, and properties. Assume it runs <strong>on every node</strong>; problems show up as the task’s bulletins.</li>
+        <li>Each task has a Scheduling Strategy (Timer driven / CRON), Run Schedule (default around 5 min), Running/Stopped state, and properties. It runs <strong>on every node</strong> — reporting tasks have no Primary Node option; problems show up as the task’s bulletins.</li>
         <li><strong>Production minimum:</strong> <code>MonitorDiskUsage</code> for repository volumes, <code>MonitorMemory</code>, metrics export (Prometheus or S2S), bulletin delivery — tuned to avoid noise.</li>
       </ul>
       <div class="slide-logo">Apache NiFi · Workshop</div>
@@ -1568,13 +1568,14 @@ PartitionRecord         <span class="cm"># optional: by componentType / bulletin
       <div class="eyebrow">NiFi Settings · Flow Analysis Rules</div>
       <h2 class="section-heading">Built-in rules</h2>
       <table class="deployment-table">
-        <tr><th>Rule (Apache NiFi 2.6.0)</th><th>What it checks</th></tr>
+        <tr><th>Rule (Apache NiFi 2.12.0)</th><th>What it checks</th></tr>
         <tr><td><code>DisallowComponentType</code></td><td>Forbids a component type, e.g. <code>ExecuteScript</code> where scripts are not allowed</td></tr>
         <tr><td><code>RestrictBackpressureSettings</code></td><td>Limits back pressure values on connections</td></tr>
         <tr><td><code>RequireServerSSLContextService</code></td><td>Requires an SSL Context Service on server components</td></tr>
         <tr><td><code>RestrictFlowFileExpiration</code></td><td>Limits FlowFile Expiration values</td></tr>
+        <tr><td><code>RequireLoadBalancedConnectionAfterPrimaryNodeSourceProcessor</code></td><td>Requires load balancing on connections after Primary Node Only sources</td></tr>
       </table>
-      <div class="note">Newer vendor builds based on NiFi 2.x add more, e.g. <code>DisallowDeadEnd</code>, <code>RecommendRecordProcessor</code>, <code>RestrictComponentNaming</code>, <code>RestrictProcessorConcurrency</code>, <code>RestrictThreadPoolSize</code>, <code>RequireHandleHttpResponseAfterHandleHttpRequest</code>. Check which ones your Apache NiFi version offers in the “add rule” dialog.</div>
+      <div class="note">Newer vendor builds based on NiFi 2.x add more, e.g. <code>DisallowDeadEnd</code>, <code>RecommendRecordProcessor</code>, <code>RestrictComponentNaming</code>, <code>RestrictProcessorConcurrency</code>, <code>RestrictThreadPoolSize</code>, <code>RequireHandleHttpResponseAfterHandleHttpRequest</code>. These are not part of Apache NiFi 2.12.0.</div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
@@ -1803,7 +1804,7 @@ nifi.security.truststorePasswd=<span class="str">&lt;secret&gt;</span></code></p
         <li>The key is <strong>mandatory</strong> and <strong>identical on all cluster nodes</strong>; change it with <code>bin/nifi.sh set-sensitive-properties-key &lt;new key&gt;</code>.</li>
         <li><strong>Lost key</strong> = sensitive values cannot be decrypted and must be re-entered.</li>
         <li>Better: keep secrets out of the flow — <strong>Parameter Providers</strong> (HashiCorp Vault, AWS / GCP Secrets Manager, Kubernetes Secrets).</li>
-        <li>Removed in 2.0.0-M4: <code>encrypt-config</code> / application property protection — use secret stores, environment variables, and file permissions.</li>
+        <li>Removed in 2.0.0-M4: <code>encrypt-config</code> / application property protection — 2.12.0 has no built-in replacement: use environment variables (<code>NIFI_SENSITIVE_PROPS_KEY</code> in Docker), secret stores, and file permissions.</li>
       </ul>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
@@ -2361,7 +2362,7 @@ EOF</code></pre>
         <li>Site-to-Site Reporting Tasks: <a href="https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask" target="_blank" rel="noopener noreferrer">Status</a> · <a href="https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask" target="_blank" rel="noopener noreferrer">Metrics</a> · <a href="https://nifi.apache.org/docs/nifi-docs/html/toolkit-guide.html" target="_blank" rel="noopener noreferrer">Toolkit Guide</a> (NiFi CLI).</li>
         <li>NiFi Settings: <a href="https://community.cloudera.com/t5/Developer-Blogs/Flow-Analysis-Rules-enforcing-Best-Practices-in-Flow-Design/m-p/413017" target="_blank" rel="noopener noreferrer">Flow Analysis Rules</a> (NiFi developer post) · <a href="https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-supported-parameter-providers.html" target="_blank" rel="noopener noreferrer">Parameter Providers list</a> · <a href="https://docs.snowflake.com/en/user-guide/data-integration/openflow/processors/retryflowfile" target="_blank" rel="noopener noreferrer">RetryFlowFile</a> (component docs mirror).</li>
       </ul>
-      <div class="note">Still unverified in the notes: <code>RetryFlowFile</code> defaults, Reporting Tasks on Primary Node only, systemd / probe details, some removal versions. Sizing numbers are starting points — always check <strong>Help → Documentation</strong> in your NiFi version.</div>
+      <div class="note">Facts in the notes were checked against NiFi 2.12.0. Sizing numbers are starting points — always check <strong>Help → Documentation</strong> in your NiFi version.</div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 

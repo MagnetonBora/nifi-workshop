@@ -49,7 +49,7 @@
       <table class="deployment-table">
         <tr><th>Property</th><th>Purpose</th><th class="col-plus">Recommendation</th></tr>
         <tr><td>Database Connection URL</td><td><code>jdbc:postgresql://db:5432/orders</code></td><td class="col-plus">Use a parameter: <code>#{db.url}</code></td></tr>
-        <tr><td>Driver Class Name / Location(s)</td><td><code>org.postgresql.Driver</code>, path to the JAR</td><td class="col-plus">Keep drivers outside <code>lib/</code>, e.g. <code>/opt/nifi/drivers/</code></td></tr>
+        <tr><td>Driver Class Name / Locations</td><td><code>org.postgresql.Driver</code>, path to the JAR</td><td class="col-plus">Keep drivers outside <code>lib/</code>, e.g. <code>/opt/nifi/drivers/</code></td></tr>
         <tr><td>Database User / Password</td><td>Credentials</td><td class="col-plus">Password as a sensitive parameter</td></tr>
         <tr><td>Max Wait Time</td><td>Wait for a free connection</td><td class="col-plus">Shorter than query timeouts, so errors surface</td></tr>
         <tr><td>Max Total Connections</td><td>Pool size</td><td class="col-plus">≥ sum of Concurrent Tasks using the pool, ≤ DB limits</td></tr>
@@ -160,7 +160,7 @@
       </table>
       <ul class="bullets">
         <li><strong>Docker:</strong> mount a drivers volume (<code>./drivers:/opt/nifi/drivers</code>). <strong>Kubernetes:</strong> custom image, an <code>initContainer</code> that downloads the JAR, or a PersistentVolume — same path in every pod.</li>
-        <li><strong>NiFi 2.x assets:</strong> 2.0.0 added REST upload of assets and custom NARs; Parameter Context values can reference uploaded assets. Check whether your version accepts such a parameter in <em>Database Driver Location(s)</em>.</li>
+        <li><strong>NiFi 2.x assets:</strong> 2.0.0 added REST upload of assets and custom NARs; Parameter Context values can reference uploaded assets. In 2.12.0 such a parameter works in <em>Database Driver Locations</em>: the driver is loaded from the asset when the service is enabled.</li>
       </ul>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
@@ -174,7 +174,7 @@
         <tr><th>Property</th><th>Example</th><th>Comment</th></tr>
         <tr><td>Database Connection URL</td><td><code>#{db.url}</code></td><td>Environment parameter; never put the password in the URL</td></tr>
         <tr><td>Database Driver Class Name</td><td><code>org.postgresql.Driver</code></td><td>From the driver docs</td></tr>
-        <tr><td><strong>Database Driver Location(s)</strong></td><td><code>/opt/nifi/drivers/postgresql</code></td><td>JAR, directory or URL; comma-separated</td></tr>
+        <tr><td><strong>Database Driver Locations</strong></td><td class="nowrap-code"><code>/opt/nifi/drivers/postgresql</code></td><td>JAR, directory or URL; comma-separated</td></tr>
         <tr><td>Database User / Password</td><td><code>#{db.user}</code> / <code>#{db.password}</code></td><td>Least privilege; password as a <strong>sensitive parameter</strong></td></tr>
         <tr><td>Max Wait Time · Max Total Connections</td><td><code>10 sec</code> · <code>16</code><br>(defaults <code>500 millis</code> · <code>8</code>)</td><td>The tiny default wait causes <em>“timeout waiting for idle object”</em> under load. Connections multiply by the number of <strong>cluster nodes</strong>!</td></tr>
         <tr><td>Validation Query</td><td><code>SELECT 1</code> (Oracle: <code>… FROM DUAL</code>)</td><td>Liveness check when a connection is borrowed</td></tr>
@@ -997,7 +997,7 @@ EOF</code></pre>
       <table>
         <tr><th>Property</th><th>Purpose</th></tr>
         <tr><td><strong>Record Reader / Record Writer</strong></td><td>Read input records (and their schema); write the result</td></tr>
-        <tr><td><strong>Jolt Transformation DSL</strong></td><td><code>Chain</code> (default), <code>Shift</code>, <code>Default</code>, <code>Remove</code>, <code>Cardinality</code>, <code>Sort</code>, <code>Modify - Default / Define / Overwrite</code>, <code>Custom</code></td></tr>
+        <tr><td><strong>Jolt Transform</strong></td><td><code>Chain</code> (default), <code>Shift</code>, <code>Default</code>, <code>Remove</code>, <code>Cardinality</code>, <code>Sort</code>, <code>Modify - Default / Define / Overwrite</code>, <code>Custom</code></td></tr>
         <tr><td><strong>Jolt Specification</strong></td><td>Spec text <strong>or a file path</strong>; supports EL on FlowFile attributes; ignored for <code>Sort</code></td></tr>
         <tr><td>Custom Transformation Class Name / Module Directory</td><td>Only for <code>Custom</code></td></tr>
         <tr><td><strong>Transform Cache Size</strong> (default <code>1</code>)</td><td>Compiled transforms kept in memory — raise it if the spec uses EL</td></tr>
@@ -1323,7 +1323,7 @@ EOF</code></pre>
       <div class="section-number">S66</div>
       <div class="eyebrow">Transformation</div>
       <h2 class="section-heading">Insert a new key/value pair: <code>ingest_ts</code></h2>
-      <div class="note"><code>UpdateRecord</code> does <strong>not create</strong> a field that is absent from the Writer schema.</div>
+      <div class="note">With an <strong>explicit</strong> Writer schema, <code>UpdateRecord</code> does <strong>not create</strong> a field that is absent from it (with an inherited schema the field is added).</div>
       <div class="split2">
         <div class="split-left">
           <h3>Way 1 — Jolt <code>default</code></h3>
@@ -1561,7 +1561,7 @@ EOF</code></pre>
         <div class="split-right">
           <h3>Cost</h3>
           <ul class="bullets">
-            <li>Each query is a <strong>separate pass</strong> and output (verify on your version) — split heavy queries.</li>
+            <li>Each query is a <strong>separate pass</strong> and output (4 queries read the FlowFile 4 times, measured on 2.12.0) — split heavy queries.</li>
             <li>Simple <code>SELECT … WHERE</code> streams; <code>ORDER BY</code>, <code>GROUP BY</code>, <code>JOIN</code>, window functions <strong>buffer in memory</strong> — bound FlowFile size first.</li>
             <li>Result schemas are cached — uniform queries are faster.</li>
             <li><code>Include Zero Record FlowFiles=false</code> and explicit columns instead of <code>SELECT *</code>.</li>
@@ -1640,10 +1640,10 @@ EOF</code></pre>
       <div class="section-number">S81</div>
       <div class="eyebrow">Reference · UpdateRecord</div>
       <h2 class="section-heading">UpdateRecord: limitation and typical mistakes</h2>
-      <div class="hibox hibox-red"><strong>UpdateRecord updates fields that exist in the record / Writer schema.</strong> For a new field add it to the Writer schema (Block 2.2.4) or use Jolt <code>default</code> / <code>QueryRecord</code>. Check missing-field behavior on your data.</div>
+      <div class="hibox hibox-red"><strong>A new field depends on the Writer schema.</strong> With <em>Inherit Record Schema</em> (default) <code>UpdateRecord</code> adds it, nested ones too, at the end of the record. With an explicit Writer schema the field is dropped — add it to the schema (Block 2.2.4) or use Jolt <code>default</code> / <code>QueryRecord</code>.</div>
       <ul class="bullets">
         <li>Path matches several fields and Record Path Value returns several values → <code>failure</code>.</li>
-        <li>Expected a new field, but the Writer schema lacks it → the field never appears.</li>
+        <li>Expected a new field, but the explicit Writer schema lacks it → the field never appears.</li>
         <li>EL in a literal is evaluated <strong>once per FlowFile</strong> — for per-record values use RecordPath functions.</li>
         <li>Date format confusion after the move to <code>java.time</code> (Block 2.4).</li>
       </ul>
@@ -2124,11 +2124,11 @@ EOF</code></pre>
       <div class="section-number">S107</div>
       <div class="eyebrow">Removed components · by area</div>
       <h2 class="section-heading">JSON, Avro and format conversion</h2>
-      <div class="subtitle">Source column: <strong>Apache</strong> = official Release Notes / migration page; <strong>Vendor</strong> = distribution vendor docs (Cloudera) — verify against <em>Deprecated Components and Features</em> and your <code>nifi-deprecation.log</code>.</div>
+      <div class="subtitle">Source column: <strong>Apache</strong> = official Release Notes / migration page; <strong>Vendor</strong> = distribution vendor docs (Cloudera); the Status column was checked against NiFi 2.12.0.</div>
       <table class="deployment-table">
         <tr><th>1.x component</th><th>Status in 2.x</th><th>Replace with</th><th>Source</th></tr>
         <tr><td><code>ConvertAvroToJSON</code></td><td><strong>Removed</strong> 2.0.0-M3</td><td><code>ConvertRecord</code> (<code>AvroReader</code> → <code>JsonRecordSetWriter</code>)</td><td>Apache (removal); replacement — vendor</td></tr>
-        <tr><td><code>ConvertJSONToAvro</code>, <code>ConvertCSVToAvro</code>, <code>ConvertAvroSchema</code>, <code>InferAvroSchema</code>, <code>ConvertAvroToORC</code></td><td>Legacy record-less converters; Cloudera list: “removed between NiFi 1.26 and 2.0” (and in its 1.25 line)</td><td><code>ConvertRecord</code> with Reader/Writer; <code>InferAvroSchema</code> → <code>ExtractRecordSchema</code>; <code>ConvertAvroToORC</code> — no replacement</td><td>Vendor — verify the Apache version</td></tr>
+        <tr><td><code>ConvertJSONToAvro</code>, <code>ConvertCSVToAvro</code>, <code>ConvertAvroSchema</code>, <code>InferAvroSchema</code>, <code>ConvertAvroToORC</code></td><td>Legacy record-less converters; Cloudera list: “removed between NiFi 1.26 and 2.0” (and in its 1.25 line)</td><td><code>ConvertRecord</code> with Reader/Writer; <code>InferAvroSchema</code> → <code>ExtractRecordSchema</code>; <code>ConvertAvroToORC</code> — no replacement</td><td>Vendor; absent in 2.12.0</td></tr>
       </table>
       <div class="hibox"><strong>Still there:</strong> <code>EvaluateJsonPath</code>, <code>SplitJson</code>, <code>JoltTransformJSON</code>/<code>Record</code>, <code>JsonTreeReader</code>/<code>JsonPathReader</code>, <code>JsonRecordSetWriter</code>, <code>QueryRecord</code>, <code>ValidateRecord</code>.</div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
@@ -2205,8 +2205,9 @@ EOF</code></pre>
         <tr><td><code>Base64EncodeContent</code> · <code>HashContent</code></td><td><code>EncodeContent</code> · <code>CryptographicHashContent</code></td></tr>
         <tr><td><code>HashAttribute</code></td><td><code>UpdateAttribute</code> with the EL <code>hash</code> function</td></tr>
         <tr><td><code>GetJMSQueue</code>/<code>GetJMSTopic</code> · <code>PutJMS</code></td><td><code>ConsumeJMS</code> · <code>PublishJMS</code></td></tr>
-        <tr><td><code>GetTwitter</code></td><td><code>ConsumeTwitter</code></td></tr>
-        <tr><td><em>Vendor:</em> <code>PutAzureBlobStorage</code> · <code>PutBigQueryBatch/Streaming</code> · <code>HBase_1_1_2_*</code></td><td><code>PutAzureBlobStorage_v12</code> · <code>PutBigQuery</code> · <code>HBase_2_*</code></td></tr>
+        <tr><td><code>GetTwitter</code></td><td><code>ConsumeTwitter</code> (not included in 2.12.0)</td></tr>
+        <tr><td><em>Vendor:</em> <code>PutAzureBlobStorage</code> · <code>PutBigQueryBatch/Streaming</code></td><td><code>PutAzureBlobStorage_v12</code> · <code>PutBigQuery</code></td></tr>
+        <tr><td><code>HBase_1_1_2_*</code></td><td>No HBase components in 2.12.0</td></tr>
         <tr><td><em>Vendor:</em> <code>HortonworksSchemaRegistry</code></td><td>No direct Apache equivalent</td></tr>
       </table>
       <div class="hibox"><strong>Find them:</strong> run the latest 1.x and read <code>logs/nifi-deprecation.log</code> (since 1.18.0), or inventory types from <code>flow.json.gz</code> (command in 2.4.5) and compare with these tables.</div>
@@ -2242,7 +2243,7 @@ EOF</code></pre>
         <tr><td>Topic Name(s) · Offset Reset</td><td>Topics · Auto Offset Reset</td></tr>
         <tr><td>Group ID</td><td>Group ID — <strong>keep the same one!</strong></td></tr>
       </table>
-      <div class="note">Semantic mapping — verify exact property names for your version.</div>
+      <div class="note">Semantic mapping: the replacements have different property names.</div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 

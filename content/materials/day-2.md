@@ -23,7 +23,7 @@ The database connection is encapsulated in the Controller Service `DBCPConnectio
 |---|---|---|
 | Database Connection URL | The JDBC URL, for example `jdbc:postgresql://db:5432/orders` | Via a parameter: `#{db.url}` |
 | Database Driver Class Name | For example `org.postgresql.Driver` | |
-| Database Driver Location(s) | The path to the driver JAR (a file/directory/URL) | The driver is placed outside `lib/`, for example `/opt/nifi/drivers/` |
+| Database Driver Locations | The path to the driver JAR (a file/directory/URL) | The driver is placed outside `lib/`, for example `/opt/nifi/drivers/` |
 | Database User / Password | Credentials | The password is a sensitive parameter |
 | Max Wait Time | How long to wait for a free connection | Shorter than the query timeout so that errors are noticeable |
 | Max Total Connections | The pool size | ≥ the total Concurrent Tasks of the processors that use the pool (with a margin), but ≤ the database limits |
@@ -37,7 +37,7 @@ Notes on security and compatibility:
 
 #### The JDBC driver: where to get it, where to put it, how to connect it
 
-NiFi connects to a database through the standard JDBC interface, but **you have to add the driver for the specific DBMS separately**: the JDBC drivers of external DBMSs are not included in the standard distribution (**[verify]** for your distribution/image). A processor does not work with the driver directly: the driver is attached to the Controller Service `DBCPConnectionPool`, and the processors reference that service.
+NiFi connects to a database through the standard JDBC interface, but **you have to add the driver for the specific DBMS separately**: the JDBC drivers of external DBMSs are not included in the standard distribution (in 2.12.0 neither the distribution nor the `apache/nifi` image contains drivers for PostgreSQL, MySQL, SQL Server, Oracle, ClickHouse, or H2). A processor does not work with the driver directly: the driver is attached to the Controller Service `DBCPConnectionPool`, and the processors reference that service.
 
 ```mermaid
 flowchart LR
@@ -53,7 +53,7 @@ flowchart LR
     P1 -- "borrows a connection" --> POOL
     P2 -- "borrows a connection" --> POOL
     P3 -- "borrows a connection" --> POOL
-    JAR -. "Database Driver Location(s):<br/>driver loaded at service start" .-> POOL
+    JAR -. "Database Driver Locations:<br/>driver loaded at service start" .-> POOL
   end
   POOL == "JDBC connections" ==> DB[("Database<br/>PostgreSQL / MySQL / Oracle …")]
 ```
@@ -71,7 +71,7 @@ Download the driver only from an **official source**: the DBMS vendor's site or 
 | Oracle | `com.oracle.database.jdbc:ojdbc11` (the line for modern JDKs; choose according to the Oracle compatibility matrix) | `oracle.jdbc.OracleDriver` | `jdbc:oracle:thin:@//host:1521/SERVICE_NAME` |
 | ClickHouse | `com.clickhouse:clickhouse-jdbc` | `com.clickhouse.jdbc.ClickHouseDriver` | `jdbc:clickhouse://host:8123/dbname` |
 
-**Be sure to check** the driver class and the URL format against the documentation of the chosen driver version (**[verify]**): they sometimes change between major versions. Some drivers need additional JARs (for example, Oracle — auxiliary libraries for internationalization/pools; SQL Server with Windows integrated authentication — native components) — read the vendor's instructions.
+**Be sure to check** the driver class and the URL format against the documentation of the chosen driver version: they sometimes change between major versions. Some drivers need additional JARs (for example, Oracle — auxiliary libraries for internationalization/pools; SQL Server with Windows integrated authentication — native components) — read the vendor's instructions.
 
 ##### Step 2. Put the driver on the NiFi nodes
 
@@ -81,7 +81,7 @@ Why not in `lib/`:
 
 - `lib/` is the NiFi framework directory; adding third-party JARs there can lead to **classpath conflicts** with NiFi libraries.
 - Files in `lib/` are lost or require a manual transfer when the NiFi version is upgraded.
-- A driver attached through a service is loaded by a **separate class loader** of that service, so different pools can use **different driver versions** at the same time (**[verify]** for your version).
+- A driver attached through a service is loaded by a **separate class loader** of that service, so different pools can use **different driver versions** at the same time (in 2.12.0 the service is annotated with `@RequiresInstanceClassLoading`, and *Database Driver Locations* modifies its classpath).
 
 Placement requirements:
 
@@ -106,7 +106,7 @@ sudo chmod 640 /opt/nifi/drivers/postgresql/*.jar
 
 **Containers and Kubernetes.** In Docker — a volume with the drivers (see Appendix A); in Kubernetes — either your own image with the driver, or an `initContainer` that downloads the JAR into a shared volume, or a PersistentVolume. The main thing is that the path is the same in all pods.
 
-**Loading through NiFi (2.x).** In 2.0.0, REST services for uploading *assets* and custom NARs were added ([Release Notes 2.0.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); in NiFi 2.x, Parameter Context parameters can reference uploaded files (assets), which makes it possible not to lay out drivers manually across nodes. Check in the documentation of your version whether and how such a parameter can be specified in *Database Driver Location(s)* (**[verify]**).
+**Loading through NiFi (2.x).** In 2.0.0, REST services for uploading *assets* and custom NARs were added ([Release Notes 2.0.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); in NiFi 2.x, Parameter Context parameters can reference uploaded files (assets), which makes it possible not to lay out drivers manually across nodes. In 2.12.0 this works: a parameter that references an uploaded JAR asset can be used in *Database Driver Locations* (for example, `#{jdbc.driver}`), and the service loads the driver from the asset when it is enabled.
 
 ##### Step 3. Create and configure `DBCPConnectionPool`
 
@@ -117,7 +117,7 @@ sudo chmod 640 /opt/nifi/drivers/postgresql/*.jar
 |---|---|---|
 | Database Connection URL | `#{db.url}` → `jdbc:postgresql://pg:5432/orders` | Via an environment parameter. Do not put the password in the URL |
 | Database Driver Class Name | `org.postgresql.Driver` | From the driver documentation |
-| **Database Driver Location(s)** | `/opt/nifi/drivers/postgresql` | A path to a JAR, a directory, or a URL; several values are separated by commas |
+| **Database Driver Locations** | `/opt/nifi/drivers/postgresql` | A path to a JAR, a directory, or a URL; several values are separated by commas |
 | Database User | `#{db.user}` | An account with the minimum necessary permissions |
 | Password | `#{db.password}` | A **sensitive parameter**, not plain text |
 | Max Wait Time | `10 sec` (`500 millis` by default) | How long the processor waits for a free connection; the default value is very small — under load it leads to "timeout waiting for idle object" errors |
@@ -145,7 +145,7 @@ An example of a minimal read test: `GenerateFlowFile` (run once) → `ExecuteSQL
 
 | Symptom | Probable cause | What to do |
 |---|---|---|
-| The service is *Invalid*: path not found / `Database Driver Location(s)` | A wrong path; no permissions; the JAR is only on some of the nodes | Check the path on **every** node, the owner, and the permissions |
+| The service is *Invalid*: path not found / `Database Driver Locations` | A wrong path; no permissions; the JAR is only on some of the nodes | Check the path on **every** node, the owner, and the permissions |
 | `Cannot load JDBC driver class '...'` | A typo in the class name; the JAR does not contain the class; the driver's required dependencies are missing | Check the class against the driver documentation; add the missing JARs |
 | `No suitable driver` | The URL prefix does not match the driver | Check the URL (`jdbc:postgresql://`, `jdbc:mysql://`, etc.) |
 | `UnsupportedClassVersionError` | The driver was built for a newer Java than the one running | Choose a driver version that matches the NiFi Java |
@@ -189,7 +189,7 @@ flowchart TD
 | Required properties | The URL, the driver class, the user, etc. | None (only dynamic key properties) |
 | Pool size | Its own (`Max Total Connections`) | None: the sizes are set in each target pool; the total number of connections = the sum over the pools |
 | Requirements for the flow | None | Every FlowFile must have the `database.name` attribute before the processor (set by `UpdateAttribute`, `EvaluateJsonPath`, `PartitionRecord`, etc.) |
-| Restrictions on processors | Any processor with a DBCP property | Only processors that **have an incoming FlowFile** (`database.name` is taken from its attributes). Sources without input (for example, `QueryDatabaseTableRecord`) and processors that do not pass attributes (for example, `ListDatabaseTables`) cannot use Lookup (**[verify]** for each processor) |
+| Restrictions on processors | Any processor with a DBCP property | Only processors that **have an incoming FlowFile** (`database.name` is taken from its attributes). Sources without input (for example, `QueryDatabaseTableRecord`) and processors that do not pass attributes (for example, `ListDatabaseTables`) cannot use Lookup (the service requires the `database.name` attribute and throws an exception without it) |
 | Failure | The database is unavailable → connection errors | Additionally: no attribute or an unknown key → an exception |
 | Simplicity | Maximum | More complex: more services, dependencies, naming rules |
 
@@ -261,7 +261,7 @@ Both services are real pools; this is exactly what distinguishes them from `DBCP
 | Fetch Size | The size of the batch the driver fetches at a time (the driver default may be "everything into memory") |
 | Query timeout | An execution limit |
 
-**Important about memory.** Some JDBC drivers (PostgreSQL) without an explicit cursor mode load the entire result into client memory; for `Fetch Size` to work, specific connection settings are needed (for PostgreSQL — a mode without autocommit; the exact conditions are in the pgjdbc documentation section on getting results with a cursor; **[verify]** for your driver/version). Always limit result sets by time/key.
+**Important about memory.** Some JDBC drivers (PostgreSQL) without an explicit cursor mode load the entire result into client memory; for `Fetch Size` to work, specific connection settings are needed (for PostgreSQL — a mode without autocommit; the exact conditions are in the pgjdbc documentation section on getting results with a cursor). Always limit result sets by time/key.
 
 **Parameters in SQL.** Substituting values into an SQL string through EL is vulnerable to SQL injection if the value comes from external data. For safe queries, use the parameterized path (the `sql.args.N.type/value` attributes of the `PutSQL` processors) or validate the values (`RouteOnAttribute`/`ValidateRecord`) before substitution.
 
@@ -367,7 +367,7 @@ flowchart TD
   C -- "No Retry / Failure" --> DLQ2["DLQ<br/>(PutFile / PublishKafka dead-letter topic)"]
 ```
 
-If a separate request is needed for every record, these are *per-record* calls; so as not to turn a batch into millions of requests, first group by key (`PartitionRecord`), cache (`LookupRecord` with a caching lookup service, for example `RestLookupService`), or enrich with a batch request. For an HTTP lookup in a Record flow, `LookupRecord` + `RestLookupService` is often better than `InvokeHTTP` per record (**[verify]** the specific service properties).
+If a separate request is needed for every record, these are *per-record* calls; so as not to turn a batch into millions of requests, first group by key (`PartitionRecord`), cache (`LookupRecord` with a caching lookup service, for example `RestLookupService`), or enrich with a batch request. For an HTTP lookup in a Record flow, `LookupRecord` + `RestLookupService` is often better than `InvokeHTTP` per record (in 2.12.0 the service has `URL`, `Record Reader`, `Record Path`, `Response Handling Strategy`, authentication settings, `Connection Timeout` of 5 s and `Read Timeout` of 15 s).
 
 ### 2.1.3 Kafka: PublishKafka and ConsumeKafka (NiFi 2.x)
 
@@ -555,13 +555,13 @@ For streaming data (NDJSON, large batches of records), use **`JoltTransformRecor
 
 #### The properties of `JoltTransformRecord`
 
-Properties according to the component reference ([JoltTransformRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-jolt-record-nar/1.8.0/org.apache.nifi.processors.jolt.record.JoltTransformRecord/index.html), [2.0.0-M3](https://nifi.apache.org/documentation/nifi-2.0.0-M3/components/org.apache.nifi/nifi-jolt-nar/2.0.0-M3/org.apache.nifi.processors.jolt.JoltTransformRecord/index.html)); the displayed names may differ slightly in your version (**[verify]**):
+Properties according to the component reference ([JoltTransformRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-jolt-record-nar/1.8.0/org.apache.nifi.processors.jolt.record.JoltTransformRecord/index.html), [2.0.0-M3](https://nifi.apache.org/documentation/nifi-2.0.0-M3/components/org.apache.nifi/nifi-jolt-nar/2.0.0-M3/org.apache.nifi.processors.jolt.JoltTransformRecord/index.html)); the names below match 2.12.0:
 
 | Property | Purpose |
 |---|---|
 | **Record Reader** | Reads the input records and determines their schema |
 | **Record Writer** | Writes the result |
-| **Jolt Transformation DSL** (`Jolt Transform`) | Which operation is applied: `Chain` (the default), `Shift`, `Default`, `Remove`, `Cardinality`, `Sort`, `Modify - Default`, `Modify - Define`, `Modify - Overwrite`, `Custom` |
+| **Jolt Transform** | Which operation is applied: `Chain` (the default), `Shift`, `Default`, `Remove`, `Cardinality`, `Sort`, `Modify - Default`, `Modify - Define`, `Modify - Overwrite`, `Custom` |
 | **Jolt Specification** | The text of the specification **or a path to a file** with the specification. Supports Expression Language over FlowFile attributes. Ignored for `Sort` |
 | Custom Transformation Class Name / Custom Module Directory | Only for `Custom`: the class and the directories with the JARs |
 | **Transform Cache Size** (`1` by default) | How many compiled transformations to keep in memory. Compilation is expensive; if the specification uses Expression Language, different FlowFiles need different transformations — the cache can be increased |
@@ -969,7 +969,7 @@ SELECT svc, level, COUNT(*) AS cnt FROM FLOWFILE GROUP BY svc, level
 
 **Cost and performance.**
 
-- Each query is a **separate pass** over the records of the FlowFile and a separate write of the result. Four queries in one processor are four passes (**[verify]** on your version); if the queries are heavy, spread them across different processors or a chain.
+- Each query is a **separate pass** over the records of the FlowFile and a separate write of the result. Four queries in one processor are four passes (measured on 2.12.0: with four queries the processor reads four times the size of the FlowFile); if the queries are heavy, spread them across different processors or a chain.
 - Simple `SELECT … WHERE` queries work in a streaming fashion (record by record). **Sorting (`ORDER BY`), grouping (`GROUP BY`), `JOIN`, and window functions** accumulate data in memory — on very large FlowFiles this is an OutOfMemory risk; limit the size of the FlowFile (`SplitRecord`, `MergeRecord`) before QueryRecord.
 - The result schema is cached (the processor keeps a limited number of schemas and evicts old ones), so uniform queries are faster than heterogeneous ones.
 - `Include Zero Record FlowFiles=false` and explicit column lists instead of `SELECT *` reduce the amount of work.
@@ -1023,7 +1023,7 @@ Relationships: `success`, `failure` (the FlowFile could not be converted; the `r
 | Stamp the batch processing time | Literal Value | `/ingest_ts` → `${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UTC")}` (one value per FlowFile) |
 | Normalize a date format | Record Path Value | `/ts_norm` → `format(toDate(/ts, "yyyy-MM-dd'T'HH:mm:ssX"), "yyyy-MM-dd HH:mm:ss")` (check the `java.time` formats) |
 
-**An important limitation.** `UpdateRecord` updates fields **that are in the record/Writer schema**; for a new field, add it to the Writer schema (as in Block 2.2.4) or use Jolt `default`/`QueryRecord`. Check the behavior when the field is absent on your own data (**[verify]**).
+**An important limitation.** What happens to a new field depends on the Writer schema. If the Writer uses *Inherit Record Schema* (the default), `UpdateRecord` adds the field, including a nested one (`/user/role`), at the end of the record. If the Writer has an explicit schema without this field, the field is **dropped**: add it to the Writer schema (as in Block 2.2.4) or use Jolt `default`/`QueryRecord`.
 
 **Common mistakes.** The path points to several fields and Record Path Value returns several values → `failure`; a new field was expected but the Writer schema does not contain it → the field did not appear; EL in a literal is evaluated once per FlowFile (for different values per record, use RecordPath functions); confusion with date formats after the move to `java.time` (Block 2.4).
 
@@ -1235,7 +1235,7 @@ Body        : several JSON events in a row, for example
 | 2.8.0 | The Asana components |
 | 2.10.0 | Authorization by restricted components / required permissions |
 
-Below, the components are grouped **by area**: JSON and conversion, Kafka, HTTP, database query execution. The "Source" column shows how well a fact is confirmed: **Apache** — the official [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes) or the page [Migrating Deprecated Components and Features for 2.0.0](https://cwiki.apache.org/confluence/spaces/NIFI/pages/240883792/Migrating+Deprecated+Components+and+Features+for+2.0.0); **secondary** — the documentation of a distribution vendor (Cloudera, [Removed NiFi processors](https://docs.cloudera.com/dataflow/cloud/support-matrix/topics/cdf-removed-processors.html)), where the removal versions refer to their builds; such items must be checked against [Deprecated Components and Features](https://cwiki.apache.org/confluence/display/NIFI/Deprecated+Components+and+Features) and your own `nifi-deprecation.log` (**[verify]**).
+Below, the components are grouped **by area**: JSON and conversion, Kafka, HTTP, database query execution. The "Source" column shows how well a fact is confirmed: **Apache** — the official [Release Notes](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes) or the page [Migrating Deprecated Components and Features for 2.0.0](https://cwiki.apache.org/confluence/spaces/NIFI/pages/240883792/Migrating+Deprecated+Components+and+Features+for+2.0.0); **secondary** — the documentation of a distribution vendor (Cloudera, [Removed NiFi processors](https://docs.cloudera.com/dataflow/cloud/support-matrix/topics/cdf-removed-processors.html)), where the removal versions refer to their builds; such items must be checked against [Deprecated Components and Features](https://cwiki.apache.org/confluence/display/NIFI/Deprecated+Components+and+Features) and your own `nifi-deprecation.log`.
 
 #### Removed components by area
 
@@ -1244,7 +1244,7 @@ Below, the components are grouped **by area**: JSON and conversion, Kafka, HTTP,
 | Component (1.x) | Status in 2.x | What to replace it with | Source |
 |---|---|---|---|
 | `ConvertAvroToJSON` | **[rem]** 2.0.0-M3 | `ConvertRecord` (`AvroReader` → `JsonRecordSetWriter`) | Apache (the removal); the replacement — secondary |
-| `ConvertJSONToAvro`, `ConvertCSVToAvro`, `ConvertAvroSchema`, `InferAvroSchema`, `ConvertAvroToORC` | Obsolete "non-record" converters; in Cloudera's list "removed between NiFi 1.26 and 2.0" and in their 1.25 line | `ConvertRecord` with the required Reader/Writer; for `InferAvroSchema` — `ExtractRecordSchema`; there is no replacement for `ConvertAvroToORC` | secondary; **[verify]** the removal version in Apache itself |
+| `ConvertJSONToAvro`, `ConvertCSVToAvro`, `ConvertAvroSchema`, `InferAvroSchema`, `ConvertAvroToORC` | Obsolete "non-record" converters; in Cloudera's list "removed between NiFi 1.26 and 2.0" and in their 1.25 line | `ConvertRecord` with the required Reader/Writer; for `InferAvroSchema` — `ExtractRecordSchema`; there is no replacement for `ConvertAvroToORC` | secondary; absent in 2.12.0 |
 
 What is **not** removed and keeps working: `EvaluateJsonPath`, `SplitJson`, `JoltTransformJSON`, `JoltTransformRecord`, `JsonTreeReader`/`JsonPathReader`, `JsonRecordSetWriter`, `QueryRecord`, `ValidateRecord`. But there are **behavior changes** that break flows without removing components:
 
@@ -1263,7 +1263,7 @@ What is **not** removed and keeps working: `EvaluateJsonPath`, `SplitJson`, `Jol
 | `ConsumeKafkaRecord_2_6` | **[rem]** 2.0.0 | `ConsumeKafka`, Processing Strategy = `RECORD` + a Record Reader/Writer | Apache |
 | `PublishKafka_2_6` | **[rem]** 2.0.0 | `PublishKafka` (FlowFile/Demarcator mode) | Apache |
 | `PublishKafkaRecord_2_6` | **[rem]** 2.0.0 | `PublishKafka` (Record mode) | Apache |
-| `ConsumeKafka_1_0`/`_2_0`, `ConsumeKafkaRecord_1_0`/`_2_0`, `PublishKafka_1_0`/`_2_0`, `PublishKafkaRecord_1_0`/`_2_0` (and older lines) | Older versions of the processors; in Cloudera's list "removed between NiFi 1.26 and 2.0" `ConsumeKafkaRecord_1_0`/`_2_0` appear (replaced by `*_2_6`) | First move to `*_2_6` on 1.x (before the upgrade), then rebuild onto `ConsumeKafka`/`PublishKafka` | secondary; **[verify]** |
+| `ConsumeKafka_1_0`/`_2_0`, `ConsumeKafkaRecord_1_0`/`_2_0`, `PublishKafka_1_0`/`_2_0`, `PublishKafkaRecord_1_0`/`_2_0` (and older lines) | Older versions of the processors; in Cloudera's list "removed between NiFi 1.26 and 2.0" `ConsumeKafkaRecord_1_0`/`_2_0` appear (replaced by `*_2_6`) | First move to `*_2_6` on 1.x (before the upgrade), then rebuild onto `ConsumeKafka`/`PublishKafka` | secondary; absent in 2.12.0 |
 | Connection parameters inside the processor (Kafka Brokers, Security Protocol, SASL, SSL Context) | No longer set in the processor | The Controller Service `Kafka3ConnectionService` | Apache (the new components) |
 
 There is **no** automatic conversion of the old processors to the new ones: after the flow is loaded into 2.x they remain "ghosted". The migration order and the transfer of the Group ID — section 2.4.3.
@@ -1275,19 +1275,19 @@ There is **no** automatic conversion of the old processors to the new ones: afte
 | `GetHTTP` | **[rem]** 2.0.0 (deprecated since 1.9.0) | `InvokeHTTP`: HTTP Method `GET`; the file name from the URL — Response FlowFile Naming Strategy `URL_PATH` | Apache |
 | `PostHTTP` | **[rem]** 2.0.0 (deprecated since 1.9.0) | `InvokeHTTP`: HTTP Method `POST`. The *Send as FlowFile* mode (a package of attributes and content for `ListenHTTP`) is replaced by the combination `MergeContent` (the FlowFile v3 format) → `InvokeHTTP`, or Site-to-Site | Apache |
 | `InvokeHTTP` properties: Proxy Host, Proxy Port, Proxy Type, Proxy Username, Proxy Password | Removed (deprecated since 1.18.0) | The Controller Service `StandardProxyConfigurationService` and the *Proxy Configuration Service* property | Apache |
-| `InvokeAWSGatewayApi` | **[rem]** 2.0.0-M3 | `InvokeHTTP` with the required authentication | Apache (the removal); the replacement — by meaning, **[verify]** |
+| `InvokeAWSGatewayApi` | **[rem]** 2.0.0-M3 | `InvokeHTTP` with the required authentication | Apache (the removal); the replacement — by meaning |
 
 Differences in behavior when replacing with `InvokeHTTP` (according to the official migration page): an SSL Context Service is not needed for public HTTPS addresses (the standard JVM root certificates are used); the default socket timeouts are **smaller** than those of `GetHTTP`/`PostHTTP` — set them explicitly; the default `filename` is a random UUID. Since 1.24.0, values in the URL must be URL-encoded.
 
 ##### Databases and query execution
 
-**The main SQL processors and connection pools** — `ExecuteSQL`, `ExecuteSQLRecord`, `QueryDatabaseTable`, `QueryDatabaseTableRecord`, `GenerateTableFetch`, `PutSQL`, `PutDatabaseRecord`, `DBCPConnectionPool`, `HikariCPConnectionPool`, `DBCPConnectionPoolLookup` — are **not listed** in the lists of removed components in the Release Notes and Migration Guidance (**[verify]** against your own `nifi-deprecation.log`). `DBCPConnectionPoolLookup` is present in the 2.12.0 documentation. The conditions of use have changed: H2 connections are prohibited (1.22.0), the *Reference Remote Resources* restriction was introduced (1.23.0), authorization by restricted components was removed in 2.10.0, and the Database Dialect Service was added in 2.2.0.
+**The main SQL processors and connection pools** — `ExecuteSQL`, `ExecuteSQLRecord`, `QueryDatabaseTable`, `QueryDatabaseTableRecord`, `GenerateTableFetch`, `PutSQL`, `PutDatabaseRecord`, `DBCPConnectionPool`, `HikariCPConnectionPool`, `DBCPConnectionPoolLookup` — are **not listed** in the lists of removed components in the Release Notes and Migration Guidance (all of them are present in 2.12.0). `DBCPConnectionPoolLookup` is present in the 2.12.0 documentation. The conditions of use have changed: H2 connections are prohibited (1.22.0), the *Reference Remote Resources* restriction was introduced (1.23.0), authorization by restricted components was removed in 2.10.0, and the Database Dialect Service was added in 2.2.0.
 
 **Components for specific DBMSs and stores have been removed** (flows that contain them will not work):
 
 | Area | What was removed | Version | Source |
 |---|---|---|---|
-| Hive | The Hive 3 components (the Hive 3 read, write, table creation/update, and streaming processors and their services) | 2.0.0-M3 | Apache (the family); the exact class names — **[verify]** |
+| Hive | The Hive 3 components (the Hive 3 read, write, table creation/update, and streaming processors and their services) | 2.0.0-M3 | Apache (the family); no Hive components in 2.12.0 |
 | Cassandra | Cassandra 3 | 2.0.0-M3 | Apache |
 | Accumulo | Accumulo 2 | 2.0.0-M3 | Apache |
 | Couchbase | The Couchbase components | 2.0.0-M3 | Apache |
@@ -1296,13 +1296,13 @@ Differences in behavior when replacing with `InvokeHTTP` (according to the offic
 | HBase | The HBase components | 2.0.0 | Apache |
 | Kudu | The Kudu components | 2.0.0 | Apache |
 | Iceberg | `PutIceberg` and the related services | 2.0.0 | Apache |
-| Ignite, Flume, Kite | `GetIgniteCache`, `PutIgniteCache`, `ExecuteFlumeSource`/`ExecuteFlumeSink`, `StoreInKiteDataset` | removed by the vendor in the 1.25 line | secondary; **[verify]** |
+| Ignite, Flume, Kite | `GetIgniteCache`, `PutIgniteCache`, `ExecuteFlumeSource`/`ExecuteFlumeSink`, `StoreInKiteDataset` | removed by the vendor in the 1.25 line | secondary; absent in 2.12.0 |
 
 Most have no direct replacement: use JDBC-compatible access (`PutDatabaseRecord`/`ExecuteSQLRecord`, if the DBMS has a driver), external connectors (Kafka Connect, DBMS-specific tools), or NiFi Python extensions. For the components you need, check whether they are shipped as a separate NAR in your distribution (some modules in 2.x were moved to optional build profiles).
 
 ##### Other removed components from the official 2.0.0 list
 
-For completeness (the official migration page): `Base64EncodeContent` → `EncodeContent`; `HashContent` → `CryptographicHashContent`; `HashAttribute` → `UpdateAttribute` with the EL function `hash`; `GetJMSQueue`/`GetJMSTopic` → `ConsumeJMS`; `PutJMS` → `PublishJMS`; `GetTwitter` → `ConsumeTwitter`. Additionally, according to the vendor (a secondary source, **[verify]**): `PutAzureBlobStorage` → `PutAzureBlobStorage_v12`; `PutBigQueryBatch`/`PutBigQueryStreaming` → `PutBigQuery`; `HBase_1_1_2_*` → `HBase_2_*`; `HortonworksSchemaRegistry` has no direct analog in Apache.
+For completeness (the official migration page): `Base64EncodeContent` → `EncodeContent`; `HashContent` → `CryptographicHashContent`; `HashAttribute` → `UpdateAttribute` with the EL function `hash`; `GetJMSQueue`/`GetJMSTopic` → `ConsumeJMS`; `PutJMS` → `PublishJMS`; `GetTwitter` → `ConsumeTwitter` (but `ConsumeTwitter` is not included in 2.12.0 either). Additionally, according to the vendor (a secondary source): `PutAzureBlobStorage` → `PutAzureBlobStorage_v12`; `PutBigQueryBatch`/`PutBigQueryStreaming` → `PutBigQuery` (both replacements are present in 2.12.0); there are no HBase components in 2.12.0 at all (neither `HBase_1_1_2_*` nor `HBase_2_*`); `HortonworksSchemaRegistry` has no direct analog in Apache.
 
 **How to find such components in your flow.** Run the latest 1.x and check `logs/nifi-deprecation.log` (since 1.18.0 it contains warnings about components and properties slated for removal; [description](https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html#deprecation-logging)), or build an inventory of types from `flow.json.gz` with the command from section 2.4.5 and compare it with the tables above.
 
@@ -1321,7 +1321,7 @@ Classes of incompatibilities:
 
 ### 2.4.3 Kafka: migration specifics
 
-1. All the `*Kafka*_2_6` processors (and older ones) have been **removed**. After the flow is loaded into 2.x they are "ghosts". There is **no automatic conversion** to `ConsumeKafka`/`PublishKafka` — according to the developers, this "does not allow an upgrade without breaking compatibility" ([Cloudera: Breaking changes](https://docs.cloudera.com/cfm/4.10.0/release-notes/topics/cfm-nifi2-breaking-changes.html); a secondary source, **[verify]** that it is still current for your version).
+1. All the `*Kafka*_2_6` processors (and older ones) have been **removed**. After the flow is loaded into 2.x they are "ghosts". There is **no automatic conversion** to `ConsumeKafka`/`PublishKafka` — according to the developers, this "does not allow an upgrade without breaking compatibility" ([Cloudera: Breaking changes](https://docs.cloudera.com/cfm/4.10.0/release-notes/topics/cfm-nifi2-breaking-changes.html); a secondary source; confirmed on 2.12.0: an imported `ConsumeKafka_2_6` becomes a ghost processor and is not converted).
 2. The new model: connection parameters live in `Kafka3ConnectionService`; the processors retain the consume/publish logic.
 3. The correspondence table (semantic; **check the exact property names against the documentation of your version**):
 
@@ -1339,7 +1339,7 @@ Classes of incompatibilities:
 4. **Preserving the read position.** Offsets are stored in Kafka per *(Group ID, topic, partition)*. If the new `ConsumeKafka` uses **the same Group ID**, reading will continue from the committed position. The switchover order: *stop* the old consumers (otherwise two consumers in one group will share the partitions; or, being "ghosts", they do not work anyway) → start the new ones.
 5. Check the semantic differences: the format of the attributes (`kafka.*`), header handling, the key (`Output Strategy`), the behavior on parsing errors (where "broken" messages go).
 6. **Do not use NiFi < 2.8.0** for consumers sensitive to duplicates on rebalance (the fix is in 2.8.0).
-7. A discussion on the dev list mentioned a temporary possibility of loading the NAR of the old Kafka processors from Maven Central (`2.0.0-M4`), but support/compatibility with GA are not confirmed — do not rely on this as a strategy ([an example of the discussion](https://go.mail-archive.com/dev@nifi.apache.org/msg22909.html), **[verify]**).
+7. A discussion on the dev list mentioned a temporary possibility of loading the NAR of the old Kafka processors from Maven Central (`2.0.0-M4`), but support/compatibility with GA are not confirmed — do not rely on this as a strategy ([an example of the discussion](https://go.mail-archive.com/dev@nifi.apache.org/msg22909.html)).
 
 Other integrations where surprises are possible: Hive/HBase/Solr/Couchbase/Cassandra 3/Accumulo/Kudu/Iceberg (the old PutIceberg) — removed; Pulsar (in distributions — a manual NAR installation); gRPC — as external NARs (according to the distributions' documentation).
 

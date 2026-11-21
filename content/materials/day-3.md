@@ -43,8 +43,8 @@ flowchart LR
 
 | Property | Purpose |
 |---|---|
-| **Retry Attribute** | The name of the counter attribute (`flowfile.retries` by default — **[verify]**). Updated with the current number of attempts |
-| **Maximum Retries** | How many times a FlowFile can be retried before `retries_exceeded` (`3` by default — **[verify]**); the value may contain Expression Language |
+| **Retry Attribute** | The name of the counter attribute (`flowfile.retries` by default). Updated with the current number of attempts |
+| **Maximum Retries** | How many times a FlowFile can be retried before `retries_exceeded` (`3` by default); the value may contain Expression Language |
 | **Penalize Retries** | If `true`, the FlowFile is penalized before being sent to `retry` (does not apply to `retries_exceeded`) |
 | **Fail on Non-numerical Overwrite** | If the *Retry Attribute* already contains something that is not a number: `false` — the value is reset to `1`; `true` — the FlowFile goes to `failure` |
 | Dynamic properties | Any attributes that need to be **added to the FlowFile in `retries_exceeded`** (they support EL), for example `error.stage = retries_exceeded` |
@@ -135,15 +135,15 @@ Key parameters:
 | Parameter | File | Default | What it controls |
 |---|---|---|---|
 | `nifi.flowcontroller.graceful.shutdown.period` | `nifi.properties` | `10 secs` | How long NiFi waits for components to finish on shutdown |
-| `graceful.shutdown.seconds` | `bootstrap.conf` | `20` **[verify]** | How long Bootstrap waits for the JVM to exit before killing it |
+| `graceful.shutdown.seconds` | `bootstrap.conf` | `20` | How long Bootstrap waits for the JVM to exit before killing it |
 | `nifi.flowcontroller.autoResumeState` | `nifi.properties` | `true` | Whether components return to their previous state after a restart |
 
 **`nifi.flowcontroller.graceful.shutdown.period`**
 - Source: [Administration Guide, the documentation source](https://github.com/apache/nifi/pull/11488/files).
-- In the main branch (September 2026, NIFI-16290) the description was clarified: the same value also limits the wait for components to stop before a forced interruption during a **node offload** ([the commit](https://mail-archive.com/commits@nifi.apache.org/msg46395.html)). **[verify]** in which release this behavior is available to you.
+- In the main branch (September 2026, NIFI-16290) the description was clarified: the same value also limits the wait for components to stop before a forced interruption during a **node offload** ([the commit](https://mail-archive.com/commits@nifi.apache.org/msg46395.html)). This change is not in 2.12.0: its Administration Guide still describes the property only as the shutdown period.
 
 **`graceful.shutdown.seconds`**
-- `20` is the value from the NiFi Registry documentation; for NiFi, check your own `bootstrap.conf`.
+- `20` is the default in NiFi 2.12.0 (`bootstrap.conf`).
 - Changes take effect only after NiFi is stopped and started ([description](https://docs.cloudera.com/HDPDocuments/HDF3/HDF-3.0.1/bk_administration/content/bootstrap_properties.html)).
 
 **`nifi.flowcontroller.autoResumeState`**
@@ -273,12 +273,12 @@ TimeoutStopSec=180
 WantedBy=multi-user.target
 ```
 
-Notes: `TimeoutStopSec` must be **greater** than the time of a clean shutdown (the graceful period + `graceful.shutdown.seconds`); `TimeoutStartSec` — large enough for repository recovery; `LimitNOFILE` — a large number of file descriptors (many claim files and connections). Check the `forking`/`Restart` type on your distribution: `nifi.sh start` launches a daemon, and the behavior depends on the form of the launch (**[verify]**; the alternative is `nifi.sh run` with `Type=simple`).
+Notes: `TimeoutStopSec` must be **greater** than the time of a clean shutdown (the graceful period + `graceful.shutdown.seconds`); `TimeoutStartSec` — large enough for repository recovery; `LimitNOFILE` — a large number of file descriptors (many claim files and connections). Choose the unit type by the launch form: `nifi.sh start` starts NiFi in the background and exits (`Type=forking`), `nifi.sh run` replaces itself with the NiFi process (`Type=simple`).
 
 **Kubernetes.**
 
 - Use a **StatefulSet** with stable identities and persistent volumes for the repositories; `terminationGracePeriodSeconds` — longer than the time of a clean shutdown; `preStop` can run a "soft" stop script (stop the sources → wait).
-- **Probes:** a `startupProbe` with a large `failureThreshold` (starting NiFi with large repositories takes minutes), otherwise the kubelet will kill a pod that is "still loading"; a `livenessProbe` that is not too aggressive (a GC pause must not lead to a restart); a `readinessProbe` — by API readiness (**[verify]** which endpoints are available without authentication in your configuration; a TCP port check is often used).
+- **Probes:** a `startupProbe` with a large `failureThreshold` (starting NiFi with large repositories takes minutes), otherwise the kubelet will kill a pod that is "still loading"; a `livenessProbe` that is not too aggressive (a GC pause must not lead to a restart); a `readinessProbe` — a TCP port check or `GET /nifi-api/authentication/configuration` (in 2.12.0 only this endpoint and the UI page `/nifi/` respond without authentication; the rest of the API returns `401`).
 - A **PodDisruptionBudget** (no more than one node unavailable) and a **rolling update one node at a time** with a wait for readiness are recommended.
 - In 2.x **Kubernetes-based leader election** is available without ZooKeeper ([Block 1.4](day-1.md#block-14-installation-cluster-configuration-and-setup)).
 
@@ -320,7 +320,7 @@ Restarting the process is a last resort. Most failures should be resolved **with
 | A failure of individual data | Routing to the DLQ; the main flow is not blocked | Block 3.1.3 |
 | A lost connection to the database/Kafka | The controller service/client reconnects; the processor repeats `onTrigger` | The Validation Query of DBCP, timeouts; Kafka client reconnect |
 | A processor "hung" on an external call | Timeouts in the processor (Connection/Read Timeout) | Always set explicit timeouts |
-| A controller service did not enable (a dependency was unavailable) | The framework periodically tries to enable the service again (the behavior depends on the version — **[verify]**); fixes are known for the "services do not start after a restart" scenarios ([Release Notes 1.28.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)) | Monitoring the state of the services + an alert |
+| A controller service did not enable (a dependency was unavailable) | The framework periodically tries to enable the service again (in 2.12.0 the service stays in `ENABLING` and the attempt is repeated about every 30 seconds); fixes are known for the "services do not start after a restart" scenarios ([Release Notes 1.28.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)) | Monitoring the state of the services + an alert |
 | A JVM crash | A supervisor (systemd/Kubernetes) + `autoResumeState=true` + the WAL | [The process supervisor](#the-process-supervisor-systemd-and-kubernetes) |
 | A node dropped out of the cluster | The node automatically returns and the flow synchronizes | Correct heartbeat/timeouts, a stable network |
 | A source is idle (no data) | `MonitorActivity` → an alert | Block 3.2 |
@@ -447,7 +447,7 @@ The main event types: `RECEIVE`, `FETCH`, `CREATE`, `SEND`, `ROUTE`, `CLONE`, `F
 
 #### Site-to-Site Reporting Tasks: in detail
 
-This subsection expands on the item "sending statuses and bulletins to NiFi itself/to other systems" (`SiteToSiteStatusReportingTask`, `SiteToSiteBulletinReportingTask`, `SiteToSiteMetricsReportingTask`). All three tasks are part of the `nifi-site-to-site-reporting-nar` bundle and are present in the 2.x documentation (for example, 2.10.0 — [the reference](https://nifi.incubator.apache.org/components/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask)). The description of the properties below is based on the component references (versions 1.27–1.28 and 2.0.0-M2/M3, [Status](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask), [Metrics](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask)); check the exact names and default values in your version in the built-in documentation (**[verify]**).
+This subsection expands on the item "sending statuses and bulletins to NiFi itself/to other systems" (`SiteToSiteStatusReportingTask`, `SiteToSiteBulletinReportingTask`, `SiteToSiteMetricsReportingTask`). All three tasks are part of the `nifi-site-to-site-reporting-nar` bundle and are present in the 2.x documentation (for example, 2.10.0 — [the reference](https://nifi.incubator.apache.org/components/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask)). The description of the properties below is based on the component references (versions 1.27–1.28 and 2.0.0-M2/M3, [Status](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteStatusReportingTask), [Metrics](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-site-to-site-reporting-nar/1.28.0/org.apache.nifi.reporting.SiteToSiteMetricsReportingTask)); the names and default values below were checked against 2.12.0.
 
 ##### Why this is needed
 
@@ -501,12 +501,12 @@ Options for placing the receiver:
 | **Communications Timeout** | How long to wait for the receiver's response | `30 secs` |
 | **Batch Size** | The maximum number of records in one batch (for Status/Bulletin) | `1000` |
 | **Transport Protocol** | `RAW` or `HTTP` | `RAW` |
-| HTTP Proxy hostname/port/username/password | A proxy for `HTTP` mode | The password is sensitive |
+| **Proxy Configuration Service** | A proxy for the `HTTP` mode | In 2.x it replaces the separate HTTP Proxy hostname/port/username/password properties |
 | **Record Writer** | A Controller Service for serializing records | For example, `JsonRecordSetWriter` (mandatory for Status/Bulletin; for Metrics — with the `Record Format`) |
 | **Include Null Values** | Whether to output fields with the value `null` | `false` |
 | **Platform** | The value of the `platform` field in the records | `nifi`; it is convenient to set an "environment/cluster" (`prod-eu`, `test`) to separate flows at the receiver |
 
-Properties with Expression Language are evaluated against **environment variables/system properties** (the *Environment* scope; in 1.x — the Variable Registry, removed in 2.0). A separate note: reporting tasks are created at the controller level (Global menu → Controller Settings → Reporting Tasks), not inside a Process Group — **Parameter Contexts are not applicable to them** (**[verify]**), so substitute environment values through the task configuration or through EL/environment variables.
+Properties with Expression Language are evaluated against **environment variables/system properties** (the *Environment* scope; in 1.x — the Variable Registry, removed in 2.0). A separate note: reporting tasks are created at the controller level (Global menu → Controller Settings → Reporting Tasks), not inside a Process Group — **Parameter Contexts are not applicable to them** (the User Guide states this explicitly), so substitute environment values through the task configuration or through EL/environment variables.
 
 ##### SiteToSiteStatusReportingTask
 
@@ -562,7 +562,7 @@ Additional properties:
 
 | Property | Default | Purpose |
 |---|---|---|
-| **Output Format** (`s2s-metrics-format`) | `Ambari Format` | `Ambari Format` — JSON in the Ambari Metrics API format with dynamic keys (a Jolt transformation is recommended for processing; there is an example in the documentation); `Record Format` — records through a Record Writer with a fixed schema |
+| **Output Format** | `Ambari Format` | `Ambari Format` — JSON in the Ambari Metrics API format with dynamic keys (a Jolt transformation is recommended for processing; there is an example in the documentation); `Record Format` — records through a Record Writer with a fixed schema |
 | **Hostname** (`s2s-metrics-hostname`) | `${hostname(true)}` | The host name included in the metrics |
 | **Application ID** (`s2s-metrics-application-id`) | `nifi` | The application identifier in the metrics |
 
@@ -670,10 +670,10 @@ WHERE jvmheap_usage > 0.85
 | Monitoring data does not arrive | The port is not started/the name does not match; no policies; network/TLS | Check the Input Port, the policies *retrieve site-to-site details* / *receive data via site-to-site*, the bulletins on the Reporting Task itself |
 | A TLS/handshake error | An untrusted certificate; the SAN does not match the host | The truststore/SAN; for a receiving cluster — DNS names (since 2.12.0) |
 | Links in events lead to `:8080` | *Instance URL* was not changed | Specify the actual HTTPS URL |
-| Gaps in the data | There is no queue on the reporting task side: if the receiver is unavailable, the data for the period may be lost (**[verify]** the behavior of your version) | Do not use S2S monitoring as the sole source of an alert; duplicate critical alerts through Prometheus/an external health check |
+| Gaps in the data | There is no queue on the reporting task side: if the receiver is unavailable, the data for the period may be lost (for bulletins the task description states this directly: up to 5 bulletins per component are kept for up to 5 minutes) | Do not use S2S monitoring as the sole source of an alert; duplicate critical alerts through Prometheus/an external health check |
 | **A feedback loop** | The monitoring flow itself lands in Status (it generates records about its own components) on the same NiFi | A separate monitoring NiFi; or exclude the group with a name filter |
 | A burst of volume | Running too often/too many components | The schedule, filters |
-| Duplicates from several nodes | Reporting Tasks run on every node, each sends its own status | Distinguish by `actorHostname`/`bulletinNodeAddress`; for tasks that need one report per cluster, check whether execution can be restricted to the Primary Node (**[verify]**) |
+| Duplicates from several nodes | Reporting Tasks run on every node, each sends its own status | Distinguish by `actorHostname`/`bulletinNodeAddress`; for tasks that need one report per cluster, note that in 2.12.0 reporting tasks cannot be restricted to the Primary Node |
 | An alert storm | Repeating bulletins | Deduplication (item 4) |
 | Leakage of secrets in messages | A bulletin message may contain fragments of data/URLs with tokens | Masking (`UpdateRecord`/`ReplaceText`) before sending to external systems |
 
@@ -700,7 +700,7 @@ A practical tip: **combine them** — Prometheus for metrics and resource alerts
 4. Deliberately cause an error: put a wrong URL into `InvokeHTTP` — an ERROR bulletin will appear; create a queue overflow — back pressure.
 5. Check: `QueryRecord` passes the ERROR bulletin and the records with `isBackPressureEnabled = 'true'`; NDJSON accumulates in `nifi/data/monitoring`.
 
-> On the stand (Appendix A) the Destination URL is `https://nifi:8443/nifi` (single) or `https://nifi1:8443/nifi` (cluster); the nodes work over TLS with a common CA (`nifi/certs`). The node identity for the S2S policies is the certificate DN (`CN=nifi, OU=NIFI` / `CN=nifiN, OU=NIFI`). The mini-lab was not tested on the stand (**[verify]**).
+> On the stand (Appendix A) the Destination URL is `https://nifi:8443/nifi` (single) or `https://nifi1:8443/nifi` (cluster); the nodes work over TLS with a common CA (`nifi/certs`). The node identity for the S2S policies is the certificate DN (`CN=nifi, OU=NIFI` / `CN=nifiN, OU=NIFI`). The mini-lab was not tested on the stand.
 6. Exclude the loop: restrict the Status filters so that the `monitoring` flow does not appear in the reports (by name), and compare the volume before/after.
 
 **Verification.** Alerts are formed within 1–2 run intervals; there is no growth of the queue on `monitoring-in`; when the receiver is stopped, the sender logs an error (a bulletin on the task), and after it resumes the flows recover.
@@ -770,7 +770,7 @@ Prevention (an alert, an analysis rule, a test, a runbook)
 
 ### 3.2.6 NiFi Settings: the purpose of the General, Management Controller Services, Reporting Tasks, Flow Analysis Rules, Registry Clients, and Parameter Providers tabs
 
-The **NiFi Settings** section (in 1.x — *Controller Settings*; the menu in the upper right corner → *Settings*) contains settings **at the level of the whole instance/cluster**, not of a specific Process Group. This is where the components live that do not belong to any one flow but serve the whole NiFi: monitoring, design quality control, versioning, and parameter sources. Changes are replicated to all cluster nodes, and the components themselves are saved in the flow configuration (**[verify]** for your version). Access requires global permissions (the *access the controller* policy; Block 3.3).
+The **NiFi Settings** section (in 1.x — *Controller Settings*; the menu in the upper right corner → *Settings*) contains settings **at the level of the whole instance/cluster**, not of a specific Process Group. This is where the components live that do not belong to any one flow but serve the whole NiFi: monitoring, design quality control, versioning, and parameter sources. Changes are replicated to all cluster nodes, and the components themselves are saved in the flow configuration (`flow.json.gz`). Access requires global permissions (the *access the controller* policy; Block 3.3).
 
 ```text
 NiFi Settings
@@ -824,7 +824,7 @@ NiFi Settings
 | `MonitorMemory` | Watches the use of the JVM memory pools and signals when a threshold is exceeded |
 | `ControllerStatusReportingTask` | Periodically writes a summary of the status of the controller and components to the log |
 
-**Configuration.** Each task has a *Scheduling Strategy* (Timer driven or CRON), a *Run Schedule* (the frequency), a state (Running/Stopped), and properties; the default frequency for reporting tasks is on the order of 5 minutes (as stated in [NIFI-3878](https://issues.apache.org/jira/browse/NIFI-3878), where it was changed to 1 minute for one specific task); processors have an *Execution* setting (*All Nodes* / *Primary Node*, [NIFI-401](https://www.mail-archive.com/commits@nifi.apache.org/msg19852.html)), but we could not confirm that reporting tasks have such a switch in your version — by default, assume that the task runs **on every node** (the records show which node they came from) (**[verify]** the possibility of running only on the Primary Node). The result is reported through the bulletins of the task itself, so look at them when there are problems.
+**Configuration.** Each task has a *Scheduling Strategy* (Timer driven or CRON), a *Run Schedule* (the frequency), a state (Running/Stopped), and properties; the default frequency for reporting tasks is on the order of 5 minutes (as stated in [NIFI-3878](https://issues.apache.org/jira/browse/NIFI-3878), where it was changed to 1 minute for one specific task); processors have an *Execution* setting (*All Nodes* / *Primary Node*, [NIFI-401](https://www.mail-archive.com/commits@nifi.apache.org/msg19852.html)), but reporting tasks have no such switch (checked on 2.12.0): the task runs **on every node** (the records show which node they came from). The result is reported through the bulletins of the task itself, so look at them when there are problems.
 
 **Practice.** The minimum set for production: `MonitorDiskUsage` for the repository volumes, `MonitorMemory`, a metrics export (Prometheus or S2S), sending bulletins; choose the thresholds and the schedule so as not to create noise.
 
@@ -847,7 +847,7 @@ NiFi Settings
 | `RequireServerSSLContextService` | Requires an SSL Context Service on server components |
 | `RestrictFlowFileExpiration` | Restricts the FlowFile Expiration values |
 
-In newer builds (according to Cloudera, based on Apache NiFi 2.x) the set is wider, for example `DisallowDeadEnd`, `RecommendRecordProcessor`, `RestrictComponentNaming`, `RestrictProcessorConcurrency`, `RestrictThreadPoolSize`, `RequireHandleHttpResponseAfterHandleHttpRequest` ([the list](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-supported-nifi-flow-analysis-rules.html)); which of them are part of Apache NiFi itself in your version, see in the list when creating a rule (**[verify]**). A rule is created and configured from the NiFi menu (the Settings section) on the *Flow Analysis Rules* tab.
+In newer builds (according to Cloudera, based on Apache NiFi 2.x) the set is wider, for example `DisallowDeadEnd`, `RecommendRecordProcessor`, `RestrictComponentNaming`, `RestrictProcessorConcurrency`, `RestrictThreadPoolSize`, `RequireHandleHttpResponseAfterHandleHttpRequest` ([the list](https://docs.cloudera.com/cfm/latest/release-notes/topics/cfm-supported-nifi-flow-analysis-rules.html)). These rules are not part of Apache NiFi: 2.12.0 provides five rules — `DisallowComponentType`, `RestrictBackpressureSettings`, `RequireServerSSLContextService`, `RestrictFlowFileExpiration`, and `RequireLoadBalancedConnectionAfterPrimaryNodeSourceProcessor`. A rule is created and configured from the NiFi menu (the Settings section) on the *Flow Analysis Rules* tab.
 
 **Why this matters in operations.** The rules move the requirements for "how to design a flow" from a document into an automatic check: fewer errors in production (for example, auto-terminating `failure`, unsafe settings) and uniform standards across teams. You can write your own rules as extensions.
 
@@ -874,7 +874,7 @@ In newer builds (according to Cloudera, based on Apache NiFi 2.x) the set is wid
 | Authentication Type | `NONE` (the default), `PERSONAL_ACCESS_TOKEN`, or `APP_INSTALLATION_TOKEN` |
 | Personal Access Token / App Installation Token | A secret (sensitive); the field depends on the chosen authentication type |
 
-For GitLab, Bitbucket, and Azure DevOps the property names are different (**[verify]** in the client documentation). If the client needs TLS or a proxy, use the services from *Management Controller Services*.
+For GitLab, Bitbucket, and Azure DevOps the property names are different: GitLab — `Repository Namespace`, `Access Token`, `GitLab API Version`; Bitbucket — `Workspace Name`, `Project Key`, `App Password`/`API Token`; Azure DevOps — `Organization`, `Project`, `Authentication Strategy`. If the client needs TLS or a proxy, use the services from *Management Controller Services*.
 
 **Practice.** A separate repository/branch per environment, or a single repository with promotion between branches; a token with minimal permissions; do not commit secrets (sensitive parameters must not end up in Git); check that users have permissions to create and commit versions.
 
@@ -1019,7 +1019,7 @@ Recommendations: centralize the logs (a SIEM); set the retention period of the c
 - The key is **mandatory** and must be **the same on all nodes of the cluster**; changing it is done through `bin/nifi.sh set-sensitive-properties-key <new key>` (which re-encrypts the configuration) ([Migration Guidance 1.13→1.14](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
 - Losing the key = being unable to decrypt the sensitive values; they will have to be entered again.
 - It is preferable **not to store secrets in the flow at all:** **Parameter Providers** (HashiCorp Vault, AWS/GCP Secrets Manager, Kubernetes Secrets — since 1.18.0/2.0) load parameters at run time. In 2.12.0 an extensible property encryption abstraction (**PropertyEncryptionProvider**) was added.
-- In 2.x the following were removed: "application property protection" and `encrypt-config` (2.0.0-M4) — that is, encrypting values in `nifi.properties` with `encrypt-config` is unavailable; use external secret stores/environment variables and file system permissions ([Release Notes 2.0.0-M4](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). **[verify]** the current standard alternatives for protecting `nifi.properties` in your version.
+- In 2.x the following were removed: "application property protection" and `encrypt-config` (2.0.0-M4) — that is, encrypting values in `nifi.properties` with `encrypt-config` is unavailable; use external secret stores/environment variables and file system permissions ([Release Notes 2.0.0-M4](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). 2.12.0 has no built-in replacement: in Docker the key is passed through `NIFI_SENSITIVE_PROPS_KEY`, and access to `conf/` is restricted with file system permissions (in the image `nifi.properties` is readable by everyone, `644`).
 - Dynamic properties can be marked as sensitive by the user (since 1.17.0).
 
 **Data at rest.**

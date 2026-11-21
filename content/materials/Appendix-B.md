@@ -25,17 +25,19 @@ title: "Appendix B"
 
 **Verified on the lab stand (NiFi 2.12.0):** the default values of `RetryFlowFile` (`Retry Attribute = flowfile.retries`, `Maximum Retries = 3`, `Penalize Retries = true`); the properties of `Kafka3ConnectionService`, `ConsumeKafka`, `PublishKafka` (from the NAR manifests) and the `parse failure` relationship of `ConsumeKafka` in `RECORD` mode; `UpdateRecord` adds a field that is absent from the Reader schema when the Writer has `Inherit Record Schema`; loading a JDBC driver through *Database Driver Locations* when the service is enabled, without restarting NiFi; Java 21 in the `apache/nifi:2.12.0` image; the KRaft configuration of a single broker (`confluentinc/cp-kafka:8.0.0`); the date format in Expression Language: `format("…'T'…")` works, `format('…\'T\'…')` does not; `ListenHTTP` does not set `mime.type`; Calcite in `QueryRecord` does not compare an Avro enum in `IN`/`NOT IN`; `PutSplunk` in 2.12 has no `Connection Per FlowFile` property.
 
-**Remains unverified (marked in the text as [verify]):**
+**Verified on NiFi 2.12.0 (a separate `apache/nifi:2.12.0` container: configuration, the REST API, the built-in guides, and test flows; November 2026):**
 
-- The `RetryFlowFile` component page on nifi.apache.org (the default values were confirmed on the stand).
-- The documentation page for the `Kafka3ConnectionService` and `PublishKafka` builds in Apache itself (documentation mirrors were used; the properties were confirmed by the NAR manifests on the stand).
-- The behavior of `QueryRecord` (a separate pass for each query).
-- Loading a JDBC driver: a separate class loader per service, passing a driver through Assets of a Parameter Context, the classes and URLs of specific drivers (other than PostgreSQL), the pgjdbc cursor mode, the restrictions of `DBCPConnectionPoolLookup` by processor.
-- The removal versions in Apache for `ConvertJSONToAvro`, `ConvertCSVToAvro`, `ConvertAvroSchema`, `InferAvroSchema`, `ConvertAvroToORC`, the old Kafka processors, Ignite/Flume/Kite, the exact class names of Hive 3; the replacements for `InvokeAWSGatewayApi`.
-- Reporting Tasks: running only on the Primary Node, the inapplicability of Parameter Contexts; the behavior when the receiver is unavailable.
-- The systemd unit, Kubernetes probes, re-enabling Controller Services after a dependency was unavailable.
-- Which releases contain the `graceful.shutdown.period` change during offload (NIFI-16290); the value of `graceful.shutdown.seconds` for NiFi specifically.
-- Stateless: in-memory content (2.13.0); `logback.xml` (auto-reload), `nifi-env.sh`; an official Ansible role; Java 21 in the images of tags other than the verified `2.12.0`; alternatives for protecting `nifi.properties` after the removal of `encrypt-config`.
+- `QueryRecord` reads the content once per query (four queries — four times the FlowFile size).
+- `UpdateRecord` adds a new field (including a nested one) when the Writer inherits the schema and drops it when the Writer has an explicit schema without the field.
+- JDBC drivers: none are included in the distribution; `DBCPConnectionPool` has its own class loader (`@RequiresInstanceClassLoading`, *Database Driver Locations* modifies the classpath); a driver can be passed through an asset of a Parameter Context; `DBCPConnectionPoolLookup` requires the `database.name` attribute.
+- The removed components (the Avro converters, the old Kafka processors, `InvokeAWSGatewayApi`, Hive, Ignite, Flume, Kite, HBase, `ConsumeTwitter`, `HortonworksSchemaRegistry`) are absent; the SQL processors and pools are present; an imported `ConsumeKafka_2_6` becomes a ghost processor.
+- Reporting Tasks: they cannot be restricted to the Primary Node; Parameter Contexts are not applicable to them; the Site-to-Site properties (the proxy is set through *Proxy Configuration Service*); the components of the Settings section are saved in `flow.json.gz`.
+- A Controller Service that failed to enable stays in `ENABLING`, and the attempt is repeated about every 30 seconds.
+- Without authentication only `/nifi/` and `/nifi-api/authentication/configuration` respond.
+- `nifi.sh start` / `nifi.sh run` (for the systemd unit type), `logback.xml` auto-reload (30 seconds), `nifi-env.sh`, `graceful.shutdown.seconds=20`; the NIFI-16290 change is not in 2.12.0; there is no replacement for `encrypt-config`.
+- The Flow Analysis rules (five rules in 2.12.0), the properties of the GitLab, Bitbucket, and Azure DevOps registry clients, `RestLookupService`, `JoltTransformRecord`, the Jolt specification for the HEC envelope, the EL function `hash`, the `jstat` command from Lab 8.
+
+**Cannot be checked on a NiFi instance (left as described in the sources):** the classes and URL formats of drivers other than PostgreSQL and the pgjdbc cursor mode; the exact versions in which components were removed from Apache (only their absence in 2.12.0 is confirmed); the replacement for `InvokeAWSGatewayApi`; an official Ansible role; in-memory content for Stateless (2.13.0); replication of the Settings components across cluster nodes; the behavior of the Status and Metrics tasks when the receiver is unavailable; the Site-to-Site mini-lab on the stand.
 
 ### Links to the guides (for your own verification)
 

@@ -26,7 +26,6 @@ Notation used in the text:
 | **[1.x]** | Behavior of 1.x; changed or removed in 2.x |
 | **[dep]** | Deprecated: still works but is marked for removal |
 | **[rem]** | Removed: removed in the indicated version |
-| **[verify]** | The statement was not confirmed while preparing the notes; check it against the documentation for your version |
 
 ### Principles of reliability
 
@@ -569,11 +568,11 @@ The main configuration lives in the `NIFI_HOME/conf/` directory. Below is a shor
 | `login-identity-providers.xml` | **Authentication** by login/password | Provider settings: LDAP/AD, Single User, etc. Used when the corresponding provider is selected in `nifi.properties` | The same on the cluster nodes |
 | `users.xml`, `authorizations.xml` | Users/groups and access policies, if **file-based** providers are used | Created and updated by NiFi (the file names are set in `authorizers.xml`) | Must match across the cluster; **included in the backup** ([Block 3.1.5](day-3.md#315-backup-and-restore-configuration-flow-definitions-keys)) |
 | `state-management.xml` | **Storage of component state** | The local state provider (on the node's disk, `state/local`) and the cluster state provider (ZooKeeper or Kubernetes) | The connection parameters of the cluster provider are the same on all nodes |
-| `logback.xml` | **Logging** | Log files (`nifi-app.log`, `nifi-user.log`, `nifi-bootstrap.log`, `nifi-request.log`, `nifi-deprecation.log`), levels, rotation | Log levels are often changed during debugging; logback usually picks up changes without a restart (**[verify]** on your system) |
+| `logback.xml` | **Logging** | Log files (`nifi-app.log`, `nifi-user.log`, `nifi-bootstrap.log`, `nifi-request.log`, `nifi-deprecation.log`), levels, rotation | Log levels are often changed during debugging; logback picks up changes without a restart (`scan="true"`, checked every 30 seconds in 2.12.0) |
 | `zookeeper.properties` | Settings of the **embedded ZooKeeper** | Ports, the data directory, the list of servers | Only for labs; production uses an external ZooKeeper ensemble. In 2.x the ZooKeeper integration was moved into a separate NAR (2.6.0) |
 | `archive/` (directory) | **An archive of previous flow versions** | Time-stamped copies of `flow.json.gz` (`nifi.flow.configuration.archive.*`) | The first line of configuration rollback ([Block 3.1](day-3.md#block-31-fault-tolerance-and-error-handling)/[3.2](day-3.md#block-32-monitoring-provenance-and-troubleshooting)) |
 | Keystore/truststore (for example, `keystore.p12`, `truststore.p12`) or PEM files | The node's **TLS material** | The node's certificate and private key, trusted certificates | Individual for each node (SAN = the node's name); store with restricted permissions |
-| `bin/nifi-env.sh` (outside `conf/`) | Environment variables for the startup scripts (for example, `JAVA_HOME`) | Variable exports | Needed if Java is not detected automatically (**[verify]** in your version) |
+| `bin/nifi-env.sh` (outside `conf/`) | Environment variables for the startup scripts (for example, `JAVA_HOME`) | Variable exports | Needed if Java is not detected automatically: `nifi.sh` uses `JAVA_HOME`, otherwise `java` from `PATH` (with a warning) |
 
 Obsolete and removed in 2.x: `flow.xml.gz` (replaced by `flow.json.gz`), `bootstrap-notification-services.xml` (Bootstrap Notification Services were removed in 2.0.0-M2), encryption of values in `nifi.properties` through `encrypt-config` (removed in 2.0.0-M4) — details in [Block 2.4](day-2.md#block-24-migration-from-nifi-1x-to-2x) and [Block 3.3](day-3.md#block-33-security-and-governance).
 
@@ -672,7 +671,7 @@ Practical notes: load balancing is additional network I/O and a write to the rep
 |---|---|---|
 | **Docker** | The official [`apache/nifi`](https://hub.docker.com/r/apache/nifi) images | The image is configured through environment variables (including `SINGLE_USER_CREDENTIALS_USERNAME`/`PASSWORD`, `NIFI_JVM_HEAP_INIT`/`NIFI_JVM_HEAP_MAX`, `NIFI_WEB_HTTPS_PORT`, `NIFI_SENSITIVE_PROPS_KEY`, `NIFI_ELECTION_MAX_WAIT`, `NIFI_ELECTION_MAX_CANDIDATES`); the installation directory is `/opt/nifi/nifi-current`. Check the Java version in the description of the chosen image tag (2.x needs Java 21) |
 | **Kubernetes / Helm** | As far as is known, Apache does not ship an official Helm chart | Community solutions are used: [cetic/helm-nifi](https://github.com/cetic/helm-nifi) — **archived and not maintained**, the latest chart version targets NiFi 1.23.2; the [Stackable](https://stackable.tech/en/apache-nifi2-key-updates-stackable/) and [NiFiKop](https://github.com/konpyutaika/nifikop) operators. The absence of an official chart is confirmed by a discussion on the [NiFi users mailing list (November 2024)](https://www.mail-archive.com/users@nifi.apache.org/msg16771.html); re-check it as of today. For a cluster in Kubernetes, 2.x has Kubernetes leader election (ZooKeeper is not needed) |
-| **Ansible** | There is no official role in the project (**[verify]**) | Use your own/community roles: installing Java 21, unpacking the distribution, templating `nifi.properties`, certificates |
+| **Ansible** | There is no official role in the project | Use your own/community roles: installing Java 21, unpacking the distribution, templating `nifi.properties`, certificates |
 
 Docker, a minimal single-node lab (training mode; for production — your own certificates and secrets):
 
@@ -762,7 +761,7 @@ A **Flow Registry Client** is a pluggable component for storing Process Group ve
 
 #### Stateless execution (2.x)
 
-Since 2.0, any Process Group can be configured for **Stateless** execution: the group is executed as a "source to sink" transaction without writing intermediate FlowFiles to the repositories; on a failure the transaction is rolled back as a whole. This gives at-least-once/exactly-once-like semantics for Kafka→…→Kafka and similar chains, but limits parallelism/sizes (data is in memory) ([Release Notes 2.0.0-M1](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). Note that in 2.13.0 the API gained support for in-memory content for the Stateless engine (**[exp]**/new functionality — **[verify]** before using it in production).
+Since 2.0, any Process Group can be configured for **Stateless** execution: the group is executed as a "source to sink" transaction without writing intermediate FlowFiles to the repositories; on a failure the transaction is rolled back as a whole. This gives at-least-once/exactly-once-like semantics for Kafka→…→Kafka and similar chains, but limits parallelism/sizes (data is in memory) ([Release Notes 2.0.0-M1](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)). Note that in 2.13.0 the API gained support for in-memory content for the Stateless engine (**[exp]**/new functionality; not available in 2.12.0).
 
 ---
 

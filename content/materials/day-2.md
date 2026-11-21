@@ -31,7 +31,7 @@ The database connection is encapsulated in the Controller Service `DBCPConnectio
 
 Notes on security and compatibility:
 
-- In 1.22.0, H2 connections stopped being supported in `DBCPConnectionPool`/`HikariCPConnectionPool` following CVE-related URL validation; in 1.23.0 the *Reference Remote Resources* restriction was introduced for a number of components (including `DBCPConnectionPool`) ([Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). If you use fine-grained policies, the users who configure these components need to be granted the corresponding permission. The *restricted components* restrictions as an authorization mechanism were removed in 2.10.0 (see Block 3.3).
+- In 1.22.0, H2 connections stopped being supported in `DBCPConnectionPool`/`HikariCPConnectionPool` following CVE-related URL validation; in 1.23.0 the *Reference Remote Resources* restriction was introduced for a number of components (including `DBCPConnectionPool`) ([Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). If you use fine-grained policies, the users who configure these components need to be granted the corresponding permission. The *restricted components* restrictions as an authorization mechanism were removed in 2.10.0 (see [Block 3.3](day-3.md#block-33-security-and-governance)).
 - In 2.7.0, AWS RDS IAM authentication for DBCP was added ([Release Notes 2.7.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 - Since 2.2.0, there is a **Database Dialect Service** for different SQL dialects ([Release Notes 2.2.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 
@@ -39,10 +39,10 @@ Notes on security and compatibility:
 
 NiFi connects to a database through the standard JDBC interface, but **you have to add the driver for the specific DBMS separately**: the JDBC drivers of external DBMSs are not included in the standard distribution (**[verify]** for your distribution/image). A processor does not work with the driver directly: the driver is attached to the Controller Service `DBCPConnectionPool`, and the processors reference that service.
 
-```text
-The driver JAR on the node's disk ──► DBCPConnectionPool (URL, driver class, JAR path, user/password)
-                                      ▲
-   ExecuteSQLRecord / PutDatabaseRecord / QueryDatabaseTableRecord ── a reference to the service
+```mermaid
+flowchart LR
+  JAR["The driver JAR on the node's disk"] --> POOL["DBCPConnectionPool<br/>(URL, driver class, JAR path, user/password)"]
+  PROC["ExecuteSQLRecord / PutDatabaseRecord /<br/>QueryDatabaseTableRecord"] -- "a reference to the service" --> POOL
 ```
 
 ##### Step 1. Download the driver
@@ -141,7 +141,7 @@ An example of a minimal read test: `GenerateFlowFile` (run once) → `ExecuteSQL
 | After replacing the JAR the old version "lives on" | The service's class loader has already been created | Disable and enable the service again; restart NiFi if necessary |
 | The service enables, but connections "break" | The pool is idle, a firewall closes idle connections | Validation Query, the pool's idle/lifetime parameters, keepalive on the network |
 
-Notes on security and compatibility: take the component restrictions into account (in 1.22.0 H2 connections through `DBCPConnectionPool`/`HikariCPConnectionPool` are prohibited; in 1.23.0 the *Reference Remote Resources* restriction was introduced — [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)); a user with permission to configure such a service gets access to the file system and the network on behalf of NiFi, so restrict the permissions to modify Controller Services (Block 3.3).
+Notes on security and compatibility: take the component restrictions into account (in 1.22.0 H2 connections through `DBCPConnectionPool`/`HikariCPConnectionPool` are prohibited; in 1.23.0 the *Reference Remote Resources* restriction was introduced — [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)); a user with permission to configure such a service gets access to the file system and the network on behalf of NiFi, so restrict the permissions to modify Controller Services ([Block 3.3](day-3.md#block-33-security-and-governance)).
 
 #### DBCPConnectionPool and DBCPConnectionPoolLookup: what is the difference
 
@@ -156,16 +156,13 @@ Both services implement the same `DBCPService` interface, so they are selected i
 - It has **no** required properties. It is configured through **dynamic properties**: the *property name* is the "key" (the value that will arrive in `database.name`), and the *property value* is a reference to an enabled Controller Service `DBCPService`. Expression Language support for these properties is off; sensitive dynamic properties are not supported ([reference](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-dbcp-service-nar/1.28.0/org.apache.nifi.dbcp.DBCPConnectionPoolLookup)).
 - When a processor requests a connection, it passes the FlowFile attributes to the service. If the `database.name` attribute is absent, the service **throws an exception**; if the value did not match any key, it is impossible to select a service (an error).
 
-```text
-FlowFile (database.name = "tenant_b")
-        │
-        ▼
- PutDatabaseRecord ── Database Connection Pooling Service: db-lookup (DBCPConnectionPoolLookup)
-                                   │ dynamic properties:
-                                   │   tenant_a = pg-tenant-a (DBCPConnectionPool → client A's database)
-                                   │   tenant_b = pg-tenant-b (DBCPConnectionPool → client B's database)   ◄── selected by database.name
-                                   ▼
-                              a connection to client B's database
+```mermaid
+flowchart TD
+  FF["FlowFile<br/>database.name = #quot;tenant_b#quot;"] --> PDR["PutDatabaseRecord<br/>Database Connection Pooling Service: db-lookup"]
+  PDR --> LK["db-lookup (DBCPConnectionPoolLookup)<br/>dynamic properties:<br/>tenant_a = pg-tenant-a<br/>tenant_b = pg-tenant-b"]
+  LK -- "tenant_a" --> A["pg-tenant-a<br/>(DBCPConnectionPool → client A's database)"]
+  LK == "tenant_b: selected by database.name" ==> B["pg-tenant-b<br/>(DBCPConnectionPool → client B's database)"]
+  B ==> CONN["a connection to client B's database"]
 ```
 
 ##### Comparison
@@ -198,11 +195,13 @@ When it is **not** needed: a single database (use a regular `DBCPConnectionPool`
 2. Create a `DBCPConnectionPoolLookup` named `db-lookup`; add dynamic properties: `tenant_a` → `pg-tenant-a`, `tenant_b` → `pg-tenant-b`. Enable it (the dependent services must be enabled).
 3. Build the flow:
 
-```text
-ConsumeKafka(RECORD) ► PartitionRecord (by /tenant)  → the tenant attribute
-   ► UpdateAttribute:  database.name = ${tenant}
-   ► RouteOnAttribute (allowed values: tenant_a | tenant_b; everything else → DLQ)
-   ► PutDatabaseRecord  (Database Connection Pooling Service = db-lookup)
+```mermaid
+flowchart TD
+  A["ConsumeKafka(RECORD)"] --> B["PartitionRecord (by /tenant)<br/>→ the tenant attribute"]
+  B --> C["UpdateAttribute:<br/>database.name = ${tenant}"]
+  C --> D["RouteOnAttribute<br/>(allowed values: tenant_a #124; tenant_b)"]
+  D -- "allowed values" --> E["PutDatabaseRecord<br/>(Database Connection Pooling Service = db-lookup)"]
+  D -- "everything else" --> F["DLQ"]
 ```
 
 `PartitionRecord` is needed here because **one FlowFile goes to one database**: mixed records of different clients must be separated before writing.
@@ -282,7 +281,7 @@ Limitations: updated (UPDATE) rows without a change in the max-value column and 
 | Batch Size | The number of rows in a JDBC batch (affects speed and transaction size) |
 | Rollback On Failure | Roll back the entire transaction (and leave the FlowFile in the incoming queue) instead of routing to `failure` |
 
-**Relationships:** `success`; `failure` — data the database does not accept (constraint violations, wrong types); `retry` — temporary problems (a lost connection, a deadlock). Do not connect `retry` back to the same processor without a limit (see Block 3.1).
+**Relationships:** `success`; `failure` — data the database does not accept (constraint violations, wrong types); `retry` — temporary problems (a lost connection, a deadlock). Do not connect `retry` back to the same processor without a limit (see [Block 3.1](day-3.md#block-31-fault-tolerance-and-error-handling)).
 
 **Efficiency.**
 
@@ -337,16 +336,22 @@ Response attributes: `invokehttp.status.code`, `invokehttp.status.message`, `inv
 #### The "retry with exponential backoff" pattern
 
 1. Enable **framework-level Retry** on the processor (since 1.16.0): the *Relationships* tab → check the *Retry* box for `Retry`/`Failure`; set the number of attempts, the **Backoff Policy** (Penalize/Yield), and the **Maximum Backoff Period**. This is implemented by the framework itself, without a loop in the flow.
-2. For more complex logic — `RetryFlowFile` (Block 3.1).
+2. For more complex logic — `RetryFlowFile` ([Block 3.1](day-3.md#block-31-fault-tolerance-and-error-handling)).
 3. Rate limiting for an external API: `ControlRate` (by the number of FlowFiles/volume/attribute) before `InvokeHTTP`; or limiting `Concurrent Tasks`.
 
 #### An example: enriching events with an external API
 
-```text
-ConsumeKafka(Record) ► PartitionRecord(by customer_id) ► InvokeHTTP(GET /customers/${customer_id})
-      ├─ Response ► (JoltTransformRecord/ LookupRecord ... ) ► PutDatabaseRecord
-      ├─ Retry ► (framework retry, then) ► RetryFlowFile ► ... ► DLQ
-      └─ No Retry / Failure ► DLQ (PutFile / PublishKafka dead-letter topic)
+```mermaid
+flowchart TD
+  A["ConsumeKafka(Record)"] --> B["PartitionRecord<br/>(by customer_id)"]
+  B --> C["InvokeHTTP<br/>GET /customers/${customer_id}"]
+  C -- "Response" --> D["(JoltTransformRecord / LookupRecord ...)"]
+  D --> E["PutDatabaseRecord"]
+  C -- "Retry" --> R1["(framework retry, then)"]
+  R1 --> R2["RetryFlowFile"]
+  R2 --> R3["..."]
+  R3 --> DLQ1["DLQ"]
+  C -- "No Retry / Failure" --> DLQ2["DLQ<br/>(PutFile / PublishKafka dead-letter topic)"]
 ```
 
 If a separate request is needed for every record, these are *per-record* calls; so as not to turn a batch into millions of requests, first group by key (`PartitionRecord`), cache (`LookupRecord` with a caching lookup service, for example `RestLookupService`), or enrich with a batch request. For an HTTP lookup in a Record flow, `LookupRecord` + `RestLookupService` is often better than `InvokeHTTP` per record (**[verify]** the specific service properties).
@@ -357,15 +362,13 @@ If a separate request is needed for every record, these are *per-record* calls; 
 
 #### Architecture
 
-```text
-Kafka3ConnectionService  (bootstrap servers, security, SSL/SASL, client timeouts)
-        ▲                               ▲
-        │                               │
-   ConsumeKafka                    PublishKafka
- (consumer group, topics,        (topic, key, headers,
-  Processing Strategy:            Publish Strategy,
-  FLOW_FILE | DEMARCATOR |        delivery guarantee,
-  RECORD; Output Strategy)        transactions)
+```mermaid
+flowchart BT
+  SVC["Kafka3ConnectionService<br/>(bootstrap servers, security, SSL/SASL, client timeouts)"]
+  CK["ConsumeKafka<br/>(consumer group, topics,<br/>Processing Strategy:<br/>FLOW_FILE #124; DEMARCATOR #124; RECORD;<br/>Output Strategy)"]
+  PK["PublishKafka<br/>(topic, key, headers,<br/>Publish Strategy,<br/>delivery guarantee,<br/>transactions)"]
+  CK --> SVC
+  PK --> SVC
 ```
 
 Advantages of the service-based approach: connection parameters (brokers, TLS, SASL) are set **once**; processors do not depend on the version of the client library; the same processor works in FlowFile/Record/Demarcator modes.
@@ -533,7 +536,7 @@ The `CHECK (amount > 0)` constraint is the business rule on which `o-1002` goes 
 | `JsonTreeReader` (`reader-order`) | Schema Access Strategy: `Use 'Schema Name' Property` (`${schema.name}`); Schema Registry: `AvroSchemaRegistry` — for `LookupRecord` |
 | `JsonRecordSetWriter` (`writer-order-ndjson`) | Schema Access: `Use 'Schema Name' Property` = `order.v1`; Schema Write Strategy: `Set 'schema.name' Attribute`; Output Grouping: `One Line Per Object`; Pretty Print `false` |
 | `JsonRecordSetWriter` (`writer-ndjson`) | Schema Access `Inherit Record Schema`; `One Line Per Object` — for the remaining processors (keeps the fields added by `LookupRecord`) |
-| `AvroSchemaRegistry` | The dynamic property `order.v1` with the schema from Block 1.3 |
+| `AvroSchemaRegistry` | The dynamic property `order.v1` with the schema from [Block 1.3](day-1.md#block-13-record-based-processing) |
 | `DBCPConnectionPool` | URL `#{db.url}`; Driver `org.postgresql.Driver`; Driver Locations `#{db.driver}`; User `#{db.user}`; Password `#{db.password}` |
 | `RestLookupService` | URL `#{customers.api}/customers/${customer_id}`; Record Reader — `JsonTreeReader` (Infer Schema) |
 
@@ -639,7 +642,7 @@ Advantages: streaming processing without loading the entire array; simple cuttin
 | `RemoveRecordField` | Removing fields by RecordPath | Simple removal |
 | `PartitionRecord` | Splitting by a field value | Routing by keys |
 
-Detailed references on `ValidateRecord`, `QueryRecord`, `UpdateRecord` (with the basics of RecordPath), `EvaluateJsonPath`, and `MergeRecord` are in section 2.2.6; on `JoltTransformRecord` — in section 2.2.3; on the Split processors — in Day 1, section 1.3.7.
+Detailed references on `ValidateRecord`, `QueryRecord`, `UpdateRecord` (with the basics of RecordPath), `EvaluateJsonPath`, and `MergeRecord` are in section 2.2.6; on `JoltTransformRecord` — in section 2.2.3; on the Split processors — in [Day 1, section 1.3.7](day-1.md#137-reference-split-processors-an-introduction-to-queryrecord-and-recordpath).
 
 **2.x compatibility.** `JoltTransformJSON` and `JoltTransformRecord` were moved to `nifi-jolt-nar` (**2.0.0-M2**). In **2.8.0** they were switched to the maintained jolt-community library; custom transformation classes from external JARs must be **recompiled** ([Migration Guidance 2.8.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). In **2.10.0** the return value types of the RecordPath functions `format()`, `toString()`, `toDate()`, `toBytes()` changed — they now return correctly typed values ([Migration Guidance 2.10.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)); check the `UpdateRecord` expressions that use these functions.
 
@@ -656,7 +659,7 @@ In NiFi two processors work with Jolt, and they are part of the `nifi-jolt-nar` 
 | `JoltTransformJSON` | The whole FlowFile as **one JSON document** (an object or an array) | One-off structural transformations of a single document |
 | `JoltTransformRecord` | **Record by record** through a Record Reader/Writer; the specification is applied to each record | Event streams, NDJSON, any formats supported by Readers/Writers (JSON, Avro, CSV…) |
 
-For streaming data (NDJSON, large batches of records), use **`JoltTransformRecord`**: it processes records in a streaming fashion and is consistent with the Record approach (Block 1.3). `JoltTransformJSON` is designed for one JSON document and parses it entirely in memory.
+For streaming data (NDJSON, large batches of records), use **`JoltTransformRecord`**: it processes records in a streaming fashion and is consistent with the Record approach ([Block 1.3](day-1.md#block-13-record-based-processing)). `JoltTransformJSON` is designed for one JSON document and parses it entirely in memory.
 
 **Version notes (confirmed against the [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).** In **2.8.0** both processors were switched to the maintained jolt-community library; custom transformation classes from external JARs must be **recompiled** against it. In **2.0.0-M2** the processors were moved from `nifi-standard-nar` to `nifi-jolt-nar` (important if you build a custom image/distribution).
 
@@ -831,7 +834,7 @@ The result of EL is substituted into the specification **as a string before comp
 #### Jolt in a Record flow: what is important to know
 
 1. **The input schema.** The Record Reader creates records according to its schema; whatever is not in the Reader's schema (when the schema is explicit), Jolt "will not see": the `JsonTreeReader` reference confirms that JSON fields absent from the schema are skipped. For explicit schemas, include in the schema all the fields that the transformation needs.
-2. **The output schema.** After Jolt, the structure and types change (for example, `=toInteger`, new fields). The Writer must be able to write the result: either the schema is derived from the result (a Writer with `Inherit Record Schema`), or you set an explicit Writer schema. For a deterministic result, field order, and types, set an **explicit Writer schema** (see Block 1.3).
+2. **The output schema.** After Jolt, the structure and types change (for example, `=toInteger`, new fields). The Writer must be able to write the result: either the schema is derived from the result (a Writer with `Inherit Record Schema`), or you set an explicit Writer schema. For a deterministic result, field order, and types, set an **explicit Writer schema** (see [Block 1.3](day-1.md#block-13-record-based-processing)).
 3. **Key order.** The order of fields in the output JSON is determined by the Writer/the schema; you cannot rely on the key order that comes out "by itself" as a result of Jolt. If order matters (Block 2.2.4, the example with `ingest_ts` first) — control it with the Writer schema.
 4. **Types.** `shift` preserves value types; change a type with `modify-*` and check that the Writer schema is consistent.
 5. **Errors.** An invalid specification or incompatible data → the FlowFile goes to `failure`. The source FlowFile is sent to `original` only on success.
@@ -979,7 +982,7 @@ This section collects detailed descriptions of the processors most often used in
 
 #### ValidateRecord
 
-**Purpose.** Checks **each record** of a FlowFile for conformance to a schema and **separates** the records into valid and invalid ones (as opposed to "all or nothing"). It is the "entrance gate" of the pipeline and the basis of the dead-letter pattern (Block 3.1.3).
+**Purpose.** Checks **each record** of a FlowFile for conformance to a schema and **separates** the records into valid and invalid ones (as opposed to "all or nothing"). It is the "entrance gate" of the pipeline and the basis of the dead-letter pattern ([Block 3.1.3](day-3.md#313-keeping-the-main-flow-running-when-failure-queues-fill-up)).
 
 **How it works.** The Reader reads the records; the processor checks them against the schema; the records that pass go to `valid`, the rest to `invalid`. The schema used for the check is also used for writing the valid data, regardless of the Writer's schema.
 
@@ -1008,7 +1011,7 @@ Attributes: `mime.type`, `record.count` (the number of records in the FlowFile t
 
 **Practice.**
 
-1. **Separate valid and invalid records at the input**, not at the end: bad data goes to the DLQ and the main flow is not blocked (Block 3.1.3).
+1. **Separate valid and invalid records at the input**, not at the end: bad data goes to the DLQ and the main flow is not blocked ([Block 3.1.3](day-3.md#313-keeping-the-main-flow-running-when-failure-queues-fill-up)).
 2. For production, set the schema explicitly (`Schema Name`/`Schema Text`) rather than `Use Reader's Schema` together with Infer Schema: otherwise the schema "adapts" to the data and there is nothing to check.
 3. Enable **Validation Details Attribute Name** (for example, `validation.details`) and keep it together with the invalid FlowFile — it is the reason for the error and lets you analyze the DLQ without a rerun. For investigation you can temporarily enable DEBUG logging for the logger `org.apache.nifi.processors.standard.ValidateRecord`.
 4. Choosing strictness: `Strict Type Checking=true`, `Allow Extra Fields=false` — maximum strictness (contract-based flows); `false/true` — soft mode (type coercion, extra fields are allowed).
@@ -1172,7 +1175,7 @@ Destination = flowfile-content, Return Type = json
 **When to use it and when not to.**
 
 - **Suitable:** extracting **small scalars** (an identifier, an event type, a routing key) into attributes for `RouteOnAttribute`, a file name, a Kafka key; "pulling out" a nested object into the content.
-- **Not suitable:** arrays of records, large values (attributes live in the heap — Block 1.1.3), NDJSON (many documents in a row is not one JSON document); for these, use Record processors (`QueryRecord`, `PartitionRecord`, `UpdateRecord`).
+- **Not suitable:** arrays of records, large values (attributes live in the heap — [Block 1.1.3](day-1.md#113-repositories-and-the-flowfile-lifecycle)), NDJSON (many documents in a row is not one JSON document); for these, use Record processors (`QueryRecord`, `PartitionRecord`, `UpdateRecord`).
 - A trap: with `ignore`, a path that is not found gives an **empty attribute, not an absent one**; in `RouteOnAttribute` check `${user.id:isEmpty()}`, or use `skip` and `${user.id:isNull()}`.
 - Compare: `EvaluateJsonPath` + `RouteOnAttribute` per record (after `SplitJson`) is replaced by a single `QueryRecord` over the whole FlowFile.
 
@@ -1211,9 +1214,9 @@ Destination = flowfile-content, Return Type = json
 1. **Always set Max Bin Age** and deliberately set Min/Max Records; an example for NDJSON before Splunk: Min Records `5000`, Max Records `20000`, Max Bin Age `30 sec`.
 2. **Do not schedule `MergeRecord` by CRON** — the reference explicitly does not recommend it.
 3. For very large resulting FlowFiles — **a two-stage merge**: the first MergeRecord collects 1,000 at a time, its `merged` goes to a second MergeRecord, also 1,000 at a time (this is how a million records are assembled without inflating the number of bins in memory).
-4. Different schemas are **not merged** — they will land in different bins; make sure the source does not "drift" in its schema (Infer Schema, Block 1.3.4).
+4. Different schemas are **not merged** — they will land in different bins; make sure the source does not "drift" in its schema (Infer Schema, [Block 1.3.4](day-1.md#134-json-tree-reader-infer-schema-limitations-and-an-explicit-schema)).
 5. Grouping by a key (a tenant, a topic): set an attribute (through `UpdateAttribute`/`PartitionRecord`) and specify it in *Correlation Attribute Name*.
-6. Balance: the larger the bin, the higher the throughput of the destination, but also the higher the latency and memory; tune by measurement (Lab 8).
+6. Balance: the larger the bin, the higher the throughput of the destination, but also the higher the latency and memory; tune by measurement ([Lab 8](day-3.md#lab-8-a-performance-test-and-pipeline-tuning)).
 
 **Common mistakes.** No `Max Bin Age` → the last records "hang"; `Minimum Number of Records` = 1 (the default) → a million small FlowFiles on output; Maximum Number of Bins less than the number of threads → fragmentation; expecting a strict limit on records although it is "soft"; `Defragment` without the `fragment.*` attributes.
 

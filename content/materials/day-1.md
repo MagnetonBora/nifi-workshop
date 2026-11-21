@@ -57,20 +57,7 @@ NiFi solves the problem of **dynamic routing and delivery** of data between hete
 
 Apache NiFi runs as a Java application in a JVM on every node. The main elements (for more detail see [NiFi In Depth](https://nifi.apache.org/docs/nifi-docs/html/nifi-in-depth.html) and the [Overview](https://nifi.apache.org/docs/nifi-docs/html/overview.html)):
 
-```text
-┌───────────────────────────── JVM (NiFi node) ─────────────────────────────┐
-│  Web Server (Jetty, REST API + UI)                                        │
-│  ┌──────────────────────── Flow Controller ────────────────────────────┐  │
-│  │ Scheduler ── Timer-driven thread pool ── Processors / Services       │  │
-│  │ Process Sessions ─ Connections (queues) ─ Bulletin repository        │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│  FlowFile Repository   Content Repository     Provenance Repository        │
-│  (WAL: attributes +    (claims on disk,       (events; indexed             │
-│   pointer to content)   immutable content)      for search)                │
-│  Extensions: Processors, Controller Services, Reporting Tasks, Parameter   │
-│  Providers, Flow Registry Clients (NAR packages; Python extensions in 2.x) │
-└───────────────────────────────────────────────────────────────────────────┘
-```
+![[images/zero-leader-node.png]]
 
 The **Flow Controller** is the "brain" of the node. It schedules the execution of processors, hands them threads from the pool, and manages queues and repositories. A processor does not own a thread: the Flow Controller invokes its `onTrigger` method on a schedule, and the processor uses a **ProcessSession** to take FlowFiles from its incoming queues and pass them to the outgoing ones.
 
@@ -91,7 +78,7 @@ Three repositories are the basis of NiFi's guarantees.
 Notes on versions:
 
 - `PersistentProvenanceRepository` and the legacy classes were removed in 2.0 ([Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals)). `WriteAheadProvenanceRepository` has been available since 1.2.0 ([Release Notes 1.2.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
-- **[rem 2.0.0]** Support for repository encryption was removed ([Release Notes 2.0.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), the Breaking Changes section). This matters for migration (Block 2.4) and for the Encryption section (Block 3.3).
+- **[rem 2.0.0]** Support for repository encryption was removed ([Release Notes 2.0.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes), the Breaking Changes section). This matters for migration ([Block 2.4](day-2.md#block-24-migration-from-nifi-1x-to-2x)) and for the Encryption section ([Block 3.3](day-3.md#block-33-security-and-governance)).
 
 #### The copy-on-write principle and content immutability
 
@@ -104,21 +91,21 @@ The content of a written claim is **never modified**. When a processor "changes"
 
 #### FlowFile lifecycle (simplified)
 
-```text
-Source (for example, ListenHTTP / ConsumeKafka / GetFile)
-  │ 1. session.create() → a new FlowFile; provenance event RECEIVE / CREATE
-  │ 2. session.write(...) → content goes into a new claim
-  │ 3. session.transfer(ff, REL_SUCCESS)
-  │ 4. session.commit():
-  │       a) update the FlowFile Repository (WAL)  ← durability point
-  │       b) write provenance events
-  │       c) the FlowFile lands in the Connection queue
-  ▼
-Connection (queue): back pressure, prioritizers, expiration, load balancing
-  ▼
-Next processor: session.get() → processing → commit/rollback
-  ▼
-Terminal processor / auto-terminated relationship → DROP event; the claim is released
+```mermaid
+flowchart TD
+  SRC["Source (for example, ListenHTTP / ConsumeKafka / GetFile)"]
+  S1["1. session.create() → a new FlowFile;<br/>provenance event RECEIVE / CREATE"]
+  S2["2. session.write(...) → content goes into a new claim"]
+  S3["3. session.transfer(ff, REL_SUCCESS)"]
+  S4["4. session.commit()"]
+  C1["a) update the FlowFile Repository (WAL)<br/>← durability point"]
+  C2["b) write provenance events"]
+  C3["c) the FlowFile lands in the Connection queue"]
+  Q["Connection (queue): back pressure, prioritizers,<br/>expiration, load balancing"]
+  NP["Next processor:<br/>session.get() → processing → commit/rollback"]
+  T["Terminal processor / auto-terminated relationship<br/>→ DROP event; the claim is released"]
+  SRC --> S1 --> S2 --> S3 --> S4
+  S4 --> C1 --> C2 --> C3 --> Q --> NP --> T
 ```
 
 **Guarantee semantics.** Inside NiFi, processing is organized by session transactions. On `rollback` (an exception in a processor), the FlowFile returns to the incoming queue (with penalization in some cases), so within a node the **at-least-once** model is implemented: data is not lost on a failure between steps, but it may be processed again if the failure occurred after a side effect in an external system but before the commit. This is the key point for integrations (Kafka, databases, REST): idempotent writes at the destination are the flow designer's responsibility.
@@ -149,7 +136,7 @@ About the Variable Registry: **[rem 2.0]** variables (Variables) and the Variabl
 ### 1.1.5 Typical scenarios
 
 1. **Stream ingestion.** Receiving events over HTTP (`ListenHTTP`/`HandleHttpRequest`), from Kafka (`ConsumeKafka`), or MQTT; normalization and routing into storage systems.
-2. **Log shipping.** Receiving syslog (`ListenSyslog`), tailing files (`TailFile`), parsing, filtering (dropping noise), delivery to Splunk/Elastic/Kafka/S3. Splunk is covered in Block 2.3.
+2. **Log shipping.** Receiving syslog (`ListenSyslog`), tailing files (`TailFile`), parsing, filtering (dropping noise), delivery to Splunk/Elastic/Kafka/S3. Splunk is covered in [Block 2.3](day-2.md#block-23-splunk-integration).
 3. **Event pipelines.** Validation against a schema, enrichment (`LookupRecord`), separate delivery to several destinations, a DLQ for invalid events.
 4. **Batch integrations.** The List/Fetch pattern (`ListFile`+`FetchFile`, `ListSFTP`+`FetchSFTP`, `ListS3`+`FetchS3Object`) with state for incremental loading.
 
@@ -204,9 +191,9 @@ GenerateFlowFile ──success──► UpdateAttribute ──success──► L
 |---|---|---|---|
 | **Files (local/SFTP/SMB/S3)** | `ListFile` + `FetchFile`, `GetFile`, `ListSFTP` + `FetchSFTP`, `ListS3` + `FetchS3Object` | `List*` keep state (the latest timestamps/keys) | List/Fetch is preferable to `Get*`: List can run on Primary Node Only, while Fetch can be distributed across the cluster through load balancing |
 | **HTTP/REST (inbound)** | `ListenHTTP`, `HandleHttpRequest` + `HandleHttpResponse` | — | For receiving events; configure TLS and authentication |
-| **HTTP/REST (outbound)** | `InvokeHTTP` | — | Covered in detail in Block 2.1 |
-| **Databases** | `ExecuteSQLRecord`, `QueryDatabaseTableRecord`, `GenerateTableFetch` | Maximum-value columns in state | Covered in detail in Block 2.1 |
-| **Messaging** | `ConsumeKafka`, `ConsumeJMS`, `ConsumeMQTT`, `ConsumeAMQP` | Offsets/acks on the broker side | Kafka — Block 2.1 |
+| **HTTP/REST (outbound)** | `InvokeHTTP` | — | Covered in detail in [Block 2.1](day-2.md#block-21-connecting-to-databases-messaging-systems-rest-apis) |
+| **Databases** | `ExecuteSQLRecord`, `QueryDatabaseTableRecord`, `GenerateTableFetch` | Maximum-value columns in state | Covered in detail in [Block 2.1](day-2.md#block-21-connecting-to-databases-messaging-systems-rest-apis) |
+| **Messaging** | `ConsumeKafka`, `ConsumeJMS`, `ConsumeMQTT`, `ConsumeAMQP` | Offsets/acks on the broker side | Kafka — [Block 2.1](day-2.md#block-21-connecting-to-databases-messaging-systems-rest-apis) |
 | **Logs/network** | `TailFile`, `ListenSyslog`, `ListenTCP`, `ListenUDP` | The read position in state | |
 
 **The List/Fetch pattern.** `List*` produces a FlowFile without content (only attributes that describe the object), and then `Fetch*` reads the content. As a result, listing runs on one node (Primary Node Only), while the expensive loading runs on all nodes of the cluster after the queue is balanced. Since NiFi 1.14, processors scheduled as *Primary Node Only* that have incoming connections become invalid ([Migration Guidance, 1.14.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
@@ -252,7 +239,7 @@ csv           = ${filename:endsWith('.csv')}
 
 ### 1.2.3 Merging flows, back pressure, prioritization
 
-**Merging.** Several incoming connections into one processor are allowed (fan-in); the processor takes a FlowFile from any of them. To merge the *data* itself, use `MergeContent` (byte concatenation, with the formats binary concatenation/TAR/ZIP/Avro) and `MergeRecord` (record-oriented merging that takes the schema into account; a detailed reference on its properties and the rules for when a bin is ready is in Day 2, section 2.2.6). The key merge parameters are: *Minimum/Maximum Number of Entries (Records)*, *Minimum/Maximum Group Size*, **Max Bin Age** (a forced flush by time — important so that the tail of the data does not get stuck), *Correlation Attribute Name*, and *Merge Strategy* (`Bin-Packing Algorithm` or `Defragment`).
+**Merging.** Several incoming connections into one processor are allowed (fan-in); the processor takes a FlowFile from any of them. To merge the *data* itself, use `MergeContent` (byte concatenation, with the formats binary concatenation/TAR/ZIP/Avro) and `MergeRecord` (record-oriented merging that takes the schema into account; a detailed reference on its properties and the rules for when a bin is ready is in [Day 2, section 2.2.6](day-2.md#226-reference-validaterecord-queryrecord-updaterecord-recordpath-evaluatejsonpath-mergerecord)). The key merge parameters are: *Minimum/Maximum Number of Entries (Records)*, *Minimum/Maximum Group Size*, **Max Bin Age** (a forced flush by time — important so that the tail of the data does not get stuck), *Correlation Attribute Name*, and *Merge Strategy* (`Bin-Packing Algorithm` or `Defragment`).
 
 > A historical note: in NiFi 1.8, `MergeRecord` began to honor *Minimum Number of Records* strictly; if the minimum is set lower than the maximum, the output may contain more small FlowFiles. For large output files, set the minimum closer to the maximum ([Migration Guidance, 1.8.0](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
 
@@ -260,7 +247,7 @@ csv           = ${filename:endsWith('.csv')}
 
 Back pressure is a protection mechanism against overflow: every Connection has an **Object Threshold** and a **Size Threshold**. New connections get the default values of **10,000 FlowFiles and 1 GB** (introduced in 1.0.0, [Migration Guidance](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)). When either threshold is reached, the source processor of that connection **stops being scheduled** until the queue frees up.
 
-An important consequence: it is enough for **one of the outgoing connections** of a processor to be full, and the processor stops entirely, even if the other connections are free. This is critical for failure queues (Block 3.1).
+An important consequence: it is enough for **one of the outgoing connections** of a processor to be full, and the processor stops entirely, even if the other connections are free. This is critical for failure queues ([Block 3.1](day-3.md#block-31-fault-tolerance-and-error-handling)).
 
 | Connection parameter | Purpose |
 |---|---|
@@ -294,7 +281,7 @@ Prioritizers do not guarantee a strict global order with several concurrent task
 - A **Process Group** as a functional module: *ingest*, *validate*, *transform*, *deliver*, *error handling*. Groups communicate through Input/Output Ports.
 - A **Parameter Context** for all environment-dependent values (URLs, paths, topics, table names, credentials as sensitive parameters). Context inheritance (`base` → `prod`) lets you keep common values separately.
 - One Controller Service — one meaning; create services at the Process Group level rather than at root, unless they are needed globally.
-- Isolate error handling in a reusable group (covered in detail in Block 3.1).
+- Isolate error handling in a reusable group (covered in detail in [Block 3.1](day-3.md#block-31-fault-tolerance-and-error-handling)).
 
 **Anti-patterns.** "Spaghetti" of hundreds of processors on one canvas; hard-coded URLs and passwords; extracting large fragments of content into attributes; endless `failure → the same processor` connections without a limit on the number of retries; unnamed processors.
 
@@ -361,13 +348,15 @@ In the classic "one FlowFile = one object" model, a JSON array of 10,000 events 
 
 A **Schema** describes the fields and types. The processor works with records in a streaming fashion: one record in memory at a time, so large FlowFiles are processed without being loaded entirely (unless a specific processor accumulates data: `QueryRecord` and `MergeRecord` have their own nuances).
 
-```text
-FlowFile (NDJSON, 100k records)
-   │ JsonTreeReader ──► stream of Records
-   │          └── processor: ConvertRecord / UpdateRecord / QueryRecord / ValidateRecord …
-   │ JsonRecordSetWriter / AvroRecordSetWriter ◄──
-   ▼
-FlowFile (another format or schema, 1 FlowFile, 1 entry in the repository)
+```mermaid
+flowchart TD
+  IN["FlowFile (NDJSON, 100k records)"]
+  R["JsonTreeReader"]
+  RS["Stream of Records"]
+  P["Processor: ConvertRecord / UpdateRecord /<br/>QueryRecord / ValidateRecord …"]
+  W["JsonRecordSetWriter / AvroRecordSetWriter"]
+  OUT["FlowFile (another format or schema,<br/>1 FlowFile, 1 entry in the repository)"]
+  IN --> R --> RS --> P --> W --> OUT
 ```
 
 ### 1.3.2 Reader, Writer, Schema, and Schema Registry
@@ -474,7 +463,7 @@ In 2.10.0, "the leniency of the JSON readers and the flexibility of the JSON Wri
 1. **An explicit schema** instead of Infer (avoids the extra pass and unstable types).
 2. **A minimum of conversions.** If you read and write JSON with the same schema, do not add an unnecessary `ConvertRecord`.
 3. **The Writer.** For `JsonRecordSetWriter`: `Pretty Print JSON = false`; `Output Grouping`: `Array` or `One Line Per Object` (NDJSON). For streaming delivery to Splunk/Kafka/logs, NDJSON is more convenient than an array: it can be cut by lines, concatenated, and processed in a streaming fashion. `Suppress Null Values`: `Never Suppress` / `Always Suppress` / `Suppress Missing Values` — affects the output size and compatibility with the destination.
-4. **The Writer schema.** An explicit schema with the required field order determines the output order (see Block 2.2).
+4. **The Writer schema.** An explicit schema with the required field order determines the output order (see [Block 2.2](day-2.md#block-22-transforming-json-and-ndjson)).
 5. **Format.** Binary formats (Avro, Parquet) are cheaper than text JSON in size and parsing CPU; within the chain you can convert to Avro and back to JSON at the boundary.
 6. **FlowFile size.** Many records in one FlowFile is good, but giant FlowFiles (gigabytes) hinder parallelism and retry. The usual target is tens to hundreds of MB per FlowFile; tune it to the destinations.
 7. **Concurrent Tasks.** Record processors scale safely with `Concurrent Tasks`; the limit is the number of FlowFiles in the queue (with one huge FlowFile, parallelism is useless). Split the input into partitions (`PartitionRecord`/`SplitRecord` with a large *Records Per Split*).
@@ -593,7 +582,7 @@ SELECT * FROM FLOWFILE WHERE level <> 'DEBUG'
 SELECT svc, COUNT(*) AS cnt FROM FLOWFILE GROUP BY svc
 ```
 
-A single FlowFile with 100,000 records is processed without a single Split; as a result, the three relationships receive data in the required shape. The full reference (properties, behavior on empty results, the result schema, cost) is in Day 2, section 2.2.6.
+A single FlowFile with 100,000 records is processed without a single Split; as a result, the three relationships receive data in the required shape. The full reference (properties, behavior on empty results, the result schema, cost) is in [Day 2, section 2.2.6](day-2.md#226-reference-validaterecord-queryrecord-updaterecord-recordpath-evaluatejsonpath-mergerecord).
 
 #### A mini-insert: RecordPath
 
@@ -607,7 +596,7 @@ Many Record processors (`UpdateRecord`, `PartitionRecord`, `LookupRecord`, `Remo
 | `/array[*]` | All elements of an array | `/items[*]/sku` |
 | `..` | The parent of the current node | `../id` |
 
-A detailed treatment of RecordPath and its functions (`concat`, `format`, etc.) is in Day 2, section 2.2.6 (together with `UpdateRecord`).
+A detailed treatment of RecordPath and its functions (`concat`, `format`, etc.) is in [Day 2, section 2.2.6](day-2.md#226-reference-validaterecord-queryrecord-updaterecord-recordpath-evaluatejsonpath-mergerecord) (together with `UpdateRecord`).
 
 
 ### Lab 3: replacing a Split-based flow with a Record-based one and comparing throughput
@@ -692,19 +681,19 @@ The main configuration lives in the `NIFI_HOME/conf/` directory. Below is a shor
 | File | Purpose | What is inside | Notes for a cluster |
 |---|---|---|---|
 | `nifi.properties` | **The main node settings file** | Web server ports and host, TLS (keystore/truststore), paths and parameters of the three repositories, cluster (`nifi.cluster.*`), ZooKeeper (`nifi.zookeeper.*`), Site-to-Site (`nifi.remote.*`), `nifi.sensitive.props.key`, paths to the other configs (`authorizers.xml`, `login-identity-providers.xml`, `state-management.xml`), flow archiving | Each node has its own file: some values are the same (the sensitive key, cluster settings), some are individual (the node address, paths, certificates). Changes take effect after the node restarts |
-| `bootstrap.conf` | Parameters for **starting the JVM** and the supervisor process (Bootstrap) | `java.arg.N` (heap `-Xms`/`-Xmx`, GC parameters, `-XX:+HeapDumpOnOutOfMemoryError`), the path to Java, the graceful shutdown timeout | Edited when tuning memory (Block 3.4); a restart is mandatory |
+| `bootstrap.conf` | Parameters for **starting the JVM** and the supervisor process (Bootstrap) | `java.arg.N` (heap `-Xms`/`-Xmx`, GC parameters, `-XX:+HeapDumpOnOutOfMemoryError`), the path to Java, the graceful shutdown timeout | Edited when tuning memory ([Block 3.4](day-3.md#block-34-performance-tuning-hardware-and-storage)); a restart is mandatory |
 | `flow.json.gz` | **The saved flow**: processors, connections, Process Groups, Controller Services, Parameter Contexts | Compressed JSON; sensitive values are encrypted with the key from `nifi.sensitive.props.key` | The same on all cluster nodes; not edited by hand. In 2.x it is the only format (`flow.xml.gz` is not used) |
 | `authorizers.xml` | **Authorization**: where users and groups come from, where policies are stored | User Group Provider, Access Policy Provider, Authorizer; the initial administrator (*Initial Admin Identity*) and the identities of the cluster nodes | Must be consistent between nodes |
 | `login-identity-providers.xml` | **Authentication** by login/password | Provider settings: LDAP/AD, Single User, etc. Used when the corresponding provider is selected in `nifi.properties` | The same on the cluster nodes |
-| `users.xml`, `authorizations.xml` | Users/groups and access policies, if **file-based** providers are used | Created and updated by NiFi (the file names are set in `authorizers.xml`) | Must match across the cluster; **included in the backup** (Block 3.1.5) |
+| `users.xml`, `authorizations.xml` | Users/groups and access policies, if **file-based** providers are used | Created and updated by NiFi (the file names are set in `authorizers.xml`) | Must match across the cluster; **included in the backup** ([Block 3.1.5](day-3.md#315-backup-and-restore-configuration-flow-definitions-keys)) |
 | `state-management.xml` | **Storage of component state** | The local state provider (on the node's disk, `state/local`) and the cluster state provider (ZooKeeper or Kubernetes) | The connection parameters of the cluster provider are the same on all nodes |
 | `logback.xml` | **Logging** | Log files (`nifi-app.log`, `nifi-user.log`, `nifi-bootstrap.log`, `nifi-request.log`, `nifi-deprecation.log`), levels, rotation | Log levels are often changed during debugging; logback usually picks up changes without a restart (**[verify]** on your system) |
 | `zookeeper.properties` | Settings of the **embedded ZooKeeper** | Ports, the data directory, the list of servers | Only for labs; production uses an external ZooKeeper ensemble. In 2.x the ZooKeeper integration was moved into a separate NAR (2.6.0) |
-| `archive/` (directory) | **An archive of previous flow versions** | Time-stamped copies of `flow.json.gz` (`nifi.flow.configuration.archive.*`) | The first line of configuration rollback (Block 3.1/3.2) |
+| `archive/` (directory) | **An archive of previous flow versions** | Time-stamped copies of `flow.json.gz` (`nifi.flow.configuration.archive.*`) | The first line of configuration rollback ([Block 3.1](day-3.md#block-31-fault-tolerance-and-error-handling)/[3.2](day-3.md#block-32-monitoring-provenance-and-troubleshooting)) |
 | Keystore/truststore (for example, `keystore.p12`, `truststore.p12`) or PEM files | The node's **TLS material** | The node's certificate and private key, trusted certificates | Individual for each node (SAN = the node's name); store with restricted permissions |
 | `bin/nifi-env.sh` (outside `conf/`) | Environment variables for the startup scripts (for example, `JAVA_HOME`) | Variable exports | Needed if Java is not detected automatically (**[verify]** in your version) |
 
-Obsolete and removed in 2.x: `flow.xml.gz` (replaced by `flow.json.gz`), `bootstrap-notification-services.xml` (Bootstrap Notification Services were removed in 2.0.0-M2), encryption of values in `nifi.properties` through `encrypt-config` (removed in 2.0.0-M4) — details in Block 2.4 and Block 3.3.
+Obsolete and removed in 2.x: `flow.xml.gz` (replaced by `flow.json.gz`), `bootstrap-notification-services.xml` (Bootstrap Notification Services were removed in 2.0.0-M2), encryption of values in `nifi.properties` through `encrypt-config` (removed in 2.0.0-M4) — details in [Block 2.4](day-2.md#block-24-migration-from-nifi-1x-to-2x) and [Block 3.3](day-3.md#block-33-security-and-governance).
 
 **The main property groups of `nifi.properties`.**
 
@@ -726,7 +715,7 @@ Obsolete and removed in 2.x: `flow.xml.gz` (replaced by `flow.json.gz`), `bootst
 1. Make configuration changes through a configuration management system (Ansible, Helm values, images), not by hand on the nodes: this keeps the nodes consistent.
 2. Do not change files "on the fly" without a restart where one is needed (`nifi.properties`, `bootstrap.conf`); after editing, check `nifi-app.log` for startup errors.
 3. Do not keep secrets (keystore passwords, `nifi.sensitive.props.key`) in the repository with the configuration and do not publish them in logs; restrict file permissions (`chmod 600/640`, the owner is the NiFi user).
-4. Make a copy of a file before editing it; before a migration, make a full backup of `conf/` (Block 2.4 and 3.1.5).
+4. Make a copy of a file before editing it; before a migration, make a full backup of `conf/` ([Block 2.4](day-2.md#block-24-migration-from-nifi-1x-to-2x) and [3.1.5](day-3.md#315-backup-and-restore-configuration-flow-definitions-keys)).
 
 ### 1.4.1 Single node vs cluster
 
@@ -853,11 +842,11 @@ NIFI_HOME/
 Facts about the configuration:
 
 - In 2.x `flow.xml.gz` is not used; in `nifi.properties` the property `nifi.flow.configuration.file` must point to `flow.json.gz` ([Migration Guidance, 2.0.0-M1](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
-- NiFi **archives** previous flow versions in `conf/archive` (`nifi.flow.configuration.archive.enabled`, `.max.time`, `.max.storage`) — this is your first line of configuration rollback (Block 3.1/3.2).
+- NiFi **archives** previous flow versions in `conf/archive` (`nifi.flow.configuration.archive.enabled`, `.max.time`, `.max.storage`) — this is your first line of configuration rollback ([Block 3.1](day-3.md#block-31-fault-tolerance-and-error-handling)/[3.2](day-3.md#block-32-monitoring-provenance-and-troubleshooting)).
 - `nifi.sensitive.props.key` is the key for encrypting sensitive properties in `flow.json.gz`. **Losing the key = being unable to decrypt the sensitive values** (you will have to enter them again). It has been mandatory since 1.14.0 ([Migration Guidance, 1.13→1.14](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
-- JVM parameters (heap, etc.) are in `bootstrap.conf` (`java.arg.N`). In the distribution the default heap is small (on the order of 512 MB); for real workloads it must be increased (Block 3.4).
+- JVM parameters (heap, etc.) are in `bootstrap.conf` (`java.arg.N`). In the distribution the default heap is small (on the order of 512 MB); for real workloads it must be increased ([Block 3.4](day-3.md#block-34-performance-tuning-hardware-and-storage)).
 - Ports (defaults): web HTTPS `8443`; load balancing `6342`; the cluster node protocol is set by `nifi.cluster.node.protocol.port`; Site-to-Site — `nifi.remote.input.socket.port`. The full list is in the Administration Guide.
-- Place the repositories on **separate volumes** (at a minimum: the FlowFile Repository separate from Content; Provenance separate) — more in Block 3.4.
+- Place the repositories on **separate volumes** (at a minimum: the FlowFile Repository separate from Content; Provenance separate) — more in [Block 3.4](day-3.md#block-34-performance-tuning-hardware-and-storage).
 
 ### 1.4.6 Flow versioning and change management
 
@@ -884,8 +873,8 @@ A **Flow Registry Client** is a pluggable component for storing Process Group ve
 
 - Environments dev → test → prod; the same flow version, the only difference being the Parameter Context.
 - Secrets — only sensitive parameters / Parameter Providers; not in Git.
-- Review changes in git (pull requests) instead of edits in the UI on prod; restrict change permissions on prod (Block 3.3).
-- **Flow Analysis Rules** (the API was introduced in 2.0.0-M1) make it possible to automatically check compliance with design standards (Apache NiFi 2.6.0 provides `DisallowComponentType`, `RestrictBackpressureSettings`, `RequireServerSSLContextService`, `RestrictFlowFileExpiration` — details in Day 3, section 3.2.6).
+- Review changes in git (pull requests) instead of edits in the UI on prod; restrict change permissions on prod ([Block 3.3](day-3.md#block-33-security-and-governance)).
+- **Flow Analysis Rules** (the API was introduced in 2.0.0-M1) make it possible to automatically check compliance with design standards (Apache NiFi 2.6.0 provides `DisallowComponentType`, `RestrictBackpressureSettings`, `RequireServerSSLContextService`, `RestrictFlowFileExpiration` — details in [Day 3, section 3.2.6](day-3.md#326-nifi-settings-the-purpose-of-the-general-management-controller-services-reporting-tasks-flow-analysis-rules-registry-clients-and-parameter-providers-tabs)).
 - XML Templates were removed in 2.0; JSON flow definitions and versioning replace them (**[rem 2.0]**).
 - Copying a flow between independent deployments: since 2.1.0 the UI supports copy/paste of flow definitions ([Release Notes 2.1.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)).
 

@@ -21,5 +21,4 @@ Welcome to this three-day hands-on workshop on Apache NiFi. The course progresse
 # Github repositories
 
 <a href="https://github.com/MagnetonBora/nifi-workshop">Workshop Presentation Repository</a>
-
 <a href="https://github.com/MagnetonBora/nifi-playground">NiFi playground</a>

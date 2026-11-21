@@ -16,9 +16,9 @@ Welcome to this three-day hands-on workshop on Apache NiFi. The course progresse
 
 [[materials/day-3|Day 3 — Production, Security, and Performance]]
 
-[[materials/Appendix-A|Appendix A — The Lab Stand (Docker Compose)]]
+[[materials/Appendix-A|Appendix A]]
 
-[[materials/Appendix-B|Appendix B — Sources and Verification Status]]
+[[materials/Appendix-B|Appendix B]]
 
 [[exercises/index|Exercises]]
 

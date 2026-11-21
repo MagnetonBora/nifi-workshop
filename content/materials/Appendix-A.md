@@ -1,5 +1,5 @@
 ---
-title: "Appendix A — The Lab Stand (Docker Compose)"
+title: "Appendix A"
 ---
 
 A training stand for all the labs (not for production) — the stand repository (the compose project `nifi-playground`). All services are started through `make`, run in one Docker network `nifi-net`, and keep their data in named volumes. Verified on NiFi 2.12.0.

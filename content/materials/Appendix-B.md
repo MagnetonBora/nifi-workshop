@@ -1,5 +1,5 @@
 ---
-title: "Appendix B — Sources and Verification Status"
+title: "Appendix B"
 ---
 
 ### Sources used to confirm facts in this session

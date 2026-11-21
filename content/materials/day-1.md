@@ -91,21 +91,51 @@ The content of a written claim is **never modified**. When a processor "changes"
 
 #### FlowFile lifecycle (simplified)
 
-```mermaid
-flowchart TD
-  SRC["Source (for example, ListenHTTP / ConsumeKafka / GetFile)"]
-  S1["1. session.create() → a new FlowFile;<br/>provenance event RECEIVE / CREATE"]
-  S2["2. session.write(...) → content goes into a new claim"]
-  S3["3. session.transfer(ff, REL_SUCCESS)"]
-  S4["4. session.commit()"]
-  C1["a) update the FlowFile Repository (WAL)<br/>← durability point"]
-  C2["b) write provenance events"]
-  C3["c) the FlowFile lands in the Connection queue"]
-  Q["Connection (queue): back pressure, prioritizers,<br/>expiration, load balancing"]
-  NP["Next processor:<br/>session.get() → processing → commit/rollback"]
-  T["Terminal processor / auto-terminated relationship<br/>→ DROP event; the claim is released"]
-  SRC --> S1 --> S2 --> S3 --> S4
-  S4 --> C1 --> C2 --> C3 --> Q --> NP --> T
+```text
+// ── 1. Source processor (ListenHTTP / ConsumeKafka / GetFile) ──
+onTrigger(context, session):
+    data ← read from external source
+    ff ← session.create()                         // new FlowFile: UUID + attributes
+    provenance.record(RECEIVE or CREATE, ff)       // buffered in the session
+    ff ← session.write(ff, out → out.write(data))  // content → new claim in Content Repository
+    ff ← session.putAttribute(ff, "key", "value")
+    session.transfer(ff, REL_SUCCESS)
+    session.commit():
+        a) update FlowFile Repository (WAL)        // ← durability point
+        b) write provenance events → Provenance Repository
+        c) enqueue ff into the outgoing Connection
+
+// ── 2. Connection (queue) ──
+on enqueue(ff):
+    if queue.count ≥ objectThreshold or queue.size ≥ dataSizeThreshold:
+        apply back pressure                        // upstream processor is no longer scheduled
+    order queue by prioritizers                    // FIFO, OldestFlowFileFirst, PriorityAttribute…
+    if ff.age > flowFileExpiration:
+        drop ff                                    // provenance: DROP (expired)
+    if loadBalanceStrategy ≠ DO_NOT_LOAD_BALANCE:
+        redistribute ff across cluster nodes
+
+// ── 3. Next processor ──
+onTrigger(context, session):
+    ff ← session.get()
+    if ff is null: return
+    try:
+        ff ← process(ff)                           // read/modify content and attributes
+        session.transfer(ff, REL_SUCCESS)
+        session.commit()                           // same steps a) b) c)
+    catch error:
+        session.rollback()                         // ff goes back to the incoming queue
+        // or: session.transfer(ff, REL_FAILURE); session.commit()
+
+// ── 4. End of life ──
+on terminal processor or auto-terminated relationship:
+    session.remove(ff)
+    session.commit():
+        provenance.record(DROP, ff)
+        remove ff from FlowFile Repository
+        decrement claimant count of the content claim
+        if claimant count == 0:
+            claim becomes eligible for cleanup or archive in the Content Repository
 ```
 
 **Guarantee semantics.** Inside NiFi, processing is organized by session transactions. On `rollback` (an exception in a processor), the FlowFile returns to the incoming queue (with penalization in some cases), so within a node the **at-least-once** model is implemented: data is not lost on a failure between steps, but it may be processed again if the failure occurred after a side effect in an external system but before the commit. This is the key point for integrations (Kafka, databases, REST): idempotent writes at the destination are the flow designer's responsibility.
@@ -129,7 +159,7 @@ FlowFile metadata (attributes) lives in the heap. So that large queues do not ca
 | **Parameter Context** | A named set of parameters (including sensitive ones) bound to a Process Group | Referenced as `#{param}` in properties; supports inheritance (since 1.15.0) |
 | **Reporting Task** | A periodic controller-level task (metrics, monitoring) | For example, `PrometheusReportingTask`, `MonitorDiskUsage` |
 | **Parameter Provider** | Loading parameters from an external store (Vault, AWS/GCP Secrets) | Introduced in 1.18.0 |
-| **Flow Registry Client** | Integration with a flow version registry (NiFi Registry, GitHub, GitLab, Bitbucket, Azure DevOps) | More in Block 1.4 |
+| **Flow Registry Client** | Integration with a flow version registry (NiFi Registry, GitHub, GitLab, Bitbucket, Azure DevOps) | More in [Block 1.4](#block-14-installation-cluster-configuration-and-setup) |
 
 About the Variable Registry: **[rem 2.0]** variables (Variables) and the Variable Registry were removed in favor of Parameter Contexts ([Release Goals](https://cwiki.apache.org/confluence/display/NIFI/NiFi+2.0+Release+Goals)); in Expression Language the `ENVIRONMENT` scope (JVM system properties and environment variables) is available instead of `VARIABLE_REGISTRY` ([Migration Guidance, 2.0.0-M1](https://cwiki.apache.org/confluence/display/NIFI/Migration+Guidance)).
 
@@ -141,6 +171,8 @@ About the Variable Registry: **[rem 2.0]** variables (Variables) and the Variabl
 4. **Batch integrations.** The List/Fetch pattern (`ListFile`+`FetchFile`, `ListSFTP`+`FetchSFTP`, `ListS3`+`FetchS3Object`) with state for incremental loading.
 
 ### Lab 1: the NiFi UI and a first flow
+
+> Step-by-step exercise: [[exercises/lab-1|Lab 1]].
 
 **Goal.** Get to know the NiFi UI, create, run, and trace the simplest flow, and see provenance.
 
@@ -179,7 +211,7 @@ GenerateFlowFile ──success──► UpdateAttribute ──success──► L
 
 **Common mistakes.** The processor keeps a yellow triangle (it is invalid): there are no connected/auto-terminated relationships, or required properties are not set. The queue "does not move": the destination is stopped or back pressure has been reached. Instead of a date, the content contains the raw text `${now():format(...)}` — Expression Language did not parse the expression: write the format string with the literal `'T'` in **double** quotes (`format("yyyy-MM-dd'T'...")`); the variant `format('yyyy-MM-dd\'T\'...')` is not evaluated in NiFi 2.12. The processor remains valid in this case — the error is visible only in the FlowFile content.
 
-**Reference solution:** `nifi/flows/lab1-first-flow.json` (Appendix A.8).
+**Reference solution:** `nifi/flows/lab1-first-flow.json` ([Appendix A.8](Appendix-A.md#a8-reference-solutions)).
 
 ---
 
@@ -255,7 +287,7 @@ An important consequence: it is enough for **one of the outgoing connections** o
 | Back Pressure Data Size Threshold | The maximum total size (1 GB by default) |
 | FlowFile Expiration | After how long to delete unprocessed FlowFiles (`0 sec` by default = do not delete) |
 | Prioritizers | The order in which items are taken from the queue |
-| Load Balance Strategy | Distribution across the cluster nodes (Block 1.4) |
+| Load Balance Strategy | Distribution across the cluster nodes ([Block 1.4](#block-14-installation-cluster-configuration-and-setup)) |
 
 #### Prioritization
 
@@ -287,6 +319,8 @@ Prioritizers do not guarantee a strict global order with several concurrent task
 
 ### Lab 2: a flow from several sources with routing
 
+> Step-by-step exercise: [[exercises/lab-2|Lab 2]].
+
 **Goal.** Receive data from several sources (files, HTTP, a generator) and route it by attributes.
 
 **Architecture.**
@@ -310,7 +344,7 @@ Prioritizers do not guarantee a strict global order with several concurrent task
 | `GenerateFlowFile` | Custom Text — JSON; Mime Type `application/json` |
 | `RouteOnAttribute` | Routing Strategy `Route to Property name`; `json`=`${mime.type:equals('application/json'):or(${filename:endsWith('.json')})}`, `csv`=`${filename:endsWith('.csv')}` |
 | `PutFile` (quarantine) | Directory `#{quarantine.dir}` |
-| Parameter Context `lab-params` | `ingest.dir=/opt/nifi/data/in`, `quarantine.dir=/opt/nifi/data/quarantine` (on the lab stand host — `nifi/data/in`, `nifi/data/quarantine`, see Appendix A.5) |
+| Parameter Context `lab-params` | `ingest.dir=/opt/nifi/data/in`, `quarantine.dir=/opt/nifi/data/quarantine` (on the lab stand host — `nifi/data/in`, `nifi/data/quarantine`, see [Appendix A.5](Appendix-A.md#a5-addresses-for-the-labs)) |
 
 **Build order.**
 
@@ -534,7 +568,7 @@ Splits a FlowFile in a record-oriented format into several FlowFiles by the **nu
 
 Relationships: `splits` (the parts), `original` (the source FlowFile after a successful split), `failure` (if the FlowFile could not be read/converted, it is returned unchanged). Attributes: `mime.type`, `record.count` (records in the part), `fragment.*`, `segment.original.filename`.
 
-**When it is needed.** Not for "one record per FlowFile" (that is an anti-pattern), but for **controlling batch sizes**: a huge FlowFile has to be split into parts of 10,000–100,000 records so that they are processed in parallel by several threads or nodes (Block 1.3.5, item 7).
+**When it is needed.** Not for "one record per FlowFile" (that is an anti-pattern), but for **controlling batch sizes**: a huge FlowFile has to be split into parts of 10,000–100,000 records so that they are processed in parallel by several threads or nodes ([Block 1.3.5](#135-configuring-the-reader-and-writer-for-performance), item 7).
 
 #### SplitJson
 
@@ -548,7 +582,7 @@ Splits a JSON document by an **array** found by a JsonPath expression. Each elem
 
 Relationships: `split` (the elements), `original`, `failure` — a FlowFile goes to `failure` if it is not valid JSON or the path is not found (or does not point to an array).
 
-**Specifics.** The processor is designed for **one JSON document** and parses it entirely; it is not intended for NDJSON (many documents in a row). It creates **a FlowFile per element**, which leads to the small-FlowFile problem from Block 1.1.3 if the array is large.
+**Specifics.** The processor is designed for **one JSON document** and parses it entirely; it is not intended for NDJSON (many documents in a row). It creates **a FlowFile per element**, which leads to the small-FlowFile problem from [Block 1.1.3](#113-repositories-and-the-flowfile-lifecycle) if the array is large.
 
 #### How to choose
 
@@ -600,6 +634,8 @@ A detailed treatment of RecordPath and its functions (`concat`, `format`, etc.) 
 
 
 ### Lab 3: replacing a Split-based flow with a Record-based one and comparing throughput
+
+> Step-by-step exercise: [[exercises/lab-3|Lab 3]].
 
 **Goal.** Quantitatively compare two variants of processing the same data set.
 

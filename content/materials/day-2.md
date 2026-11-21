@@ -41,8 +41,21 @@ NiFi connects to a database through the standard JDBC interface, but **you have 
 
 ```mermaid
 flowchart LR
-  JAR["The driver JAR on the node's disk"] --> POOL["DBCPConnectionPool<br/>(URL, driver class, JAR path, user/password)"]
-  PROC["ExecuteSQLRecord / PutDatabaseRecord /<br/>QueryDatabaseTableRecord"] -- "a reference to the service" --> POOL
+  subgraph NODE["NiFi node (the same on every cluster node)"]
+    direction LR
+    subgraph PROCS["Processors"]
+      P1["ExecuteSQLRecord"]
+      P2["PutDatabaseRecord"]
+      P3["QueryDatabaseTableRecord"]
+    end
+    POOL["Controller Service<br/>DBCPConnectionPool<br/>(URL, driver class, user/password,<br/>Max Total Connections)"]
+    JAR[("/opt/nifi/drivers/<br/>postgresql-42.x.jar")]
+    P1 -- "borrows a connection" --> POOL
+    P2 -- "borrows a connection" --> POOL
+    P3 -- "borrows a connection" --> POOL
+    JAR -. "Database Driver Location(s):<br/>driver loaded at service start" .-> POOL
+  end
+  POOL == "JDBC connections" ==> DB[("Database<br/>PostgreSQL / MySQL / Oracle …")]
 ```
 
 ##### Step 1. Download the driver

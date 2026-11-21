@@ -1,9 +1,6 @@
 ---
 title: "Day 2 — Data Processing and Integrations"
 ---
-
-> Document 2 of 3. Related documents: **Day 1** (`day-1.md`), **Day 3** (`day-3.md`). The notation ([2.x], [1.x], [dep], [rem], [verify]) and the principles of reliability are at the beginning of Day 1.
-
 ## Contents
 
 - [Block 2.1: Connecting to databases, messaging systems, REST APIs](#block-21-connecting-to-databases-messaging-systems-rest-apis)

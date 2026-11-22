@@ -16,6 +16,22 @@ aliases:
 1. The same input: for example, 100 FlowFiles of 100,000 records each (configured in `GenerateRecord`: *Number of Records*). Mind the scale: variant A turns such an input into ~10 million FlowFiles, which does not fit into the training heap (1–2 GB on the stand). On a laptop, start with 1 FlowFile of 10,000 records (*Run Once* on the generator) and increase the volume while watching the heap and back pressure.
 2. Freeze the initial conditions: clean queues, the same `Concurrent Tasks`.
 3. Run variant A and wait until all the data is processed; record: the processing time, the *Tasks/Time* values, *Bytes Read/Written*, the number of FlowFiles in the queues, heap and GC (System Diagnostics), and the number of provenance events.
+   - **Before *Run Once*:** write down the GC values: ☰ → **Summary** → **System Diagnostics** → **JVM** → *Count* and *Time* for G1 Young and G1 Old.
+   - **Start:** start every processor of the variant except the generator, then right-click the generator → **Run Once** (not *Start*: it would keep producing new batches).
+   - **Done** when every queue of the variant shows `Queued 0`.
+   - **Then record:**
+
+     | # | Metric | Where to click | What to record |
+     |---|---|---|---|
+     | 1 | Processing time | ☰ → **Data Provenance**, sort by *Date/Time* | the last event minus the `CREATE` event of `GenerateRecord` |
+     | 2 | *Tasks/Time* | each processor card → *Tasks/Time* row | the value per processor and the total |
+     | 3 | *Bytes Read/Written* | the variant's group card (one level up) → *Read/Write* | Read and Written |
+     | 4 | FlowFiles in the queues | right-click the connection after the split → **View Status History** → *Queued Count* | the peak and the final value (should be 0) |
+     | 5 | Heap | ☰ → **Node Status History** → *Used Heap* | the peak during the run |
+     | 6 | GC | ☰ → **Summary** → **System Diagnostics** → **JVM** | *Count* and *Time* after the run minus before |
+     | 7 | Provenance events | ☰ → **Data Provenance** → **Search** limited to the run's time window | *M* from "Displaying N of **M**" |
+
+   - **Keep in mind:** the statistics on the processor cards cover a sliding 5-minute window, so wait 5 minutes between runs of the same variant. The processing time of variant A includes the `MergeContent` wait (*Max Bin Age*).
 4. Stop, clear the queues, run variant B with the same input data; repeat the measurements.
 5. Repeat 3 times and take the median.
 

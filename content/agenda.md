@@ -14,7 +14,7 @@ title: Agenda
 4. Key concepts and typical use cases
 5. Lab 1: the NiFi UI and a first flow
 
-**Break: 15 minutes**
+**Break: 10:00–10:15 (15 minutes)**
 
 ### Part 2: Building Data Flows
 
@@ -26,33 +26,29 @@ title: Agenda
 4. Flow design practices
 5. Lab 2: a multi-source flow with routing
 
-**Break: 15 minutes**
+**Break: 11:15–11:30 (15 minutes)**
 
 ### Part 3: Record-Based Processing
 
-**11:30–12:30 | 1 hour**
+**11:30–14:20 | 2.5 hours**
 
 1. The Record concept
 2. Readers, Writers, Schemas, and Schema Registry
 3. Record processors vs. Split processors
 4. JsonTreeReader: schema inference, limitations, explicit schemas
 
-**Lunch break: 20 minutes**
+**Lunch break: 12:30–12:50 (20 minutes)**
 
-### Part 4: Record-Based Processing, Continued
+5. Tuning Readers and Writers for performance
+6. Core Record processors
+7. Split processors, QueryRecord, and RecordPath
+8. Lab 3: replacing a Split flow with a Record flow and comparing throughput
 
-**12:50–14:20 | 1.5 hours**
+**Break: 14:20–14:30 (10 minutes)**
 
-1. Tuning Readers and Writers for performance
-2. Core Record processors
-3. Split processors, QueryRecord, and RecordPath
-4. Lab 3: replacing a Split flow with a Record flow and comparing throughput
+### Part 4: Installation, Cluster Configuration, and Setup
 
-**Break: 10 minutes**
-
-### Part 5: Installation, Cluster Configuration, and Setup
-
-**14:30–16:00 | 1.5 hours**
+**14:30–15:45 | 1 hour 15 minutes**
 
 1. NiFi configuration files
 2. Single node vs. cluster
@@ -62,37 +58,35 @@ title: Agenda
 6. Repository locations
 7. Flow versioning and change management
 
-### Day 1 Outcome
+### Part 5: Day 1 Recap and Q&A
 
-Recap, self-check questions, and Q&A.
+**15:45–16:00 | 15 minutes**
+
+Key takeaways, self-check questions, and Q&A.
 
 ---
 
 ## Day 2: Data Processing and Integrations
 
-### Part 1: Connecting to Databases and REST APIs
+### Part 1: Integrations: Databases, REST APIs, Kafka
 
-**09:00–10:00 | 1 hour**
+**09:00–11:15 | 2 hours**
 
 1. Recap of the previous day
 2. Databases (JDBC)
 3. REST APIs with InvokeHTTP
 
-**Break: 15 minutes**
+**Break: 10:00–10:15 (15 minutes)**
 
-### Part 2: Kafka Integration
+4. PublishKafka and ConsumeKafka in NiFi 2.x
+5. Efficient Kafka integration: batching, offsets, delivery guarantees, parallelism
+6. Lab 4: databases, REST, and Kafka with record processing
 
-**10:15–11:15 | 1 hour**
+**Break: 11:15–11:30 (15 minutes)**
 
-1. PublishKafka and ConsumeKafka in NiFi 2.x
-2. Efficient Kafka integration: batching, offsets, delivery guarantees, parallelism
-3. Lab 4: databases, REST, and Kafka with record processing
+### Part 2: Transforming JSON and NDJSON
 
-**Break: 15 minutes**
-
-### Part 3: Transforming JSON and NDJSON
-
-**11:30–12:30 | 1 hour**
+**11:30–13:35 | 1 hour 45 minutes**
 
 1. Working efficiently with NDJSON
 2. Key processors
@@ -100,24 +94,25 @@ Recap, self-check questions, and Q&A.
 4. Typical transformations
 5. Where to transform: inside or outside NiFi
 
-**Lunch break: 20 minutes**
+**Lunch break: 12:30–12:50 (20 minutes)**
 
-### Part 4: JSON Pipelines and Splunk Integration
+6. ValidateRecord, QueryRecord, UpdateRecord (RecordPath), EvaluateJsonPath, MergeRecord
+7. Lab 5: an NDJSON transformation pipeline
 
-**12:50–14:20 | 1.5 hours**
+### Part 3: Splunk Integration
 
-1. ValidateRecord, QueryRecord, UpdateRecord (RecordPath), EvaluateJsonPath, MergeRecord
-2. Lab 5: an NDJSON transformation pipeline
-3. Splunk integration options
-4. PutSplunk configuration
-5. Throughput factors, optimizations, and alternative approaches
-6. Lab 6: delivering events to Splunk (or a mock)
+**13:35–14:20 | 45 minutes**
 
-**Break: 10 minutes**
+1. Splunk integration options
+2. PutSplunk configuration
+3. Throughput factors, optimizations, and alternative approaches
+4. Lab 6: delivering events to Splunk (or a mock)
 
-### Part 5: Migration from NiFi 1.x to 2.x
+**Break: 14:20–14:30 (10 minutes)**
 
-**14:30–16:00 | 1.5 hours**
+### Part 4: Migration from NiFi 1.x to 2.x
+
+**14:30–15:45 | 1 hour 15 minutes**
 
 1. Key principles and differences between 1.x and 2.x
 2. Compatibility of existing flows
@@ -127,9 +122,11 @@ Recap, self-check questions, and Q&A.
 6. Common issues and how to resolve them
 7. Mini-lab: a migration checklist for your environment
 
-### Day 2 Outcome
+### Part 5: Day 2 Recap and Q&A
 
-Recap, self-check questions, and Q&A.
+**15:45–16:00 | 15 minutes**
+
+Key takeaways, self-check questions, and Q&A.
 
 ---
 
@@ -147,7 +144,7 @@ Recap, self-check questions, and Q&A.
 6. Backup and restore: configuration, flow definitions, keys
 7. Lab 7: a flow with retry and error handling
 
-**Break: 15 minutes**
+**Break: 10:00–10:15 (15 minutes)**
 
 ### Part 2: Monitoring, Provenance, and Troubleshooting
 
@@ -160,7 +157,7 @@ Recap, self-check questions, and Q&A.
 5. Flow rollback to a previous version
 6. NiFi Settings: Controller Services, Reporting Tasks, Flow Analysis Rules, Registry Clients, Parameter Providers
 
-**Break: 15 minutes**
+**Break: 11:15–11:30 (15 minutes)**
 
 ### Part 3: Security and Governance
 
@@ -172,7 +169,7 @@ Recap, self-check questions, and Q&A.
 4. Encryption: sensitive properties and data at rest
 5. Governance checklist
 
-**Lunch break: 20 minutes**
+**Lunch break: 12:30–12:50 (20 minutes)**
 
 ### Part 4: Performance Tuning, Hardware, and Storage
 
@@ -184,11 +181,11 @@ Recap, self-check questions, and Q&A.
 4. Reducing flow design bottlenecks, prioritization, throughput control
 5. Lab 8: performance testing and pipeline tuning
 
-**Break: 10 minutes**
+**Break: 14:20–14:30 (10 minutes)**
 
 ### Part 5: Final Hands-On Lab: End-to-End Pipeline
 
-**14:30–16:00 | 1.5 hours**
+**14:30–15:45 | 1 hour 15 minutes**
 
 1. Architecture, Controller Services, and parameters
 2. Building and validating the pipeline
@@ -196,6 +193,8 @@ Recap, self-check questions, and Q&A.
 4. Performance check and tuning
 5. Common mistakes and diagnostics
 
-### Course Wrap-up
+### Part 6: Course Recap and Next Steps
+
+**15:45–16:00 | 15 minutes**
 
 Key takeaways from the three days, recommended next steps for the team, final Q&A, and feedback.

@@ -14,7 +14,7 @@ All labs are verified on Apache NiFi 2.12.0.
 |---|---|---|---|
 | [[labs/lab-1\|Lab 1 — The NiFi UI and a first flow]] | Day 1 | The UI, running a flow, queues, provenance, Content Viewer | [[solutions/lab-1\|Solution]] |
 | [[labs/lab-2\|Lab 2 — Several sources and routing]] | Day 1 | ListFile/FetchFile, ListenHTTP, Process Groups and ports, Parameter Context, RouteOnAttribute | [[solutions/lab-2\|Solution]] |
-| [[labs/lab-3\|Lab 3 — A Split flow versus a Record flow]] | Day 1 | GenerateRecord, SplitRecord versus QueryRecord/UpdateRecord, measuring with `make lab3-measure` and Grafana | [[solutions/lab-3\|Solution]] |
+| [[labs/lab-3\|Lab 3 — A Split flow versus a Record flow]] | Day 1 | GenerateRecord, SplitRecord versus QueryRecord/UpdateRecord, measuring with `make lab03-measure` and Grafana | [[solutions/lab-3\|Solution]] |
 | [[labs/lab-4\|Lab 4 — Connecting NiFi to a database]] | Day 2 | DBCPConnectionPool and Verify, ExecuteSQLRecord, QueryDatabaseTableRecord and its state, PutDatabaseRecord INSERT vs UPSERT | [[solutions/lab-4\|Solution]] |
 | [[labs/lab-5\|Lab 5 — A database + REST + Kafka with record processing]] | Day 2 | ConsumeKafka, ValidateRecord, LookupRecord + REST, PutDatabaseRecord UPSERT, DLQ | [[solutions/lab-5\|Solution]] |
 | [[labs/lab-6\|Lab 6 — An NDJSON transformation pipeline]] | Day 2 | ValidateRecord, removing a secret and field order via the Writer schema, MergeRecord | [[solutions/lab-6\|Solution]] |

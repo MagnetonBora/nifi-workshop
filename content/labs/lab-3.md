@@ -27,7 +27,7 @@ aliases:
 2. **Run the measurement.**
 
    ```bash
-   make lab3-measure
+   make lab03-measure
    ```
 
    The command runs A, then B. For each variant it starts every processor except the generator, triggers the generator with *Run Once*, waits until the data has reached every `LogAttribute`, and stops the group. The report is printed to the terminal and saved to `nifi/data/results/lab3-measure-<date-time>.txt`. Before running, both groups must be stopped and their queues empty.

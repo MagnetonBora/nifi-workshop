@@ -68,52 +68,54 @@ Key takeaways, self-check questions, and Q&A.
 
 ## Day 2: Data Processing and Integrations
 
-### Part 1: Integrations: Databases, REST APIs, Kafka
+### Part 1: Integrations: Databases and REST APIs
 
-**09:00–11:15 | 2 hours**
+**09:00–11:00 | 2 hours**
 
 1. Recap of the previous day
 2. Databases (JDBC)
 3. Lab 4: connecting NiFi to a database
+
+**Break: 10:15–10:25 (10 minutes)**
+
 4. REST APIs with InvokeHTTP
 
-**Break: 10:00–10:15 (15 minutes)**
+**Lunch break: 11:00–11:45 (45 minutes)**
 
-5. PublishKafka and ConsumeKafka in NiFi 2.x
-6. Efficient Kafka integration: batching, offsets, delivery guarantees, parallelism
-7. Lab 5: databases, REST, and Kafka with record processing
+### Part 2: Kafka
 
-**Break: 11:15–11:30 (15 minutes)**
+**11:45–12:45 | 1 hour**
 
-### Part 2: Transforming JSON and NDJSON
+1. PublishKafka and ConsumeKafka in NiFi 2.x
+2. Efficient Kafka integration: batching, offsets, delivery guarantees, parallelism
+3. Lab 5: databases, REST, and Kafka with record processing
 
-**11:30–13:35 | 1 hour 45 minutes**
+### Part 3: Transforming JSON and NDJSON
+
+**12:45–14:15 | 1 hour 30 minutes**
 
 1. Working efficiently with NDJSON
 2. Key processors
 3. Jolt: declarative JSON transformations
 4. Typical transformations
 5. Where to transform: inside or outside NiFi
-
-**Lunch break: 12:30–12:50 (20 minutes)**
-
 6. ValidateRecord, QueryRecord, UpdateRecord (RecordPath), EvaluateJsonPath, MergeRecord
 7. Lab 6: an NDJSON transformation pipeline
 
-### Part 3: Splunk Integration
+**Break: 14:15–14:25 (10 minutes)**
 
-**13:35–14:20 | 45 minutes**
+### Part 4: Splunk Integration
+
+**14:25–15:05 | 40 minutes**
 
 1. Splunk integration options
 2. PutSplunk configuration
 3. Throughput factors, optimizations, and alternative approaches
 4. Lab 7: delivering events to Splunk (or a mock)
 
-**Break: 14:20–14:30 (10 minutes)**
+### Part 5: Migration from NiFi 1.x to 2.x
 
-### Part 4: Migration from NiFi 1.x to 2.x
-
-**14:30–15:45 | 1 hour 15 minutes**
+**15:05–15:50 | 45 minutes**
 
 1. Key principles and differences between 1.x and 2.x
 2. Compatibility of existing flows
@@ -121,11 +123,12 @@ Key takeaways, self-check questions, and Q&A.
 4. Upgrade routine: in-place vs. fresh installation
 5. Preparation, execution, validation, and rollback
 6. Common issues and how to resolve them
-7. Mini-lab: a migration checklist for your environment
 
-### Part 5: Day 2 Recap and Q&A
+Homework: a migration checklist for your environment.
 
-**15:45–16:00 | 15 minutes**
+### Part 6: Day 2 Recap and Q&A
+
+**15:50–16:00 | 10 minutes**
 
 Key takeaways, self-check questions, and Q&A.
 
@@ -149,7 +152,7 @@ Key takeaways, self-check questions, and Q&A.
 
 ### Part 2: Monitoring, Provenance, and Troubleshooting
 
-**10:15–11:15 | 1 hour**
+**10:15–11:00 | 45 minutes**
 
 1. NiFi UI, metrics, Provenance, and bulletins
 2. Monitoring and autonomous recovery
@@ -158,11 +161,11 @@ Key takeaways, self-check questions, and Q&A.
 5. Flow rollback to a previous version
 6. NiFi Settings: Controller Services, Reporting Tasks, Flow Analysis Rules, Registry Clients, Parameter Providers
 
-**Break: 11:15–11:30 (15 minutes)**
+**Lunch break: 11:00–11:45 (45 minutes)**
 
 ### Part 3: Security and Governance
 
-**11:30–12:30 | 1 hour**
+**11:45–12:45 | 1 hour**
 
 1. TLS and authentication
 2. Access control: users, groups, policies, roles
@@ -170,11 +173,9 @@ Key takeaways, self-check questions, and Q&A.
 4. Encryption: sensitive properties and data at rest
 5. Governance checklist
 
-**Lunch break: 12:30–12:50 (20 minutes)**
-
 ### Part 4: Performance Tuning, Hardware, and Storage
 
-**12:50–14:20 | 1.5 hours**
+**12:45–14:15 | 1 hour 30 minutes**
 
 1. JVM, heap, thread pools, concurrent tasks, cluster settings
 2. Scaling and hardware selection
@@ -182,11 +183,11 @@ Key takeaways, self-check questions, and Q&A.
 4. Reducing flow design bottlenecks, prioritization, throughput control
 5. Lab 9: performance testing and pipeline tuning
 
-**Break: 14:20–14:30 (10 minutes)**
+**Break: 14:15–14:25 (10 minutes)**
 
 ### Part 5: Final Hands-On Lab: End-to-End Pipeline
 
-**14:30–15:45 | 1 hour 15 minutes**
+**14:25–15:45 | 1 hour 20 minutes**
 
 1. Architecture, Controller Services, and parameters
 2. Building and validating the pipeline

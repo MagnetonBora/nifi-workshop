@@ -108,9 +108,9 @@ What to specify in the Parameter Context and in commands instead of abstract add
 ### A.7 Test data and reset
 
 ```bash
-make lab3-measure                 # Lab 3 measurements: split vs record, report in nifi/data/results/
+make lab03-measure                # Lab 3 measurements: split vs record, report in nifi/data/results/
 make lab4-insert n=10             # 10 new gold customers in the table customers (Lab 4)
-make lab5-data                    # 4 test orders into orders.raw (Lab 5)
+make lab05-data                   # 100 test orders into orders.raw (Lab 5)
 make lab-final-load n=100000      # the load for the final lab into logs.raw
 make lab-splunk-count             # how many lines the Splunk emulator received
 make import f=nifi/flows/<file>.json            # load a flow into the single NiFi
@@ -120,7 +120,7 @@ make import-cluster f=nifi/flows/<file>.json    # the same for the cluster
 Before re-running the labs with Kafka, reset the consumer group (with `ConsumeKafka` stopped), otherwise the flow will not read the messages that have already been read:
 
 ```bash
-docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-lab5   # Lab 5
+docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-lab05   # Lab 5
 docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-logs   # the final one
 docker exec nifi-postgres psql -U nifi -d nifi -c "DELETE FROM customers WHERE id > 1000; TRUNCATE customers_gold"   # Lab 4 (+ Clear State)
 docker exec nifi-postgres psql -U nifi -d nifi -c "TRUNCATE orders_stage"                             # Lab 5

@@ -1,5 +1,5 @@
 ---
-title: "Lab 8 — A performance test and tuning"
+title: "Lab 8 — Retry and error handling"
 aliases:
   - exercises/lab-8
 ---
@@ -7,58 +7,30 @@ aliases:
 > From the materials of [[materials/day-3|Day 3 — Production, Security, and Performance]]. The lab stand is described on the [[labs/index|Labs]] page; loading the reference solutions — on the [[solutions/index|Solutions]] page.
 > Solution: [[solutions/lab-8|Lab 8 — solution]].
 
-**Goal.** Measure the throughput of the pipeline from Lab 5, find the bottleneck, and improve the indicators.
+**Goal.** Build a flow that survives temporary failures of the destination and does not get blocked by "bad" data.
 
-**Method (step by step).**
+The Parameter Context `lab8-params` (the stand): `flaky.url=http://flaky:9099/events`, `ok.dir=/opt/nifi/data/ok`, `dlq.dir=/opt/nifi/data/dlq` (on the host — `nifi/data/ok`, `nifi/data/dlq`).
 
-1. **The baseline.** Record the version, the configuration (heap, thread pool, concurrent tasks), the hardware. Prepare a load generator (`GenerateRecord`, a Kafka producer perf-test).
-2. **Metrics.** Events/s at the output; Tasks/Time per processor; queues (where they grow); heap/GC; CPU; `iostat`; the size/time of provenance events.
-3. **Scenarios.**
-   - A: the baseline configuration.
-   - B: explicit schemas (remove Infer).
-   - C: increase `Concurrent Tasks` of the bottleneck.
-   - D: increase the batch size (`MergeRecord`).
-   - E: move Provenance to a separate volume/reduce indexing.
-   - F: increase the heap and thread pool (in line with the growing number of cores).
-4. **One parameter at a time;** 3 runs each; the median.
-5. **The report:** a "change → effect → conclusion" table, the updated settings, recommendations.
+**A data source with invalid records.** `GenerateRecord` produces records strictly according to its schema, so without preparation the `invalid` branch is empty. Declare the fields in the generator schema as `["null", …]` and set `Nullable Fields = true`, `Null Value Percentage = 5`, and in `ValidateRecord` (Schema Access Strategy `Use 'Schema Text' Property`) validate against a strict schema in which all fields are required: records with `null` will go to `invalid`.
 
-**On the stand ([[materials/Appendix-A|Appendix A]]).**
-
-- **The generator:** `GenerateRecord` (a log event schema with `user.pwd`, Number of Records `10000`, Run Schedule `1 sec`) before the Lab 5 pipeline — about 10,000 events/s; the load is increased through *Number of Records* and *Run Schedule*. While the generator remains the bottleneck, that is the baseline.
-- **The output counter:** `UpdateCounter` after `MergeRecord` with Delta `${record.count}` — events/s = the growth of the counter (☰ → Counters) over an interval.
-- **Scenario A** — a Reader with `Infer Schema`; **B** — switch the Record Reader of `ValidateRecord` to a `JsonTreeReader` with an explicit schema.
-- **Scenario D** — *Minimum/Maximum Number of Records* of `MergeRecord`.
-- **Scenario E** — on Docker Desktop all volumes sit on one virtual disk, so the effect of a separate volume cannot be reproduced; reduce the provenance indexing in `conf/nifi.properties` (the volume `nifi_conf`): `nifi.provenance.repository.indexed.fields`, `nifi.provenance.repository.indexed.attributes`, `nifi.provenance.repository.max.storage.time`, then restart with `make nifi`.
-- **Scenario F** — heap: `NIFI_JVM_HEAP_INIT` / `NIFI_JVM_HEAP_MAX` in `nifi/single/docker-compose-nifi-single.yml` and `make nifi` (mind the Docker Desktop memory limit); thread pool: ☰ → Controller Settings → *Maximum Timer Driven Thread Count*.
-- **Metrics:** Prometheus already collects NiFi metrics (`http://localhost:9090`, job `nifi`), and the graphs are in Grafana at `http://localhost:3000`.
-- **The output** is written to `nifi/data/lab8-out` with names by seconds (`lab8-${now():format('ss')}.ndjson`, Conflict Resolution `replace`) — no more than 60 files are on disk at any load.
-
-**A results table template.**
-
-| Scenario | Change | events/s | CPU % | GC pause (p95) | I/O await (ms) | Conclusion |
-|---|---|---|---|---|---|---|
-| A | baseline | | | | | |
-| B | explicit schemas | | | | | |
-| C | more Concurrent Tasks at the bottleneck | | | | | |
-| D | larger `MergeRecord` batches | | | | | |
-| E | Provenance on a separate volume / less indexing | | | | | |
-| F | more heap and a larger thread pool | | | | | |
-
-**Useful commands.**
+**Simulating an unstable API.** On the stand the service is already running: the container `flaky` (`make lab-services`, the code is `lab-services/flaky.py`), the address from NiFi is `http://flaky:9099/events`. Without the stand:
 
 ```bash
-bin/nifi.sh dump /tmp/nifi-dump.txt           # thread dump
-bin/nifi.sh diagnostics /tmp/diag.txt         # diagnostics
-iostat -x 5                                   # disk load
-jstat -gcutil <pid> 5000                      # GC
+python3 - <<'EOF'
+import random
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get('Content-Length', 0)))
+        r = random.random()
+        code = 200 if r < 0.6 else (503 if r < 0.9 else 400)   # 60% ok, 30% 503, 10% 400
+        self.send_response(code); self.end_headers(); self.wfile.write(b'{}')
+HTTPServer(('0.0.0.0', 9099), H).serve_forever()
+EOF
 ```
 
-On the stand the same commands are run inside the container, and the load is visible through `docker stats`:
+**Verification** (from the stand host):
 
-```bash
-docker exec nifi /opt/nifi/nifi-current/bin/nifi.sh dump /tmp/nifi-dump.txt
-docker exec nifi /opt/nifi/nifi-current/bin/nifi.sh diagnostics /tmp/diag.txt
-docker exec nifi sh -c 'jstat -gcutil $(pgrep -f org.apache.nifi.NiFi | head -1) 5000'   # GC every 5 s
-docker stats nifi                                                                     # the container's CPU / memory
-```
+- After a few minutes most FlowFiles are in `nifi/data/ok` (`ls nifi/data/ok | wc -l`); `400` responses — in `nifi/data/dlq/http-400`, invalid records — in `nifi/data/dlq/validation`; `503` responses pass through `RetryFlowFile` (FlowFiles with a penalty are visible in the `InvokeHTTP → RetryFlowFile` queue).
+- `retries_exceeded` almost never occurs while `flaky` is running: four `503` responses in a row are needed (~1%). Stop the service — `docker stop flaky`: requests go to `Failure`, after 3 retries with a penalty `nifi/data/dlq/retries-exceeded` appears, the queue before `InvokeHTTP` grows, and then back pressure kicks in; after `docker start flaky` the queue drains *without intervention*.
+- Check provenance: a FlowFile with several attempts has a chain of `ROUTE`/`SEND` events; the `flowfile.retries` attribute shows the number of attempts.

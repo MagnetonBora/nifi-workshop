@@ -7,34 +7,68 @@ aliases:
 > From the materials of [[materials/day-1|Day 1 — Apache NiFi Fundamentals]]. The lab stand is described on the [[labs/index|Labs]] page; loading the reference solutions — on the [[solutions/index|Solutions]] page.
 > Solution: [[solutions/lab-3|Lab 3 — solution]].
 
-**Goal.** Quantitatively compare two variants of processing the same data set.
+**Goal.** Run two flows that do the same job in different ways, measure them, and explain the difference.
 
-**Source data.** `GenerateRecord` (the processor appeared in 1.20.0) creates a FlowFile with N random records according to a given schema. Or `GenerateFlowFile` with NDJSON text.
+**The two variants.** Both read the same input: `GenerateRecord` creates one FlowFile with 10,000 random orders (`order_id`, `customer`, `amount`, `currency`). Both keep the orders with `amount > 0` and `currency` EUR or USD, and mark them `stage = processed`.
 
-**Measurement method.**
+- **A — Split-based:** `SplitRecord` turns the FlowFile into one FlowFile per record, each record goes through `EvaluateJsonPath` → `RouteOnAttribute` → `UpdateAttribute`, and `MergeContent` collects the valid records back.
+- **B — Record-based:** `QueryRecord` splits the whole set into `valid` and `rejected` with SQL, `UpdateRecord` sets the field in every record.
 
-1. The same input: for example, 100 FlowFiles of 100,000 records each (configured in `GenerateRecord`: *Number of Records*). Mind the scale: variant A turns such an input into ~10 million FlowFiles, which does not fit into the training heap (1–2 GB on the stand). On a laptop, start with 1 FlowFile of 10,000 records (*Run Once* on the generator) and increase the volume while watching the heap and back pressure.
-2. Freeze the initial conditions: clean queues, the same `Concurrent Tasks`.
-3. Run variant A and wait until all the data is processed; record: the processing time, the *Tasks/Time* values, *Bytes Read/Written*, the number of FlowFiles in the queues, heap and GC (System Diagnostics), and the number of provenance events.
-   - **Before *Run Once*:** write down the GC values: ☰ → **Summary** → **System Diagnostics** → **JVM** → *Count* and *Time* for G1 Young and G1 Old.
-   - **Start:** start every processor of the variant except the generator, then right-click the generator → **Run Once** (not *Start*: it would keep producing new batches).
-   - **Done** when every queue of the variant shows `Queued 0`.
-   - **Then record:**
+## Steps
 
-     | # | Metric | Where to click | What to record |
-     |---|---|---|---|
-     | 1 | Processing time | ☰ → **Data Provenance**, sort by *Date/Time* | the last event minus the `CREATE` event of `GenerateRecord` |
-     | 2 | *Tasks/Time* | each processor card → *Tasks/Time* row | the value per processor and the total |
-     | 3 | *Bytes Read/Written* | the variant's group card (one level up) → *Read/Write* | Read and Written |
-     | 4 | FlowFiles in the queues | right-click the connection after the split → **View Status History** → *Queued Count* | the peak and the final value (should be 0) |
-     | 5 | Heap | ☰ → **Node Status History** → *Used Heap* | the peak during the run |
-     | 6 | GC | ☰ → **Summary** → **System Diagnostics** → **JVM** | *Count* and *Time* after the run minus before |
-     | 7 | Provenance events | ☰ → **Data Provenance** → **Search** limited to the run's time window | *M* from "Displaying N of **M**" |
+1. **Import the flow.** It contains both variants as the groups `A - Split-based` and `B - Record-based`:
 
-   - **Keep in mind:** the statistics on the processor cards cover a sliding 5-minute window, so wait 5 minutes between runs of the same variant. The processing time of variant A includes the `MergeContent` wait (*Max Bin Age*).
-4. Stop, clear the queues, run variant B with the same input data; repeat the measurements.
-5. Repeat 3 times and take the median.
+   ```bash
+   make import f=nifi/flows/lab3-split-vs-record.json
+   ```
 
-**Expected behavior (qualitatively).** Variant B processes the data noticeably faster and with less load on the heap/GC; the number of provenance events and entries in the FlowFile Repository is orders of magnitude smaller. The absolute values depend on the hardware — **the numbers must be obtained in your environment**, not taken from a textbook.
+   Open the group *Lab 3 - Split vs Record* → right-click → **Enable all controller services**. Do not start the processors: the measurement starts them itself. Look at both variants and find where they differ.
 
-**Correctness check.** The sum of the records in `valid` and `rejected` = the input count; the `record.count` attributes (`QueryRecord` sets it on the output FlowFiles) match. For example, with 10,000 records on the input: `valid` 4910 + `rejected` 5090 (the `ROUTE` event of `QueryRecord` in provenance).
+2. **Run the measurement.**
+
+   ```bash
+   make lab3-measure
+   ```
+
+   The command runs A, then B. For each variant it starts every processor except the generator, triggers the generator with *Run Once*, waits until the data has reached every `LogAttribute`, and stops the group. The report is printed to the terminal and saved to `nifi/data/results/lab3-measure-<date-time>.txt`. Before running, both groups must be stopped and their queues empty.
+
+3. **Read the report.** For each variant there is a table per processor and a summary at the end:
+
+   | Column / row | Meaning |
+   |---|---|
+   | `tasks`, `time, ms` | how many times NiFi ran the processor and how much thread time it spent |
+   | `in`, `out` | FlowFiles the processor received and sent |
+   | `provenance` | provenance events the processor produced |
+   | `wall time, s` | from *Run Once* until the last FlowFile was processed |
+   | `peak queued` | the largest number of FlowFiles waiting in the group's queues |
+   | `heap growth, MB` | peak heap during the run minus the heap before it |
+
+4. **Look at the Grafana dashboard.** `http://localhost:3000` → folder *NiFi playground* → **Lab 3: Split vs Record**: queues, task time, heap and GC, FlowFiles and CPU time per processor for both variants. Prometheus scrapes NiFi every 15 seconds, so short spikes may be missed: the dashboard shows the trend, the report gives the exact numbers.
+
+5. **Increase the volume.** Set *Number of Records* to 100,000 in both generators and run the measurement again. Watch the heap and the queues of variant A in Grafana. Do not go much higher: variant A turns every record into a FlowFile, and millions of FlowFiles do not fit into the stand's heap (2 GB).
+
+6. **Repeat** each volume 3 times and take the median.
+
+**Keep in mind.**
+
+- NiFi counts the processor statistics over a rolling 5-minute window. Wait 5 minutes before running the measurement again, otherwise the previous run drops out of the window during the measurement and skews the numbers.
+- The wall time of variant A includes the `MergeContent` wait: valid records are fewer than *Minimum Number of Entries*, so the bin is closed by *Max Bin Age* (10 s).
+- The heap belongs to the whole NiFi, not to one group, and depends on GC: compare the trend, not the exact megabytes.
+
+## Conclusions
+
+Write down the results in a table (A, B, how many times A is bigger) for both volumes, then answer:
+
+1. How many FlowFiles does variant A create from one input FlowFile? Where in the report do you see it?
+2. Which processor of variant A spends the most time, and why?
+3. Why does variant B show `peak queued` 0?
+4. How do the numbers change when the volume grows 10 times, for A and for B?
+5. Where does variant A still make sense, and what replaces Split + Merge in NiFi 2.x?
+
+**Correctness check.** Both variants must split the records the same way: valid + rejected = the input count. In variant A: `in` of `MergeContent` (valid) plus `in` of `LogAttribute (rejected, A)`. In variant B: the `record.count` attribute of the two FlowFiles after `QueryRecord` (☰ → **Data Provenance**, or `make logs s=nifi | grep record.count`).
+
+**The numbers must be obtained in your environment.** The absolute values depend on the hardware, only the ratio between A and B matters.
+
+## Without the stand
+
+Build both variants yourself (the settings are in the [[solutions/lab-3|solution]]) and record the same metrics by hand after each *Run Once*: *Tasks/Time* and *In/Out* on the processor cards, the queue peak from **View Status History** of the connection after the split, *Used Heap* from ☰ → **Node Status History**, the number of events from ☰ → **Data Provenance** limited to the run's time window.

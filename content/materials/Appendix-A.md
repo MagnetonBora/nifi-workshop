@@ -18,9 +18,9 @@ A training stand for all the labs (not for production) — the stand repository 
 | Conduktor Console (a Kafka UI) | `conduktor/conduktor-console` | — | — | `8080` | the same file |
 | Prometheus + kafka-exporter | `prom/prometheus` | `prometheus`, `kafka-exporter` | `prometheus:9090` | `9090`, `9308` | `monitoring/prometheus/docker-compose-prometheus.yml` |
 | Grafana | `grafana/grafana` | `grafana` | `grafana:3000` | `3000` | `monitoring/grafana/docker-compose-grafana.yml` |
-| A stub of the customers REST API (Lab 4) | `python:3.12-alpine` | `customers-api` | `http://customers-api:8000` | — | `lab-services/docker-compose-lab-services.yml` |
-| The Splunk emulator (Lab 6, the final lab) | `python:3.12-alpine` | `splunk-sim` | TCP `splunk-sim:5514`, HEC `http://splunk-sim:8088` | — | the same file |
-| An unstable API (Lab 7) | `python:3.12-alpine` | `flaky` | `http://flaky:9099/events` | — | the same file |
+| A stub of the customers REST API (Lab 5) | `python:3.12-alpine` | `customers-api` | `http://customers-api:8000` | — | `lab-services/docker-compose-lab-services.yml` |
+| The Splunk emulator (Lab 7, the final lab) | `python:3.12-alpine` | `splunk-sim` | TCP `splunk-sim:5514`, HEC `http://splunk-sim:8088` | — | the same file |
+| An unstable API (Lab 8) | `python:3.12-alpine` | `flaky` | `http://flaky:9099/events` | — | the same file |
 | Splunk Enterprise (trial, optional) | `splunk/splunk` | `splunk` | TCP `splunk:5514`, HEC `http://splunk:8088` | `8000` (UI), `8088` | `splunk/docker-compose-splunk.yml` |
 
 Splunk is not part of `make up` and is started separately (`make splunk`; the first start takes several minutes; on Apple Silicon the amd64 image runs through emulation). For the labs the `splunk-sim` emulator is enough; a real Splunk is needed to see the events in a search (`index=nifi`). The ports are the same as the emulator's — only the host changes in the Parameter Context: `splunk-sim` → `splunk`.
@@ -52,7 +52,7 @@ Requirements: Docker (Docker Desktop) with ~8 GB of memory, `make`, and `python3
 ```bash
 make up              # single NiFi + Registry, Postgres, Kafka, monitoring, stubs
 make up-cluster      # the same with a 3-node NiFi cluster (≈4–5 GB of memory for the cluster alone)
-make lab-setup       # the orders_stage table, Kafka topics, the nifi/data/* directories (idempotent)
+make lab-setup       # the customers, customers_gold and orders_stage tables, Kafka topics, the nifi/data/* directories (idempotent)
 make ps              # the state of the containers
 make logs s=nifi     # the container's logs
 make urls            # addresses and logins
@@ -108,7 +108,9 @@ What to specify in the Parameter Context and in commands instead of abstract add
 ### A.7 Test data and reset
 
 ```bash
-make lab4-data                    # 4 test orders into orders.raw (Lab 4)
+make lab3-measure                 # Lab 3 measurements: split vs record, report in nifi/data/results/
+make lab4-insert n=10             # 10 new gold customers in the table customers (Lab 4)
+make lab5-data                    # 4 test orders into orders.raw (Lab 5)
 make lab-final-load n=100000      # the load for the final lab into logs.raw
 make lab-splunk-count             # how many lines the Splunk emulator received
 make import f=nifi/flows/<file>.json            # load a flow into the single NiFi
@@ -118,12 +120,13 @@ make import-cluster f=nifi/flows/<file>.json    # the same for the cluster
 Before re-running the labs with Kafka, reset the consumer group (with `ConsumeKafka` stopped), otherwise the flow will not read the messages that have already been read:
 
 ```bash
-docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-lab4   # Lab 4
+docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-lab5   # Lab 5
 docker exec kafka1 kafka-consumer-groups --bootstrap-server kafka1:19092 --delete --group nifi-logs   # the final one
-docker exec nifi-postgres psql -U nifi -d nifi -c "TRUNCATE orders_stage"                             # Lab 4
+docker exec nifi-postgres psql -U nifi -d nifi -c "DELETE FROM customers WHERE id > 1000; TRUNCATE customers_gold"   # Lab 4 (+ Clear State)
+docker exec nifi-postgres psql -U nifi -d nifi -c "TRUNCATE orders_stage"                             # Lab 5
 docker exec splunk-sim sh -c ': > /data/splunk_in.log; : > /data/hec_in.log'                          # the Splunk emulator
 ```
 
 ### A.8 Reference solutions
 
-The `nifi/flows` directory holds the Flow Definitions of all the labs verified on the stand (`lab1-first-flow.json` … `lab8-performance.json`, `lab9-final-pipeline.json` — the final one). Import: drag the **Process Group** icon onto the canvas and click the file upload icon, or `make import f=...`. After importing, enable the group's Controller Services (*Enable all controller services*) and start it. The environment values are moved into the Parameter Context of each lab. To change a reference solution, fix the flow in NiFi, export it (right-click the group → *Download flow definition*), and replace the file in `nifi/flows`.
+The `nifi/flows` directory holds the Flow Definitions of all the labs verified on the stand (`lab1-first-flow.json` … `lab9-performance.json`, `lab10-final-pipeline.json` — the final one). Import: drag the **Process Group** icon onto the canvas and click the file upload icon, or `make import f=...`. After importing, enable the group's Controller Services (*Enable all controller services*) and start it. The environment values are moved into the Parameter Context of each lab. To change a reference solution, fix the flow in NiFi, export it (right-click the group → *Download flow definition*), and replace the file in `nifi/flows`.

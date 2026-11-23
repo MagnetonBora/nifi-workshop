@@ -1,5 +1,5 @@
 ---
-title: "Lab 6 — Delivering events to Splunk"
+title: "Lab 6 — An NDJSON transformation pipeline"
 aliases:
   - exercises/lab-6
 ---
@@ -7,31 +7,23 @@ aliases:
 > From the materials of [[materials/day-2|Day 2 — Data Processing and Integrations]]. The lab stand is described on the [[labs/index|Labs]] page; loading the reference solutions — on the [[solutions/index|Solutions]] page.
 > Solution: [[solutions/lab-6|Lab 6 — solution]].
 
-**Goal.** Send the NDJSON events from Lab 5 to Splunk or to an emulated endpoint and measure throughput.
+**Goal.** Build a pipeline: NDJSON logs → validation → removing a secret → adding `ingest_ts` to the start of the object → merging into large NDJSON files.
 
-**Emulation.** On the stand, the Splunk emulator is already running (`make lab-services`, the container `splunk-sim`, the code is `lab-services/splunk_sim.py`): the TCP input on `splunk-sim:5514` writes events to `/data/splunk_in.log`, and HEC at `http://splunk-sim:8088/services/collector/event` writes to `/data/hec_in.log` and responds like Splunk (`{"text":"Success","code":0}`). Without the stand, the same effect is given by:
+The Parameter Context `lab6-params`: `out.dir=/opt/nifi/data/out`, `quarantine.dir=/opt/nifi/data/quarantine` (on the stand host — `nifi/data/out`, `nifi/data/quarantine`), `log.schema.in` and `log.schema.out` — the schema texts (one schema is used by several services).
 
-```bash
-# Emulating a Splunk TCP input
-nc -lk 5514 > /tmp/splunk_in.log
-# Or in Python: a simple HTTP receiver for HEC
-python3 - <<'EOF'
-from http.server import BaseHTTPRequestHandler, HTTPServer
-class H(BaseHTTPRequestHandler):
-    def do_POST(self):
-        n = int(self.headers.get('Content-Length', 0)); body = self.rfile.read(n)
-        open('/tmp/hec_in.log','ab').write(body + b'\n')
-        self.send_response(200); self.end_headers(); self.wfile.write(b'{"text":"Success","code":0}')
-HTTPServer(('0.0.0.0', 8088), H).serve_forever()
-EOF
+**Input data (`Custom Text` in `GenerateFlowFile`, Mime Type `application/x-ndjson`):**
+
+```json
+{"ts":"2026-11-15T10:00:00Z","level":"INFO","svc":"api","msg":"started","user":{"id":7,"pwd":"s3cret"}}
+{"ts":"2026-11-15T10:00:01Z","level":"ERROR","svc":"api","msg":"db timeout","user":{"id":9,"pwd":"x"}}
+{"ts":"bad","level":"INFO"}
 ```
 
-**The event source.** `GenerateRecord` (a log event schema, 100 records per FlowFile, `Run Schedule 1 sec`) ► `MergeRecord` (Min/Max Records `10000`, Max Bin Age `10 sec`). It is convenient to build two groups: A — `PutSplunk` (TCP), B — `InvokeHTTP` (HEC) — and to run them in turn.
+**Verification** (from the stand host, from the repository root):
 
-**The experiment.**
-
-1. Prepare 1 million events (repeated `GenerateRecord`/`GenerateFlowFile`). On a laptop, start with ~100,000 and increase while watching the heap.
-2. Variant 1: small FlowFiles of 100 events. Variant 2: batches of 10,000 through `MergeRecord`. Variant 3: `Concurrent Tasks=4`.
-3. Measure events/s using the queue counters and time (on the stand: `make lab-splunk-count`).
-
-**Verification.** `make lab-splunk-count` (or `wc -l /tmp/splunk_in.log` without the stand) equals the number of events sent — for example, 21 FlowFiles of 100 events give exactly 2,100 lines over both TCP and HEC; in provenance the `SEND` events show the destination address. Before a new measurement, zero the emulator files: `docker exec splunk-sim sh -c ': > /data/splunk_in.log; : > /data/hec_in.log'`.
+```bash
+head -n 2 nifi/data/out/*.ndjson
+# we expect: {"ingest_ts":"2026-11-15T...","ts":"2026-11-15T10:00:00Z","level":"INFO",...,"user":{"id":7}}
+grep -c pwd nifi/data/out/*.ndjson   # we expect 0
+cat nifi/data/quarantine/*.ndjson    # we expect {"ts":"bad","level":"INFO"}
+```

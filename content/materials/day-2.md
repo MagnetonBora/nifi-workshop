@@ -135,7 +135,7 @@ In the processor, open *Properties* and in the **Database Connection Pooling Ser
 
 | Processor | What to configure | Note |
 |---|---|---|
-| `ExecuteSQLRecord` | Database Connection Pooling Service; SQL select query; Record Writer; Max Rows Per Flow File; Fetch Size | Reading; the result is records in the chosen format |
+| `ExecuteSQLRecord` | Database Connection Pooling Service; SQL Query; Record Writer; Max Rows Per FlowFile; Fetch Size | Reading; the result is records in the chosen format |
 | `QueryDatabaseTableRecord` | Pooling Service; Table Name; Maximum-value Columns; Record Writer | Incremental reading; Primary Node Only |
 | `PutDatabaseRecord` | Pooling Service; Record Reader; Statement Type; Table Name; Update Keys; Batch Size | Writing; see the details above |
 
@@ -254,12 +254,12 @@ Both services are real pools; this is exactly what distinguishes them from `DBCP
 | Property | Purpose |
 |---|---|
 | Database Connection Pooling Service | The DBCP service |
-| SQL select query | SQL; supports EL over the attributes of the incoming FlowFile (`${id}`) — convenient but dangerous: see below |
+| SQL Query | SQL; supports EL over the attributes of the incoming FlowFile (`${id}`) — convenient but dangerous: see below |
 | Record Writer | The output format (JSON NDJSON, Avro, …) |
-| Max Rows Per Flow File | The size of the output FlowFile (0 = all rows in one) |
+| Max Rows Per FlowFile | The size of the output FlowFile (0 = all rows in one) |
 | Output Batch Size | How many FlowFiles to hand to the session before a commit (reduces memory for very large result sets) |
 | Fetch Size | The size of the batch the driver fetches at a time (the driver default may be "everything into memory") |
-| Query timeout | An execution limit |
+| Max Wait Time | An execution limit for the query |
 
 **Important about memory.** Some JDBC drivers (PostgreSQL) without an explicit cursor mode load the entire result into client memory; for `Fetch Size` to work, specific connection settings are needed (for PostgreSQL — a mode without autocommit; the exact conditions are in the pgjdbc documentation section on getting results with a cursor). Always limit result sets by time/key.
 
@@ -271,7 +271,7 @@ Both services are real pools; this is exactly what distinguishes them from `DBCP
 |---|---|
 | Table Name, Columns to Return | The source |
 | **Maximum-value Columns** | Monotonically growing columns (id, updated_at); the processor keeps the maximum in **state** and adds `WHERE col > <state>` |
-| Max Rows Per Flow File, Fetch Size | Control of size and memory |
+| Max Rows Per FlowFile, Fetch Size | Control of size and memory |
 | Record Writer | The output format |
 | Scheduling | **Primary Node Only** in a cluster (otherwise several nodes will start reading the same thing) |
 
@@ -285,13 +285,13 @@ Limitations: updated (UPDATE) rows without a change in the max-value column and 
 |---|---|
 | Record Reader | The Reader of the input records (with an explicit schema!) |
 | Database Type / Dialect | Needed for UPSERT and dialect specifics |
-| **Statement Type** | `INSERT`, `UPDATE`, `DELETE`, `UPSERT` (since 1.22.0), `INSERT_IGNORE`, `SQL`, `Use statement.type Attribute`, `Use Record Path` (the set may differ by version) |
+| **Statement Type** | `INSERT`, `UPDATE`, `DELETE`, `UPSERT` (since 1.22.0), `INSERT_IGNORE`, `Use statement.type Attribute`, `Use Record Path` (the set may differ by version) |
 | Database Connection Pooling Service | DBCP |
 | Schema Name / Table Name | The target table |
 | Translate Field Names | Matching field and column names regardless of case/underscores |
 | Unmatched Field Behavior / Unmatched Column Behavior | What to do with fields that have no columns and vice versa |
 | Update Keys | Keys for UPDATE/UPSERT |
-| Batch Size | The number of rows in a JDBC batch (affects speed and transaction size) |
+| Maximum Batch Size | The number of rows in a JDBC batch (affects speed and transaction size) |
 | Rollback On Failure | Roll back the entire transaction (and leave the FlowFile in the incoming queue) instead of routing to `failure` |
 
 **Relationships:** `success`; `failure` — data the database does not accept (constraint violations, wrong types); `retry` — temporary problems (a lost connection, a deadlock). Do not connect `retry` back to the same processor without a limit (see [Block 3.1](day-3.md#block-31-fault-tolerance-and-error-handling)).
@@ -315,6 +315,10 @@ CREATE TABLE orders_stage (
     ingest_ts  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+### Lab 4: connecting NiFi to a database
+
+> The lab: [[labs/lab-4|Lab 4 — Connecting NiFi to a database]].
 
 ### 2.1.2 REST API: InvokeHTTP
 
@@ -492,9 +496,9 @@ Rules:
 3. Rebalances (a change in the group membership) pause consumption; reduce their frequency: do not restart `ConsumeKafka` without need; watch the session/heartbeat timeouts.
 4. If there are few partitions and the processing is heavy — distribute the data across the cluster with `Round robin` on the connection *after* consume.
 
-### Lab 4: a database + REST + Kafka with record processing
+### Lab 5: a database + REST + Kafka with record processing
 
-> The lab: [[labs/lab-4|Lab 4 — A database + REST + Kafka with record processing]].
+> The lab: [[labs/lab-5|Lab 5 — A database + REST + Kafka with record processing]].
 
 ---
 
@@ -868,7 +872,7 @@ A practical rule: **NiFi is for moving data and light preparation, external engi
 
 ### 2.2.6 Reference: ValidateRecord, QueryRecord, UpdateRecord (RecordPath), EvaluateJsonPath, MergeRecord
 
-This section collects detailed descriptions of the processors most often used in NDJSON pipelines ([[labs/lab-5|Lab 5]], [[labs/lab-4|Lab 4]], [[labs/final-lab|the final lab]]). The properties were checked against the NiFi component references ([ValidateRecord](https://nifi.apache.org/documentation/nifi-2.0.0-M2/components/org.apache.nifi/nifi-standard-nar/2.0.0-M2/org.apache.nifi.processors.standard.ValidateRecord/index.html), [QueryRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/latest/org.apache.nifi.processors.standard.QueryRecord/index.html), [UpdateRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/latest/org.apache.nifi.processors.standard.UpdateRecord/index.html), [EvaluateJsonPath](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.2.0/org.apache.nifi.processors.standard.EvaluateJsonPath/index.html), [MergeRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.3.0/org.apache.nifi.processors.standard.MergeRecord/additionalDetails.html)); the versions of the references are given in the links, so check the property names in your version in the built-in documentation.
+This section collects detailed descriptions of the processors most often used in NDJSON pipelines ([[labs/lab-6|Lab 6]], [[labs/lab-5|Lab 5]], [[labs/final-lab|the final lab]]). The properties were checked against the NiFi component references ([ValidateRecord](https://nifi.apache.org/documentation/nifi-2.0.0-M2/components/org.apache.nifi/nifi-standard-nar/2.0.0-M2/org.apache.nifi.processors.standard.ValidateRecord/index.html), [QueryRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/latest/org.apache.nifi.processors.standard.QueryRecord/index.html), [UpdateRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/latest/org.apache.nifi.processors.standard.UpdateRecord/index.html), [EvaluateJsonPath](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.2.0/org.apache.nifi.processors.standard.EvaluateJsonPath/index.html), [MergeRecord](https://nifi.apache.org/docs/nifi-docs/components/org.apache.nifi/nifi-standard-nar/1.3.0/org.apache.nifi.processors.standard.MergeRecord/additionalDetails.html)); the versions of the references are given in the links, so check the property names in your version in the built-in documentation.
 
 #### ValidateRecord
 
@@ -1106,11 +1110,11 @@ Destination = flowfile-content, Return Type = json
 3. For very large resulting FlowFiles — **a two-stage merge**: the first MergeRecord collects 1,000 at a time, its `merged` goes to a second MergeRecord, also 1,000 at a time (this is how a million records are assembled without inflating the number of bins in memory).
 4. Different schemas are **not merged** — they will land in different bins; make sure the source does not "drift" in its schema (Infer Schema, [Block 1.3.4](day-1.md#134-json-tree-reader-infer-schema-limitations-and-an-explicit-schema)).
 5. Grouping by a key (a tenant, a topic): set an attribute (through `UpdateAttribute`/`PartitionRecord`) and specify it in *Correlation Attribute Name*.
-6. Balance: the larger the bin, the higher the throughput of the destination, but also the higher the latency and memory; tune by measurement ([[labs/lab-8|Lab 8]]).
+6. Balance: the larger the bin, the higher the throughput of the destination, but also the higher the latency and memory; tune by measurement ([[labs/lab-9|Lab 9]]).
 
 **Common mistakes.** No `Max Bin Age` → the last records "hang"; `Minimum Number of Records` = 1 (the default) → a million small FlowFiles on output; Maximum Number of Bins less than the number of threads → fragmentation; expecting a strict limit on records although it is "soft"; `Defragment` without the `fragment.*` attributes.
 
-#### A cheat sheet: the operations from Lab 5 and what performs them
+#### A cheat sheet: the operations from Lab 6 and what performs them
 
 | An operation on NDJSON | The main tool | An alternative |
 |---|---|---|
@@ -1124,9 +1128,9 @@ Destination = flowfile-content, Return Type = json
 | Merge into large batches | `MergeRecord` | `MergeContent` (byte concatenation) |
 
 
-### Lab 5: an NDJSON transformation pipeline
+### Lab 6: an NDJSON transformation pipeline
 
-> The lab: [[labs/lab-5|Lab 5 — An NDJSON transformation pipeline]].
+> The lab: [[labs/lab-6|Lab 6 — An NDJSON transformation pipeline]].
 
 ---
 
@@ -1191,9 +1195,9 @@ Body        : several JSON events in a row, for example
 - **Filtering before sending.** Do not send noise (DEBUG, health checks): `QueryRecord` with the filter `WHERE level <> 'DEBUG'` saves the Splunk license and the network.
 - **Architecture alternatives:** Kafka as a buffer with Splunk Connect for Kafka; a Universal Forwarder on the end hosts. The choice depends on who should be responsible for delivery (the data platform or the Splunk team) and on the requirements for guarantees.
 
-### Lab 6: delivering events to Splunk (or to a simulation)
+### Lab 7: delivering events to Splunk (or to a simulation)
 
-> The lab: [[labs/lab-6|Lab 6 — Delivering events to Splunk]].
+> The lab: [[labs/lab-7|Lab 7 — Delivering events to Splunk]].
 
 ---
 

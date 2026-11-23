@@ -74,13 +74,14 @@ Key takeaways, self-check questions, and Q&A.
 
 1. Recap of the previous day
 2. Databases (JDBC)
-3. REST APIs with InvokeHTTP
+3. Lab 4: connecting NiFi to a database
+4. REST APIs with InvokeHTTP
 
 **Break: 10:00–10:15 (15 minutes)**
 
-4. PublishKafka and ConsumeKafka in NiFi 2.x
-5. Efficient Kafka integration: batching, offsets, delivery guarantees, parallelism
-6. Lab 4: databases, REST, and Kafka with record processing
+5. PublishKafka and ConsumeKafka in NiFi 2.x
+6. Efficient Kafka integration: batching, offsets, delivery guarantees, parallelism
+7. Lab 5: databases, REST, and Kafka with record processing
 
 **Break: 11:15–11:30 (15 minutes)**
 
@@ -97,7 +98,7 @@ Key takeaways, self-check questions, and Q&A.
 **Lunch break: 12:30–12:50 (20 minutes)**
 
 6. ValidateRecord, QueryRecord, UpdateRecord (RecordPath), EvaluateJsonPath, MergeRecord
-7. Lab 5: an NDJSON transformation pipeline
+7. Lab 6: an NDJSON transformation pipeline
 
 ### Part 3: Splunk Integration
 
@@ -106,7 +107,7 @@ Key takeaways, self-check questions, and Q&A.
 1. Splunk integration options
 2. PutSplunk configuration
 3. Throughput factors, optimizations, and alternative approaches
-4. Lab 6: delivering events to Splunk (or a mock)
+4. Lab 7: delivering events to Splunk (or a mock)
 
 **Break: 14:20–14:30 (10 minutes)**
 
@@ -142,7 +143,7 @@ Key takeaways, self-check questions, and Q&A.
 4. Keeping the main flow healthy when failure queues fill up
 5. Restarting flows efficiently with minimal manual intervention
 6. Backup and restore: configuration, flow definitions, keys
-7. Lab 7: a flow with retry and error handling
+7. Lab 8: a flow with retry and error handling
 
 **Break: 10:00–10:15 (15 minutes)**
 
@@ -179,7 +180,7 @@ Key takeaways, self-check questions, and Q&A.
 2. Scaling and hardware selection
 3. Storage layout and Provenance Repository I/O load
 4. Reducing flow design bottlenecks, prioritization, throughput control
-5. Lab 8: performance testing and pipeline tuning
+5. Lab 9: performance testing and pipeline tuning
 
 **Break: 14:20–14:30 (10 minutes)**
 

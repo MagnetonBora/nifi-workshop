@@ -685,7 +685,7 @@ TimeoutStopSec=180</code></pre>
       <div class="eyebrow">Mini-lab 3.1.4</div>
       <h2 class="section-heading">Restart under load</h2>
       <ol class="bullets">
-        <li>Run the Lab 7 or final-lab pipeline under load.</li>
+        <li>Run the Lab 8 or final-lab pipeline under load.</li>
         <li><strong>Planned restart:</strong> follow the runbook (sources → drain → stop → start → sinks → sources); time stop and start.</li>
         <li><strong>Crash:</strong> <code>kill -9</code> the NiFi JVM (<strong>lab only</strong>) — the supervisor brings it back, the flow resumes by itself.</li>
         <li>Compare input and sink counts; count duplicates by event key.</li>
@@ -742,16 +742,16 @@ TimeoutStopSec=180</code></pre>
     </div>
 
     <div class="slide s-intro" id="s35">
-      <h2>Lab 7: Retry and error handling</h2>
+      <h2>Lab 8: Retry and error handling</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
     <div class="slide s-section" id="s36">
       <div class="section-number">S36</div>
-      <div class="eyebrow">Lab 7 · Architecture</div>
+      <div class="eyebrow">Lab 8 · Architecture</div>
       <h2 class="section-heading">Survive a flaky target, never block on bad data</h2>
       <div class="diagram-shell">
-        <svg class="diagram-svg" viewBox="0 0 1100 400" role="img" aria-label="Lab 7 architecture with InvokeHTTP, RetryFlowFile, and a DLQ group">
+        <svg class="diagram-svg" viewBox="0 0 1100 400" role="img" aria-label="Lab 8 architecture with InvokeHTTP, RetryFlowFile, and a DLQ group">
           <defs><marker id="arr-l7" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path></marker>
           <marker id="arr-l7-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#cf4d4d"></path></marker></defs>
           <rect x="20" y="40" width="180" height="52" rx="8" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
@@ -790,7 +790,7 @@ TimeoutStopSec=180</code></pre>
 
     <div class="slide s-code" id="s37">
       <div class="section-number">S37</div>
-      <div class="eyebrow">Lab 7 · Flaky API</div>
+      <div class="eyebrow">Lab 8 · Flaky API</div>
       <h2 class="section-heading">Simulate an unstable endpoint</h2>
       <div class="terminal-window">
         <div class="terminal-titlebar"><span class="terminal-dot terminal-dot-red"></span><span class="terminal-dot terminal-dot-yellow"></span><span class="terminal-dot terminal-dot-green"></span><span class="terminal-title">flaky_api.py</span></div>
@@ -837,7 +837,7 @@ PORT = 9099
 
     <div class="slide s-section" id="s38">
       <div class="section-number">S38</div>
-      <div class="eyebrow">Lab 7 · Configuration</div>
+      <div class="eyebrow">Lab 8 · Configuration</div>
       <h2 class="section-heading">Key settings</h2>
       <table>
         <tr><th>Component</th><th>Setting</th></tr>
@@ -852,7 +852,7 @@ PORT = 9099
 
     <div class="slide s-section" id="s39">
       <div class="section-number">S39</div>
-      <div class="eyebrow">Lab 7 · Verification</div>
+      <div class="eyebrow">Lab 8 · Verification</div>
       <h2 class="section-heading">What to check and what typically goes wrong</h2>
       <div class="split2">
         <div class="split-left">
@@ -2061,14 +2061,14 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
     </div>
 
     <div class="slide s-intro" id="s103">
-      <h2>Lab 8: Performance test and tuning</h2>
+      <h2>Lab 9: Performance test and tuning</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
     <div class="slide s-section" id="s104">
       <div class="section-number">S104</div>
-      <div class="eyebrow">Lab 8 · Method</div>
-      <h2 class="section-heading">Measure the Lab 5 pipeline, find the bottleneck</h2>
+      <div class="eyebrow">Lab 9 · Method</div>
+      <h2 class="section-heading">Measure the Lab 6 pipeline, find the bottleneck</h2>
       <div class="split2">
         <div class="split-left">
           <h3>Method</h3>
@@ -2097,7 +2097,7 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
 
     <div class="slide s-code" id="s105">
       <div class="section-number">S105</div>
-      <div class="eyebrow">Lab 8 · Tooling</div>
+      <div class="eyebrow">Lab 9 · Tooling</div>
       <h2 class="section-heading">Useful commands and the results table</h2>
       <div class="terminal-window">
         <div class="terminal-titlebar"><span class="terminal-dot terminal-dot-red"></span><span class="terminal-dot terminal-dot-yellow"></span><span class="terminal-dot terminal-dot-green"></span><span class="terminal-title">Terminal</span></div>
@@ -2248,7 +2248,7 @@ EOF</code></pre>
         <tr><td>Restart NiFi under load</td><td>Queues recover; the consumer resumes from committed offsets; duplicates possible (at-least-once) — check idempotency</td></tr>
         <tr><td>Send 100 % garbage</td><td>Main flow keeps running; the DLQ absorbs it</td></tr>
       </table>
-      <div class="hibox">Then run <strong>Lab 8</strong> on this pipeline: stable throughput without lag growth, GC pauses within SLO; record final heap, thread pool, concurrent tasks, batch sizes, repository layout.</div>
+      <div class="hibox">Then run <strong>Lab 9</strong> on this pipeline: stable throughput without lag growth, GC pauses within SLO; record final heap, thread pool, concurrent tasks, batch sizes, repository layout.</div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 

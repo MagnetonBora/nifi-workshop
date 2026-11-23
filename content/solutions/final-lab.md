@@ -59,4 +59,4 @@ In `RECORD` mode `ConsumeKafka` has a relationship **`parse failure`** (messages
 | Low throughput | Tasks/Time, queues; not enough partitions; small FlowFiles; a single thread on `PutSplunk` |
 | Duplicates at the destination | Restarts/rebalances; idempotency is needed |
 
-**Reference solution:** [lab9-final-pipeline.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab9-final-pipeline.json). The failure tests (stopping the destination, restarting NiFi under load) were not run on the reference solution.
+**Reference solution:** [lab10-final-pipeline.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab10-final-pipeline.json). The failure tests (stopping the destination, restarting NiFi under load) were not run on the reference solution.

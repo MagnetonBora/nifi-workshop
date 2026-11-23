@@ -69,18 +69,19 @@ Besides the presentations, the workshop website contains written materials, labs
 
 ## Labs
 
-The hands-on part has eight labs and a final end-to-end lab. Every lab has a task, a solution with a component-by-component explanation, and a reference Flow Definition. All labs are verified on Apache NiFi 2.12.0.
+The hands-on part has nine labs and a final end-to-end lab. Every lab has a task, a solution with a component-by-component explanation, and a reference Flow Definition. All labs are verified on Apache NiFi 2.12.0.
 
 | Lab | Day | Topic |
 | --- | --- | --- |
 | [Lab 1](content/labs/lab-1.md) | 1 | The NiFi UI and a first flow |
 | [Lab 2](content/labs/lab-2.md) | 1 | Several sources and routing |
 | [Lab 3](content/labs/lab-3.md) | 1 | A Split flow versus a Record flow |
-| [Lab 4](content/labs/lab-4.md) | 2 | A database + REST + Kafka with record processing |
-| [Lab 5](content/labs/lab-5.md) | 2 | An NDJSON transformation pipeline |
-| [Lab 6](content/labs/lab-6.md) | 2 | Delivering events to Splunk |
-| [Lab 7](content/labs/lab-7.md) | 3 | Retry and error handling |
-| [Lab 8](content/labs/lab-8.md) | 3 | A performance test and tuning |
+| [Lab 4](content/labs/lab-4.md) | 2 | Connecting NiFi to a database |
+| [Lab 5](content/labs/lab-5.md) | 2 | A database + REST + Kafka with record processing |
+| [Lab 6](content/labs/lab-6.md) | 2 | An NDJSON transformation pipeline |
+| [Lab 7](content/labs/lab-7.md) | 2 | Delivering events to Splunk |
+| [Lab 8](content/labs/lab-8.md) | 3 | Retry and error handling |
+| [Lab 9](content/labs/lab-9.md) | 3 | A performance test and tuning |
 | [Final lab](content/labs/final-lab.md) | 3 | An end-to-end pipeline: Kafka → validation and transformation → Splunk → DLQ |
 
 The labs run on the [NiFi playground](https://github.com/MagnetonBora/nifi-playground) stand: NiFi (a single node or a cluster), NiFi Registry, PostgreSQL, Kafka, Prometheus and Grafana, Splunk, and mocks of external systems. It needs Docker with at least 8 GB of memory and `make`:

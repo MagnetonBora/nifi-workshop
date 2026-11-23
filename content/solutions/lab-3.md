@@ -57,33 +57,42 @@ and `rejected`:
 SELECT * FROM FLOWFILE WHERE amount <= 0 OR currency NOT IN ('EUR', 'USD')
 ```
 
-**Measurements.** Run each variant with *Run Once* on its generator (all other processors started) and record the values once every queue of the variant shows `Queued 0`. Write down the GC values before the run, since you need the difference.
+**Measurements.** On the stand, after `make import f=nifi/flows/lab3-split-vs-record.json` and *Enable all controller services* on the group *Lab 3 - Split vs Record*:
 
-| # | Metric | Where to click | What to record |
+```bash
+make lab3-measure        # runs A, then B; report in the terminal and in nifi/data/results/
+```
+
+The measurement is the script `nifi/common/lab3-measure.py` in a one-off Python container. For each variant it starts every processor except the generator, does *Run Once* on `GenerateRecord`, waits until the queues are empty and every `LogAttribute` has received data, then stops the group. It takes the processor statistics before and after the run (the difference gives *Tasks/Time* and *In/Out* of this run), samples the queues and the heap every 0.25 s, and counts provenance events per processor. The Grafana dashboard **Lab 3: Split vs Record** shows the same picture over time.
+
+Results template (repeat 3 times per volume and take the median):
+
+| Metric | A (Split) | B (Record) | A / B |
 |---|---|---|---|
-| 1 | Processing time | ☰ → **Data Provenance**, sort by *Date/Time* | the last event minus the `CREATE` event of `GenerateRecord` |
-| 2 | *Tasks/Time* | each processor card → *Tasks/Time* row | the value per processor and the total |
-| 3 | *Bytes Read/Written* | the variant's group card (one level up) → *Read/Write* | Read and Written |
-| 4 | FlowFiles in the queues | right-click the connection after the split → **View Status History** → *Queued Count* | the peak and the final value (should be 0) |
-| 5 | Heap | ☰ → **Node Status History** → *Used Heap* | the peak during the run |
-| 6 | GC | ☰ → **Summary** → **System Diagnostics** → **JVM** | *Count* and *Time* for G1 Young / G1 Old after the run minus before |
-| 7 | Provenance events | ☰ → **Data Provenance** → **Search** limited to the run's time window | *M* from "Displaying N of **M**" |
+| Wall time, s | | | |
+| Tasks | | | |
+| Task time, ms | | | |
+| Provenance events | | | |
+| Peak queued | | | |
+| Heap growth, MB | | | |
 
-Results template (one run; repeat 3 times and take the median):
+**What to expect.** An example from a laptop with 100,000 records per run (your numbers will differ, the ratio should not):
 
-| Metric | A (Split) | B (Record) |
-|---|---|---|
-| Processing time | | |
-| Tasks (total) | | |
-| Time (total) | | |
-| Bytes Read / Written | | |
-| Queue peak | | |
-| Heap peak | | |
-| GC: collections / ms | | |
-| Provenance events | | |
+- Variant A: `SplitRecord` sends 100,000 FlowFiles, `EvaluateJsonPath` and `RouteOnAttribute` receive 100,000 each, and the rest of the chain receives the valid or rejected part. In total the processors of A handle about 350,000 FlowFiles per run; the processors of B handle 4.
+- The queues of A held up to ~90,000 FlowFiles at once; B shows 0.
+- Task time of A was about 15 times that of B; provenance events differ by orders of magnitude (one or more per FlowFile per processor in A, a handful in B).
+- The wall time of A includes up to 10 s of `MergeContent` waiting for *Max Bin Age*.
 
-The statistics on the processor cards cover a sliding 5-minute window: wait 5 minutes between runs of the same variant, otherwise the numbers add up. The processing time of variant A includes the `MergeContent` wait (*Max Bin Age*). With 10,000 input records, variant A creates about 10,000 FlowFiles after `SplitRecord`: expect a queue peak of up to 10,000 and orders of magnitude more tasks and provenance events than in variant B.
+**Answers to the questions.**
 
-**Common mistakes.** `QueryRecord` fails with an SQL error — the table name must be `FLOWFILE`; the field type did not match (decimal vs double) — set the schema explicitly; the error `Values passed to NOT IN operator must have compatible types` — the field is declared as an enum in the Reader schema, declare it as a string; in variant A, `MergeContent` waits for the required number of elements — set *Max Bin Age*. Identical processor names in variants A and B (for example, two `LogAttribute (valid)`) cause confusion when searching in provenance — give them different names.
+1. One FlowFile per record (*Records Per Split* = 1): `out` of `SplitRecord` and `in` of `EvaluateJsonPath` equal the input record count.
+2. The processors that see every FlowFile: usually `RouteOnAttribute`, `SplitRecord`, `UpdateAttribute` and `LogAttribute (rejected, A)`, which writes a log line per FlowFile. The work per record is trivial; the cost is the per-FlowFile overhead: a session commit, a FlowFile Repository entry, attributes in the heap, provenance events.
+3. Variant B has one FlowFile at each step and processes it in milliseconds: nothing waits in a queue long enough to be seen by a sample.
+4. In variant A tasks, provenance events, queue peak and heap grow linearly with the record count. In variant B the number of FlowFiles, tasks and provenance events stays the same; only the processing time grows with the amount of data.
+5. Split is justified when each record really has to be handled separately (a per-record call to an external system, per-record routing to different destinations) or the format has no Record Reader. Otherwise use Record processors: `QueryRecord`, `UpdateRecord`, `PartitionRecord`, `LookupRecord`, `ForkRecord`, and `MergeRecord` instead of `MergeContent` if batches have to be built.
+
+**Correctness check.** valid + rejected = the input count: in A, `in` of `MergeContent` plus `in` of `LogAttribute (rejected, A)`; in B, `record.count` of the two FlowFiles after `QueryRecord` (provenance or `make logs s=nifi | grep record.count`). The split is about half and half, for example 4910 valid + 5090 rejected out of 10,000.
+
+**Common mistakes.** `make lab3-measure` waits forever — a controller service is disabled or a processor is invalid, so the data never reaches a `LogAttribute`: stop it with Ctrl+C, fix the group, empty the queues; `tasks` / `time` of a repeated run are too small or even negative — the previous run of the same variant was less than 5 minutes ago and dropped out of the statistics window during the measurement: wait 5 minutes between runs; `QueryRecord` fails with an SQL error — the table name must be `FLOWFILE`; the field type did not match (decimal vs double) — set the schema explicitly; the error `Values passed to NOT IN operator must have compatible types` — the field is declared as an enum in the Reader schema, declare it as a string; in variant A, `MergeContent` waits for the required number of elements — set *Max Bin Age*. Identical processor names in variants A and B (for example, two `LogAttribute (valid)`) cause confusion when searching in provenance — give them different names.
 
 **Reference solution:** [lab3-split-vs-record.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab3-split-vs-record.json).

@@ -201,7 +201,7 @@
         <div class="split-right">
           <table>
         <tr><th>Processor</th><th>Configure</th></tr>
-        <tr><td><code>ExecuteSQLRecord</code></td><td>SQL select query · Record Writer · Max Rows Per Flow File · Fetch Size</td></tr>
+        <tr><td><code>ExecuteSQLRecord</code></td><td>SQL Query · Record Writer · Max Rows Per FlowFile · Fetch Size</td></tr>
         <tr><td><code>QueryDatabaseTableRecord</code></td><td>Table Name · Maximum-value Columns · Record Writer · Primary Node Only</td></tr>
         <tr><td><code>PutDatabaseRecord</code></td><td>Record Reader · Statement Type · Table Name · Update Keys · Batch Size</td></tr>
       </table>
@@ -355,11 +355,11 @@
       <table>
         <tr><th>Property</th><th>Purpose</th></tr>
         <tr><td>Database Connection Pooling Service</td><td>The DBCP service</td></tr>
-        <tr><td>SQL select query</td><td>Supports EL on incoming FlowFile attributes (<code>${id}</code>) — convenient but risky</td></tr>
+        <tr><td>SQL Query</td><td>Supports EL on incoming FlowFile attributes (<code>${id}</code>) — convenient but risky</td></tr>
         <tr><td>Record Writer</td><td>Output format (JSON/NDJSON, Avro, CSV…)</td></tr>
-        <tr><td>Max Rows Per Flow File</td><td>Output FlowFile size (0 = all rows in one)</td></tr>
+        <tr><td>Max Rows Per FlowFile</td><td>Output FlowFile size (0 = all rows in one)</td></tr>
         <tr><td>Output Batch Size</td><td>FlowFiles handed to the session before commit — less memory on huge result sets</td></tr>
-        <tr><td>Fetch Size / Query timeout</td><td>Rows fetched per round trip by the driver / execution limit</td></tr>
+        <tr><td>Fetch Size / Max Wait Time</td><td>Rows fetched per round trip by the driver / execution limit</td></tr>
       </table>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
@@ -397,7 +397,7 @@
         <tr><th>Property</th><th>Purpose</th></tr>
         <tr><td>Table Name, Columns to Return</td><td>Source</td></tr>
         <tr><td><strong>Maximum-value Columns</strong></td><td>Monotonic columns (id, updated_at); the max is kept in <strong>state</strong> and <code>WHERE col &gt; &lt;state&gt;</code> is added</td></tr>
-        <tr><td>Max Rows Per Flow File, Fetch Size</td><td>Size and memory control</td></tr>
+        <tr><td>Max Rows Per FlowFile, Fetch Size</td><td>Size and memory control</td></tr>
         <tr><td>Scheduling</td><td><strong>Primary Node Only</strong> in a cluster — otherwise every node reads the same rows</td></tr>
       </table>
       <div class="hibox hibox-red">UPDATEs that don't change the max-value column and DELETEs are <strong>not detected</strong>. For CDC use CDC sources (<code>CaptureChangeMySQL</code>, Debezium → Kafka). For very large tables combine <code>GenerateTableFetch</code> + <code>ExecuteSQLRecord</code> with load balancing.</div>
@@ -464,8 +464,13 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s24">
-      <div class="section-number">S24</div>
+    <div class="slide s-intro" id="s24">
+      <h2>Lab 4: connecting NiFi<br />to a database</h2>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-section" id="s25">
+      <div class="section-number">S25</div>
       <div class="eyebrow">REST API · InvokeHTTP</div>
       <h2 class="section-heading">The universal HTTP client</h2>
       <div class="subtitle">Replaces the removed <code>GetHTTP</code> / <code>PostHTTP</code> (removed in 2.0).</div>
@@ -481,8 +486,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s25">
-      <div class="section-number">S25</div>
+    <div class="slide s-section" id="s26">
+      <div class="section-number">S26</div>
       <div class="eyebrow">REST API · InvokeHTTP</div>
       <h2 class="section-heading">Routing response codes</h2>
       <table>
@@ -497,8 +502,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s26">
-      <div class="section-number">S26</div>
+    <div class="slide s-section" id="s27">
+      <div class="section-number">S27</div>
       <div class="eyebrow">REST API · resilience</div>
       <h2 class="section-heading">Retry with exponential backoff</h2>
       <ol class="bullets">
@@ -509,8 +514,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s27">
-      <div class="section-number">S27</div>
+    <div class="slide s-code" id="s28">
+      <div class="section-number">S28</div>
       <div class="eyebrow">Example</div>
       <h2 class="section-heading">Enriching events from an external API</h2>
       <pre><code>ConsumeKafka(Record) ► PartitionRecord(by customer_id) ► InvokeHTTP(GET /customers/${customer_id})
@@ -525,8 +530,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s28">
-      <div class="section-number">S28</div>
+    <div class="slide s-section" id="s29">
+      <div class="section-number">S29</div>
       <div class="eyebrow">Kafka · NiFi 2.x</div>
       <h2 class="section-heading">A critical change: unified Kafka components</h2>
       <div class="hibox hibox-red">The "Kafka 2.6" processors — <code>ConsumeKafka_2_6</code>, <code>ConsumeKafkaRecord_2_6</code>, <code>PublishKafka_2_6</code>, <code>PublishKafkaRecord_2_6</code> — were <strong>removed in 2.0.0</strong>.</div>
@@ -539,8 +544,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s29">
-      <div class="section-number">S29</div>
+    <div class="slide s-section" id="s30">
+      <div class="section-number">S30</div>
       <div class="eyebrow">Kafka · architecture</div>
       <h2 class="section-heading">Connection service + processors</h2>
       <div class="diagram-shell">
@@ -575,8 +580,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s30">
-      <div class="section-number">S30</div>
+    <div class="slide s-section s-deployment" id="s31">
+      <div class="section-number">S31</div>
       <div class="eyebrow">Kafka · Kafka3ConnectionService</div>
       <h2 class="section-heading">Kafka3ConnectionService: key properties</h2>
       <table class="deployment-table">
@@ -592,8 +597,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s31">
-      <div class="section-number">S31</div>
+    <div class="slide s-section" id="s32">
+      <div class="section-number">S32</div>
       <div class="eyebrow">Kafka · ConsumeKafka</div>
       <h2 class="section-heading">Key ConsumeKafka properties</h2>
       <table>
@@ -609,8 +614,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s32">
-      <div class="section-number">S32</div>
+    <div class="slide s-section" id="s33">
+      <div class="section-number">S33</div>
       <div class="eyebrow">Kafka · PublishKafka</div>
       <h2 class="section-heading">Key PublishKafka properties</h2>
       <table>
@@ -627,8 +632,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s33">
-      <div class="section-number">S33</div>
+    <div class="slide s-section" id="s34">
+      <div class="section-number">S34</div>
       <div class="eyebrow">Kafka · evolution</div>
       <h2 class="section-heading">Kafka components across 2.x releases</h2>
       <table>
@@ -643,8 +648,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s34">
-      <div class="section-number">S34</div>
+    <div class="slide s-section" id="s35">
+      <div class="section-number">S35</div>
       <div class="eyebrow">Kafka · offsets</div>
       <h2 class="section-heading">Offsets and delivery semantics</h2>
       <ul class="bullets">
@@ -660,8 +665,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s35">
-      <div class="section-number">S35</div>
+    <div class="slide s-section" id="s36">
+      <div class="section-number">S36</div>
       <div class="eyebrow">Kafka · batching</div>
       <h2 class="section-heading">Batching and producer guarantees</h2>
       <ul class="bullets">
@@ -674,8 +679,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s36">
-      <div class="section-number">S36</div>
+    <div class="slide s-section" id="s37">
+      <div class="section-number">S37</div>
       <div class="eyebrow">Kafka · parallelism</div>
       <h2 class="section-heading">One consumer per partition</h2>
       <div class="split2">
@@ -736,8 +741,8 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s37">
-      <div class="section-number">S37</div>
+    <div class="slide s-section" id="s38">
+      <div class="section-number">S38</div>
       <div class="eyebrow">Kafka · parallelism</div>
       <h2 class="section-heading">Parallelism rules</h2>
       <ol class="bullets">
@@ -749,23 +754,23 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-intro" id="s38">
-      <h2>Lab 4: DB + REST + Kafka<br />with record processing</h2>
+    <div class="slide s-intro" id="s39">
+      <h2>Lab 5: DB + REST + Kafka<br />with record processing</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s39">
-      <div class="section-number">S39</div>
-      <div class="eyebrow">Lab 4 · architecture</div>
+    <div class="slide s-section" id="s40">
+      <div class="section-number">S40</div>
+      <div class="eyebrow">Lab 5 · architecture</div>
       <h2 class="section-heading">Consume → validate → enrich → upsert → publish</h2>
       <div class="subtitle">Order events from Kafka are enriched from a REST API, written to the DB, and published to an output topic.</div>
       <div class="diagram-shell">
-        <svg class="diagram-svg" viewBox="0 0 1100 300" role="img" aria-label="Lab 4 pipeline with dead-letter queue">
+        <svg class="diagram-svg" viewBox="0 0 1100 300" role="img" aria-label="Lab 5 pipeline with dead-letter queue">
           <defs>
-            <marker id="arr-lab4" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <marker id="arr-lab5" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
               <path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path>
             </marker>
-            <marker id="arr-lab4-dlq" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <marker id="arr-lab5-dlq" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
               <path d="M0,0 L8,4 L0,8 z" fill="#d17b00"></path>
             </marker>
           </defs>
@@ -784,16 +789,16 @@
           <text x="770" y="94" text-anchor="middle" class="svg-tag">UPSERT orders_stage</text>
           <text x="995" y="70" text-anchor="middle" class="svg-text">PublishKafka</text>
           <text x="995" y="94" text-anchor="middle" class="svg-tag">orders.enriched</text>
-          <line x1="200" y1="75" x2="230" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab4)"></line>
-          <line x1="420" y1="75" x2="450" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab4)"></line>
-          <line x1="640" y1="75" x2="670" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab4)"></line>
-          <line x1="870" y1="75" x2="900" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab4)"></line>
+          <line x1="200" y1="75" x2="230" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab5)"></line>
+          <line x1="420" y1="75" x2="450" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab5)"></line>
+          <line x1="640" y1="75" x2="670" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab5)"></line>
+          <line x1="870" y1="75" x2="900" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab5)"></line>
 
           <rect x="230" y="220" width="640" height="56" rx="8" fill="#fff4e6" stroke="#d17b00" stroke-width="2"></rect>
           <text x="550" y="254" text-anchor="middle" class="svg-text">PublishKafka → orders.dlq</text>
-          <line x1="325" y1="110" x2="325" y2="220" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-lab4-dlq)"></line>
-          <line x1="545" y1="110" x2="545" y2="220" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-lab4-dlq)"></line>
-          <line x1="770" y1="110" x2="770" y2="220" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-lab4-dlq)"></line>
+          <line x1="325" y1="110" x2="325" y2="220" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-lab5-dlq)"></line>
+          <line x1="545" y1="110" x2="545" y2="220" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-lab5-dlq)"></line>
+          <line x1="770" y1="110" x2="770" y2="220" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-lab5-dlq)"></line>
           <text x="335" y="170" class="svg-tag">invalid</text>
           <text x="555" y="170" class="svg-tag">unmatched</text>
           <text x="780" y="160" class="svg-tag">failure</text>
@@ -803,9 +808,9 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s40">
-      <div class="section-number">S40</div>
-      <div class="eyebrow">Lab 4 · Controller Services</div>
+    <div class="slide s-section" id="s41">
+      <div class="section-number">S41</div>
+      <div class="eyebrow">Lab 5 · Controller Services</div>
       <h2 class="section-heading">Shared services</h2>
       <table>
         <tr><th>Service</th><th>Configuration</th></tr>
@@ -819,9 +824,9 @@
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s41">
-      <div class="section-number">S41</div>
-      <div class="eyebrow">Lab 4 · processors and test data</div>
+    <div class="slide s-code" id="s42">
+      <div class="section-number">S42</div>
+      <div class="eyebrow">Lab 5 · processors and test data</div>
       <h2 class="section-heading">Configure and feed the flow</h2>
       <ul class="bullets">
         <li><code>ValidateRecord</code>: Reader <code>reader-order</code>, Writer <code>writer-order-ndjson</code>; <em>Allow Extra Fields</em> <code>false</code>; <em>Strict Type Checking</em> <code>true</code>.</li>
@@ -837,9 +842,9 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s42">
-      <div class="section-number">S42</div>
-      <div class="eyebrow">Lab 4 · verification</div>
+    <div class="slide s-code" id="s43">
+      <div class="section-number">S43</div>
+      <div class="eyebrow">Lab 5 · verification</div>
       <h2 class="section-heading">Expected behavior</h2>
       <table>
         <tr><th>Record</th><th>Expectation</th></tr>
@@ -854,9 +859,9 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s43">
-      <div class="section-number">S43</div>
-      <div class="eyebrow">Lab 4 · troubleshooting</div>
+    <div class="slide s-section" id="s44">
+      <div class="section-number">S44</div>
+      <div class="eyebrow">Lab 5 · troubleshooting</div>
       <h2 class="section-heading">Common mistakes</h2>
       <table>
         <tr><th>Symptom</th><th>Cause</th><th>Action</th></tr>
@@ -869,13 +874,13 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-intro" id="s44">
+    <div class="slide s-intro" id="s45">
       <h2>Transforming JSON and NDJSON</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s45">
-      <div class="section-number">S45</div>
+    <div class="slide s-code" id="s46">
+      <div class="section-number">S46</div>
       <div class="eyebrow">NDJSON</div>
       <h2 class="section-heading">Newline-delimited JSON (JSON Lines)</h2>
       <div class="subtitle">Every line is a standalone JSON object.</div>
@@ -901,8 +906,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s46">
-      <div class="section-number">S46</div>
+    <div class="slide s-section" id="s47">
+      <div class="section-number">S47</div>
       <div class="eyebrow">NDJSON in NiFi</div>
       <h2 class="section-heading">Record pipeline for NDJSON</h2>
       <div class="diagram-shell">
@@ -942,8 +947,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s47">
-      <div class="section-number">S47</div>
+    <div class="slide s-section" id="s48">
+      <div class="section-number">S48</div>
       <div class="eyebrow">Key processors</div>
       <h2 class="section-heading">The record transformation toolbox</h2>
       <table class="deployment-table">
@@ -961,8 +966,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s48">
-      <div class="section-number">S48</div>
+    <div class="slide s-section" id="s49">
+      <div class="section-number">S49</div>
       <div class="eyebrow">2.x compatibility</div>
       <h2 class="section-heading">Jolt and RecordPath changes in 2.x</h2>
       <table>
@@ -974,8 +979,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s49">
-      <div class="section-number">S49</div>
+    <div class="slide s-section" id="s50">
+      <div class="section-number">S50</div>
       <div class="eyebrow">Jolt</div>
       <h2 class="section-heading">Jolt: declarative JSON → JSON transformations</h2>
       <ul class="bullets">
@@ -991,8 +996,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s50">
-      <div class="section-number">S50</div>
+    <div class="slide s-section" id="s51">
+      <div class="section-number">S51</div>
       <div class="eyebrow">Jolt · configuration</div>
       <h2 class="section-heading"><code>JoltTransformRecord</code> properties</h2>
       <table>
@@ -1007,8 +1012,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s51">
-      <div class="section-number">S51</div>
+    <div class="slide s-section" id="s52">
+      <div class="section-number">S52</div>
       <div class="eyebrow">Jolt · how it works</div>
       <h2 class="section-heading">Walk the data tree and the spec tree together</h2>
       <div class="split2">
@@ -1031,8 +1036,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s52">
-      <div class="section-number">S52</div>
+    <div class="slide s-section s-deployment" id="s53">
+      <div class="section-number">S53</div>
       <div class="eyebrow">Jolt · operations</div>
       <h2 class="section-heading">Operations (1/2): restructure and clean</h2>
       <table class="deployment-table">
@@ -1046,8 +1051,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s53">
-      <div class="section-number">S53</div>
+    <div class="slide s-section s-deployment" id="s54">
+      <div class="section-number">S54</div>
       <div class="eyebrow">Jolt · operations</div>
       <h2 class="section-heading">Operations (2/2): compute and the rest</h2>
       <table class="deployment-table">
@@ -1062,8 +1067,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s54">
-      <div class="section-number">S54</div>
+    <div class="slide s-section" id="s55">
+      <div class="section-number">S55</div>
       <div class="eyebrow">Jolt · shift operators</div>
       <h2 class="section-heading">Wildcards and operators in a <code>shift</code> spec</h2>
       <div class="split2">
@@ -1090,8 +1095,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s55">
-      <div class="section-number">S55</div>
+    <div class="slide s-code" id="s56">
+      <div class="section-number">S56</div>
       <div class="eyebrow">Jolt · example</div>
       <h2 class="section-heading"><code>Shift</code>: rename, flatten, pivot an array</h2>
       <div class="split2">
@@ -1128,8 +1133,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s56">
-      <div class="section-number">S56</div>
+    <div class="slide s-section" id="s57">
+      <div class="section-number">S57</div>
       <div class="eyebrow">Jolt · example</div>
       <h2 class="section-heading"><code>shift</code> is a whitelist</h2>
       <ul class="bullets">
@@ -1146,8 +1151,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s57">
-      <div class="section-number">S57</div>
+    <div class="slide s-code" id="s58">
+      <div class="section-number">S58</div>
       <div class="eyebrow">Jolt · examples</div>
       <h2 class="section-heading"><code>Remove</code>, <code>Default</code>, <code>Cardinality</code></h2>
       <div class="split2">
@@ -1171,8 +1176,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s58">
-      <div class="section-number">S58</div>
+    <div class="slide s-code" id="s59">
+      <div class="section-number">S59</div>
       <div class="eyebrow">Jolt · example</div>
       <h2 class="section-heading"><code>Modify - Overwrite</code>: casts and calculations</h2>
       <pre><code>{
@@ -1189,8 +1194,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s59">
-      <div class="section-number">S59</div>
+    <div class="slide s-code" id="s60">
+      <div class="section-number">S60</div>
       <div class="eyebrow">Jolt · example</div>
       <h2 class="section-heading"><code>Chain</code>: everything together — the most common case</h2>
       <pre><code>[
@@ -1210,8 +1215,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s60">
-      <div class="section-number">S60</div>
+    <div class="slide s-code" id="s61">
+      <div class="section-number">S61</div>
       <div class="eyebrow">Jolt · example</div>
       <h2 class="section-heading">Expression Language inside the spec</h2>
       <pre><code>[
@@ -1230,8 +1235,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s61">
-      <div class="section-number">S61</div>
+    <div class="slide s-section" id="s62">
+      <div class="section-number">S62</div>
       <div class="eyebrow">Jolt · record flow</div>
       <h2 class="section-heading">Jolt in a Record flow: what matters</h2>
       <ol class="bullets">
@@ -1244,8 +1249,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s62">
-      <div class="section-number">S62</div>
+    <div class="slide s-section" id="s63">
+      <div class="section-number">S63</div>
       <div class="eyebrow">Jolt · choosing a tool</div>
       <h2 class="section-heading">When Jolt, when something else</h2>
       <table>
@@ -1260,8 +1265,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s63">
-      <div class="section-number">S63</div>
+    <div class="slide s-section" id="s64">
+      <div class="section-number">S64</div>
       <div class="eyebrow">Jolt · debugging</div>
       <h2 class="section-heading">Debugging a spec</h2>
       <ol class="bullets">
@@ -1273,8 +1278,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s64">
-      <div class="section-number">S64</div>
+    <div class="slide s-section" id="s65">
+      <div class="section-number">S65</div>
       <div class="eyebrow">Jolt · debugging</div>
       <h2 class="section-heading">Typical Jolt mistakes</h2>
       <table>
@@ -1290,8 +1295,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s65">
-      <div class="section-number">S65</div>
+    <div class="slide s-code" id="s66">
+      <div class="section-number">S66</div>
       <div class="eyebrow">Transformation</div>
       <h2 class="section-heading">Remove a key/value pair: <code>user.pwd</code></h2>
       <div class="split2">
@@ -1320,8 +1325,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s66">
-      <div class="section-number">S66</div>
+    <div class="slide s-code" id="s67">
+      <div class="section-number">S67</div>
       <div class="eyebrow">Transformation</div>
       <h2 class="section-heading">Insert a new key/value pair: <code>ingest_ts</code></h2>
       <div class="note">With an <strong>explicit</strong> Writer schema, <code>UpdateRecord</code> does <strong>not create</strong> a field that is absent from it (with an inherited schema the field is added).</div>
@@ -1348,8 +1353,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s67">
-      <div class="section-number">S67</div>
+    <div class="slide s-code" id="s68">
+      <div class="section-number">S68</div>
       <div class="eyebrow">Transformation</div>
       <h2 class="section-heading">Way 3 — QueryRecord with plain SQL</h2>
       <pre><code><span class="kw">SELECT</span> <span class="fn">CAST</span>(CURRENT_TIMESTAMP <span class="kw">AS</span> VARCHAR) <span class="kw">AS</span> ingest_ts, t.*
@@ -1363,8 +1368,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s68">
-      <div class="section-number">S68</div>
+    <div class="slide s-code" id="s69">
+      <div class="section-number">S69</div>
       <div class="eyebrow">Transformation</div>
       <h2 class="section-heading">Move a key to the front: order comes from the Writer schema</h2>
       <div class="split2">
@@ -1393,8 +1398,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s69">
-      <div class="section-number">S69</div>
+    <div class="slide s-section" id="s70">
+      <div class="section-number">S70</div>
       <div class="eyebrow">Transformation</div>
       <h2 class="section-heading">One UpdateRecord + Writer solves all three</h2>
         <h3>Schema-driven approach</h3>
@@ -1407,8 +1412,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s70">
-      <div class="section-number">S70</div>
+    <div class="slide s-section" id="s71">
+      <div class="section-number">S71</div>
       <div class="eyebrow">Design decision</div>
       <h2 class="section-heading">Transform in NiFi or outside it?</h2>
       <table class="deployment-table">
@@ -1425,8 +1430,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s71">
-      <div class="section-number">S71</div>
+    <div class="slide s-section" id="s72">
+      <div class="section-number">S72</div>
       <div class="eyebrow">Reference · ValidateRecord</div>
       <h2 class="section-heading">ValidateRecord: the gate of the pipeline</h2>
       <div class="split2">
@@ -1450,8 +1455,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s72">
-      <div class="section-number">S72</div>
+    <div class="slide s-section s-deployment" id="s73">
+      <div class="section-number">S73</div>
       <div class="eyebrow">Reference · ValidateRecord</div>
       <h2 class="section-heading">ValidateRecord properties</h2>
       <table class="deployment-table">
@@ -1467,8 +1472,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s73">
-      <div class="section-number">S73</div>
+    <div class="slide s-code" id="s74">
+      <div class="section-number">S74</div>
       <div class="eyebrow">Reference · ValidateRecord</div>
       <h2 class="section-heading">ValidateRecord in practice</h2>
       <div class="split2">
@@ -1500,8 +1505,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s74">
-      <div class="section-number">S74</div>
+    <div class="slide s-section" id="s75">
+      <div class="section-number">S75</div>
       <div class="eyebrow">Reference · QueryRecord</div>
       <h2 class="section-heading">QueryRecord: SQL over the records of a FlowFile</h2>
       <div class="split2">
@@ -1526,8 +1531,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s75">
-      <div class="section-number">S75</div>
+    <div class="slide s-code" id="s76">
+      <div class="section-number">S76</div>
       <div class="eyebrow">Reference · QueryRecord</div>
       <h2 class="section-heading">QueryRecord examples for NDJSON logs</h2>
       <pre><code><span class="cm">-- Filter and projection (also "removes" extra fields such as pwd):</span>
@@ -1545,8 +1550,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s76">
-      <div class="section-number">S76</div>
+    <div class="slide s-section" id="s77">
+      <div class="section-number">S77</div>
       <div class="eyebrow">Reference · QueryRecord</div>
       <h2 class="section-heading">SQL nuances, cost and performance</h2>
       <div class="split2">
@@ -1572,8 +1577,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s77">
-      <div class="section-number">S77</div>
+    <div class="slide s-section" id="s78">
+      <div class="section-number">S78</div>
       <div class="eyebrow">Reference · QueryRecord</div>
       <h2 class="section-heading">When QueryRecord, when something else</h2>
       <table>
@@ -1587,8 +1592,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s78">
-      <div class="section-number">S78</div>
+    <div class="slide s-section" id="s79">
+      <div class="section-number">S79</div>
       <div class="eyebrow">Reference · UpdateRecord</div>
       <h2 class="section-heading">UpdateRecord: change field values via RecordPath</h2>
       <ul class="bullets">
@@ -1603,8 +1608,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s79">
-      <div class="section-number">S79</div>
+    <div class="slide s-section" id="s80">
+      <div class="section-number">S80</div>
       <div class="eyebrow">Reference · RecordPath</div>
       <h2 class="section-heading">RecordPath basics</h2>
       <table>
@@ -1620,8 +1625,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s80">
-      <div class="section-number">S80</div>
+    <div class="slide s-section s-deployment" id="s81">
+      <div class="section-number">S81</div>
       <div class="eyebrow">Reference · UpdateRecord</div>
       <h2 class="section-heading">UpdateRecord examples (NDJSON logs)</h2>
       <table class="deployment-table">
@@ -1637,8 +1642,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s81">
-      <div class="section-number">S81</div>
+    <div class="slide s-section" id="s82">
+      <div class="section-number">S82</div>
       <div class="eyebrow">Reference · UpdateRecord</div>
       <h2 class="section-heading">UpdateRecord: limitation and typical mistakes</h2>
       <div class="hibox hibox-red"><strong>A new field depends on the Writer schema.</strong> With <em>Inherit Record Schema</em> (default) <code>UpdateRecord</code> adds it, nested ones too, at the end of the record. With an explicit Writer schema the field is dropped — add it to the schema (Block 2.2.4) or use Jolt <code>default</code> / <code>QueryRecord</code>.</div>
@@ -1651,8 +1656,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s82">
-      <div class="section-number">S82</div>
+    <div class="slide s-section s-deployment" id="s83">
+      <div class="section-number">S83</div>
       <div class="eyebrow">Reference · EvaluateJsonPath</div>
       <h2 class="section-heading">EvaluateJsonPath: JsonPath into attributes or content</h2>
       <div class="subtitle">Not a Record processor — works on one whole JSON document. Each dynamic property is a JsonPath; with an attribute destination its <strong>name</strong> is the attribute name.</div>
@@ -1667,8 +1672,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s83">
-      <div class="section-number">S83</div>
+    <div class="slide s-code" id="s84">
+      <div class="section-number">S84</div>
       <div class="eyebrow">Reference · EvaluateJsonPath</div>
       <h2 class="section-heading">Relationships and examples</h2>
       <div class="split2">
@@ -1696,8 +1701,8 @@ Return Type = json
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s84">
-      <div class="section-number">S84</div>
+    <div class="slide s-section" id="s85">
+      <div class="section-number">S85</div>
       <div class="eyebrow">Reference · EvaluateJsonPath</div>
       <h2 class="section-heading">When to use EvaluateJsonPath — and when not</h2>
       <ul class="bullets">
@@ -1709,8 +1714,8 @@ Return Type = json
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s85">
-      <div class="section-number">S85</div>
+    <div class="slide s-section" id="s86">
+      <div class="section-number">S86</div>
       <div class="eyebrow">Reference · MergeRecord</div>
       <h2 class="section-heading">MergeRecord: bins and when they are released</h2>
       <div class="split2">
@@ -1753,8 +1758,8 @@ Return Type = json
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s86">
-      <div class="section-number">S86</div>
+    <div class="slide s-section s-deployment" id="s87">
+      <div class="section-number">S87</div>
       <div class="eyebrow">Reference · MergeRecord</div>
       <h2 class="section-heading">MergeRecord properties</h2>
       <table class="deployment-table">
@@ -1771,8 +1776,8 @@ Return Type = json
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s87">
-      <div class="section-number">S87</div>
+    <div class="slide s-section" id="s88">
+      <div class="section-number">S88</div>
       <div class="eyebrow">Reference · MergeRecord</div>
       <h2 class="section-heading">MergeRecord in practice</h2>
       <div class="split2">
@@ -1793,15 +1798,15 @@ Return Type = json
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-intro" id="s88">
-      <h2>Lab 5: NDJSON transformation pipeline</h2>
+    <div class="slide s-intro" id="s89">
+      <h2>Lab 6: NDJSON transformation pipeline</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s89">
-      <div class="section-number">S89</div>
+    <div class="slide s-section s-deployment" id="s90">
+      <div class="section-number">S90</div>
       <div class="eyebrow">Reference · cheat sheet</div>
-      <h2 class="section-heading">Lab 5 operations and what performs them</h2>
+      <h2 class="section-heading">Lab 6 operations and what performs them</h2>
       <table class="deployment-table">
         <tr><th>Operation on NDJSON</th><th class="col-plus">Main tool</th><th>Alternative</th></tr>
         <tr><td>Schema check, split off invalid</td><td class="col-plus"><code>ValidateRecord</code></td><td>—</td></tr>
@@ -1816,17 +1821,17 @@ Return Type = json
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s90">
-      <div class="section-number">S90</div>
-      <div class="eyebrow">Lab 5 · architecture</div>
+    <div class="slide s-code" id="s91">
+      <div class="section-number">S91</div>
+      <div class="eyebrow">Lab 6 · architecture</div>
       <h2 class="section-heading">Validate → strip secret → add ingest_ts first → merge</h2>
       <div class="diagram-shell">
-        <svg class="diagram-svg" viewBox="0 0 1100 250" role="img" aria-label="Lab 5 NDJSON pipeline">
+        <svg class="diagram-svg" viewBox="0 0 1100 250" role="img" aria-label="Lab 6 NDJSON pipeline">
           <defs>
-            <marker id="arr-lab5" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <marker id="arr-lab6" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
               <path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path>
             </marker>
-            <marker id="arr-lab5-q" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <marker id="arr-lab6-q" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
               <path d="M0,0 L8,4 L0,8 z" fill="#d17b00"></path>
             </marker>
           </defs>
@@ -1845,14 +1850,14 @@ Return Type = json
           <text x="775" y="84" text-anchor="middle" class="svg-tag">NDJSON batches</text>
           <text x="995" y="60" text-anchor="middle" class="svg-text">PutFile</text>
           <text x="995" y="84" text-anchor="middle" class="svg-tag">/data/out</text>
-          <line x1="200" y1="65" x2="230" y2="65" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab5)"></line>
-          <line x1="420" y1="65" x2="450" y2="65" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab5)"></line>
-          <line x1="650" y1="65" x2="680" y2="65" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab5)"></line>
-          <line x1="870" y1="65" x2="900" y2="65" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab5)"></line>
+          <line x1="200" y1="65" x2="230" y2="65" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab6)"></line>
+          <line x1="420" y1="65" x2="450" y2="65" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab6)"></line>
+          <line x1="650" y1="65" x2="680" y2="65" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab6)"></line>
+          <line x1="870" y1="65" x2="900" y2="65" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-lab6)"></line>
           <rect x="200" y="180" width="250" height="56" rx="8" fill="#fff4e6" stroke="#d17b00" stroke-width="2"></rect>
           <text x="325" y="206" text-anchor="middle" class="svg-text">Quarantine</text>
           <text x="325" y="227" text-anchor="middle" class="svg-tag">PutFile / PublishKafka(dlq)</text>
-          <line x1="325" y1="100" x2="325" y2="180" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-lab5-q)"></line>
+          <line x1="325" y1="100" x2="325" y2="180" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-lab6-q)"></line>
           <text x="335" y="146" class="svg-tag">invalid</text>
         </svg>
       </div>
@@ -1862,9 +1867,9 @@ Return Type = json
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s91">
-      <div class="section-number">S91</div>
-      <div class="eyebrow">Lab 5 · configuration</div>
+    <div class="slide s-section" id="s92">
+      <div class="section-number">S92</div>
+      <div class="eyebrow">Lab 6 · configuration</div>
       <h2 class="section-heading">Components and key properties</h2>
       <table>
         <tr><th>Component</th><th>Key properties</th></tr>
@@ -1879,9 +1884,9 @@ Return Type = json
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s92">
-      <div class="section-number">S92</div>
-      <div class="eyebrow">Lab 5 · verification</div>
+    <div class="slide s-code" id="s93">
+      <div class="section-number">S93</div>
+      <div class="eyebrow">Lab 6 · verification</div>
       <h2 class="section-heading">Check the output</h2>
       <pre><code>head -n 2 /data/out/*.ndjson
 <span class="cm"># expect: {"ingest_ts":"2026-11-15T...","ts":"2026-11-15T10:00:00Z","level":"INFO",...,"user":{"id":7}}</span>
@@ -1896,13 +1901,13 @@ grep -c pwd /data/out/*.ndjson   <span class="cm"># expect 0</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-intro" id="s93">
+    <div class="slide s-intro" id="s94">
       <h2>Splunk integration</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s94">
-      <div class="section-number">S94</div>
+    <div class="slide s-section" id="s95">
+      <div class="section-number">S95</div>
       <div class="eyebrow">Integration options</div>
       <h2 class="section-heading">Ways to deliver events to Splunk</h2>
       <table>
@@ -1916,8 +1921,8 @@ grep -c pwd /data/out/*.ndjson   <span class="cm"># expect 0</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s95">
-      <div class="section-number">S95</div>
+    <div class="slide s-section" id="s96">
+      <div class="section-number">S96</div>
       <div class="eyebrow">Delivery paths</div>
       <h2 class="section-heading">Raw TCP vs HTTP Event Collector</h2>
       <div class="diagram-shell">
@@ -1962,8 +1967,8 @@ grep -c pwd /data/out/*.ndjson   <span class="cm"># expect 0</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s96">
-      <div class="section-number">S96</div>
+    <div class="slide s-section" id="s97">
+      <div class="section-number">S97</div>
       <div class="eyebrow">PutSplunk</div>
       <h2 class="section-heading">PutSplunk configuration</h2>
       <table>
@@ -1979,8 +1984,8 @@ grep -c pwd /data/out/*.ndjson   <span class="cm"># expect 0</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s97">
-      <div class="section-number">S97</div>
+    <div class="slide s-section" id="s98">
+      <div class="section-number">S98</div>
       <div class="eyebrow">Throughput</div>
       <h2 class="section-heading">What drives Splunk delivery throughput</h2>
       <ol class="bullets">
@@ -1994,8 +1999,8 @@ grep -c pwd /data/out/*.ndjson   <span class="cm"># expect 0</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s98">
-      <div class="section-number">S98</div>
+    <div class="slide s-code" id="s99">
+      <div class="section-number">S99</div>
       <div class="eyebrow">Optimizations</div>
       <h2 class="section-heading">Batch, use HEC, filter early</h2>
       <ul class="bullets">
@@ -2013,8 +2018,8 @@ Body        : several JSON events in a row
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s99">
-      <div class="section-number">S99</div>
+    <div class="slide s-section" id="s100">
+      <div class="section-number">S100</div>
       <div class="eyebrow">Architecture choices</div>
       <h2 class="section-heading">Acks, load distribution, and alternatives</h2>
       <ul class="bullets">
@@ -2026,15 +2031,15 @@ Body        : several JSON events in a row
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-intro" id="s100">
-      <h2>Lab 6: delivering events to Splunk</h2>
+    <div class="slide s-intro" id="s101">
+      <h2>Lab 7: delivering events to Splunk</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s101">
-      <div class="section-number">S101</div>
-      <div class="eyebrow">Lab 6 · setup</div>
-      <h2 class="section-heading">Send Lab 5 events to Splunk or an emulator</h2>
+    <div class="slide s-code" id="s102">
+      <div class="section-number">S102</div>
+      <div class="eyebrow">Lab 7 · setup</div>
+      <h2 class="section-heading">Send Lab 6 events to Splunk or an emulator</h2>
       <pre><code>...► MergeRecord (NDJSON) ► PutSplunk (TCP) ► [Splunk TCP input / netcat emulator]
                        └─► (alternative) InvokeHTTP ► [HEC / http emulator]</code></pre>
       <pre><code><span class="cm"># Emulate a Splunk TCP input</span>
@@ -2052,9 +2057,9 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s102">
-      <div class="section-number">S102</div>
-      <div class="eyebrow">Lab 6 · experiment</div>
+    <div class="slide s-section" id="s103">
+      <div class="section-number">S103</div>
+      <div class="eyebrow">Lab 7 · experiment</div>
       <h2 class="section-heading">Measure throughput</h2>
       <div class="note"><code>PutSplunk</code>: Protocol <code>TCP</code>; Hostname <code>splunk-sim</code>; Port <code>5514</code>; Delimiter <code>\n</code>; Connection Per FlowFile <code>false</code>; Concurrent Tasks <code>1</code> → <code>2</code> → <code>4</code>.</div>
       <ol class="bullets">
@@ -2067,13 +2072,13 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-intro" id="s103">
+    <div class="slide s-intro" id="s104">
       <h2>Migration from NiFi 1.x to 2.x</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s104">
-      <div class="section-number">S104</div>
+    <div class="slide s-section" id="s105">
+      <div class="section-number">S105</div>
       <div class="eyebrow">1.x vs 2.x · platform</div>
       <h2 class="section-heading">NiFi 2.0.0 GA — 4 November 2024</h2>
       <table>
@@ -2088,8 +2093,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s105">
-      <div class="section-number">S105</div>
+    <div class="slide s-section" id="s106">
+      <div class="section-number">S106</div>
       <div class="eyebrow">1.x vs 2.x · features</div>
       <h2 class="section-heading">What else changed</h2>
       <table>
@@ -2105,8 +2110,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s106">
-      <div class="section-number">S106</div>
+    <div class="slide s-section" id="s107">
+      <div class="section-number">S107</div>
       <div class="eyebrow">Removed components</div>
       <h2 class="section-heading">What disappeared, release by release</h2>
       <table class="deployment-table">
@@ -2121,8 +2126,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s107">
-      <div class="section-number">S107</div>
+    <div class="slide s-section s-deployment" id="s108">
+      <div class="section-number">S108</div>
       <div class="eyebrow">Removed components · by area</div>
       <h2 class="section-heading">JSON, Avro and format conversion</h2>
       <div class="subtitle">Source column: <strong>Apache</strong> = official Release Notes / migration page; <strong>Vendor</strong> = distribution vendor docs (Cloudera); the Status column was checked against NiFi 2.12.0.</div>
@@ -2135,8 +2140,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s108">
-      <div class="section-number">S108</div>
+    <div class="slide s-section" id="s109">
+      <div class="section-number">S109</div>
       <div class="eyebrow">Removed components · JSON</div>
       <h2 class="section-heading">Behavior changes that break flows without removals</h2>
       <ul class="bullets">
@@ -2149,8 +2154,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s109">
-      <div class="section-number">S109</div>
+    <div class="slide s-section s-deployment" id="s110">
+      <div class="section-number">S110</div>
       <div class="eyebrow">Removed components · Kafka</div>
       <h2 class="section-heading">Kafka: every versioned processor is gone</h2>
       <table class="deployment-table">
@@ -2166,8 +2171,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s110">
-      <div class="section-number">S110</div>
+    <div class="slide s-section s-deployment" id="s111">
+      <div class="section-number">S111</div>
       <div class="eyebrow">Removed components · HTTP</div>
       <h2 class="section-heading">HTTP: everything converges on <code>InvokeHTTP</code></h2>
       <table class="deployment-table">
@@ -2181,8 +2186,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s111">
-      <div class="section-number">S111</div>
+    <div class="slide s-section s-deployment" id="s112">
+      <div class="section-number">S112</div>
       <div class="eyebrow">Removed components · databases</div>
       <h2 class="section-heading">Databases: core SQL stays, vendor-specific components go</h2>
       <div class="hibox"><strong>Not in the removal lists:</strong> <code>ExecuteSQL(Record)</code>, <code>QueryDatabaseTable(Record)</code>, <code>GenerateTableFetch</code>, <code>PutSQL</code>, <code>PutDatabaseRecord</code>, <code>DBCPConnectionPool</code>, <code>HikariCPConnectionPool</code>, <code>DBCPConnectionPoolLookup</code> — but usage rules changed (H2 1.22.0, Remote Resources 1.23.0, Dialect Service 2.2.0).</div>
@@ -2197,8 +2202,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s112">
-      <div class="section-number">S112</div>
+    <div class="slide s-section" id="s113">
+      <div class="section-number">S113</div>
       <div class="eyebrow">Removed components · other</div>
       <h2 class="section-heading">Other removals — and how to find them in your flow</h2>
       <table>
@@ -2215,8 +2220,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s113">
-      <div class="section-number">S113</div>
+    <div class="slide s-section" id="s114">
+      <div class="section-number">S114</div>
       <div class="eyebrow">Flow compatibility</div>
       <h2 class="section-heading">A successful start ≠ a working flow</h2>
       <div class="subtitle">2.x starts with <strong>ghosted</strong> components: removed processors/services load as unavailable so you can replace them.</div>
@@ -2231,8 +2236,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s114">
-      <div class="section-number">S114</div>
+    <div class="slide s-section" id="s115">
+      <div class="section-number">S115</div>
       <div class="eyebrow">Kafka migration</div>
       <h2 class="section-heading">No automatic conversion — remap by hand</h2>
       <table>
@@ -2248,8 +2253,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s115">
-      <div class="section-number">S115</div>
+    <div class="slide s-section" id="s116">
+      <div class="section-number">S116</div>
       <div class="eyebrow">Kafka migration</div>
       <h2 class="section-heading">Keeping the read position</h2>
       <ul class="bullets">
@@ -2263,8 +2268,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s116">
-      <div class="section-number">S116</div>
+    <div class="slide s-section s-deployment" id="s117">
+      <div class="section-number">S117</div>
       <div class="eyebrow">Upgrade routine</div>
       <h2 class="section-heading">In-place upgrade vs fresh installation</h2>
       <table class="deployment-table">
@@ -2279,8 +2284,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s117">
-      <div class="section-number">S117</div>
+    <div class="slide s-section" id="s118">
+      <div class="section-number">S118</div>
       <div class="eyebrow">Decision checklist</div>
       <h2 class="section-heading">How to choose — and the recommended path</h2>
       <div class="split2">
@@ -2306,8 +2311,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s118">
-      <div class="section-number">S118</div>
+    <div class="slide s-section" id="s119">
+      <div class="section-number">S119</div>
       <div class="eyebrow">Prerequisites</div>
       <h2 class="section-heading">Version path and pre-migration checklist</h2>
       <div class="hibox">Migrating to 2.0.0 requires upgrading to <strong>1.27.0</strong> first. In practice: go to the latest 1.x (e.g. 1.28.1), clear deprecation warnings, then move to 2.x — reading Migration Guidance for each version on the path.</div>
@@ -2322,8 +2327,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s119">
-      <div class="section-number">S119</div>
+    <div class="slide s-code" id="s120">
+      <div class="section-number">S120</div>
       <div class="eyebrow">Prerequisites</div>
       <h2 class="section-heading">Pre-migration checklist (continued)</h2>
       <table>
@@ -2340,8 +2345,8 @@ zcat conf/flow.json.gz | jq -r <span class="str">'.. | objects | select(has("typ
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s120">
-      <div class="section-number">S120</div>
+    <div class="slide s-section" id="s121">
+      <div class="section-number">S121</div>
       <div class="eyebrow">Execution</div>
       <h2 class="section-heading">In-place upgrade sequence (cluster)</h2>
       <div class="diagram-shell">
@@ -2389,8 +2394,8 @@ zcat conf/flow.json.gz | jq -r <span class="str">'.. | objects | select(has("typ
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s121">
-      <div class="section-number">S121</div>
+    <div class="slide s-section" id="s122">
+      <div class="section-number">S122</div>
       <div class="eyebrow">Validation</div>
       <h2 class="section-heading">Validating after migration</h2>
       <table>
@@ -2404,8 +2409,8 @@ zcat conf/flow.json.gz | jq -r <span class="str">'.. | objects | select(has("typ
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s122">
-      <div class="section-number">S122</div>
+    <div class="slide s-section" id="s123">
+      <div class="section-number">S123</div>
       <div class="eyebrow">Rollback</div>
       <h2 class="section-heading">Rollback strategy</h2>
       <table>
@@ -2419,8 +2424,8 @@ zcat conf/flow.json.gz | jq -r <span class="str">'.. | objects | select(has("typ
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s123">
-      <div class="section-number">S123</div>
+    <div class="slide s-section" id="s124">
+      <div class="section-number">S124</div>
       <div class="eyebrow">Troubleshooting</div>
       <h2 class="section-heading">Typical migration problems (1/2)</h2>
       <table>
@@ -2436,8 +2441,8 @@ zcat conf/flow.json.gz | jq -r <span class="str">'.. | objects | select(has("typ
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s124">
-      <div class="section-number">S124</div>
+    <div class="slide s-section" id="s125">
+      <div class="section-number">S125</div>
       <div class="eyebrow">Troubleshooting</div>
       <h2 class="section-heading">Typical migration problems (2/2)</h2>
       <table>
@@ -2453,8 +2458,8 @@ zcat conf/flow.json.gz | jq -r <span class="str">'.. | objects | select(has("typ
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s125">
-      <div class="section-number">S125</div>
+    <div class="slide s-section" id="s126">
+      <div class="section-number">S126</div>
       <div class="eyebrow">Mini-lab</div>
       <h2 class="section-heading">Your environment's migration checklist</h2>
       <div class="subtitle"><strong>Goal:</strong> build your own migration plan.</div>
@@ -2468,13 +2473,13 @@ zcat conf/flow.json.gz | jq -r <span class="str">'.. | objects | select(has("typ
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-intro" id="s126">
+    <div class="slide s-intro" id="s127">
       <h2>Day 2 recap</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s127">
-      <div class="section-number">S127</div>
+    <div class="slide s-section" id="s128">
+      <div class="section-number">S128</div>
       <div class="eyebrow">Self-check</div>
       <h2 class="section-heading">Questions to test yourself</h2>
       <ol class="bullets">
@@ -2488,7 +2493,7 @@ zcat conf/flow.json.gz | jq -r <span class="str">'.. | objects | select(has("typ
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-intro" id="s128">
+    <div class="slide s-intro" id="s129">
       <h2>Takk</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>

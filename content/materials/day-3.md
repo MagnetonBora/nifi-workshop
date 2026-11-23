@@ -372,7 +372,7 @@ Restarting the process is a last resort. Most failures should be resolved **with
 
 **Steps.**
 
-1. Run the pipeline from [[labs/lab-7|Lab 7]] or the [[labs/final-lab|final lab]] with load.
+1. Run the pipeline from [[labs/lab-8|Lab 8]] or the [[labs/final-lab|final lab]] with load.
 2. **A planned restart:** follow the runbook from [the order of stopping and starting](#the-order-of-stopping-and-starting-from-sources-to-sinks-and-back) (stop the sources → drain → stop → start → sinks → sources). Measure the stop/start time.
 3. **An emergency restart:** send `kill -9` to the NiFi JVM process (**in a lab only**). Observe: the supervisor brings NiFi back up, and with `autoResumeState=true` the flow starts by itself.
 4. Compare the number of records at the input and at the destination; count the duplicates (the event key).
@@ -401,9 +401,9 @@ Restarting the process is a last resort. Most failures should be resolved **with
 
 In 2.12.0 a framework abstraction **PropertyEncryptionProvider** for encrypting properties was added ([Release Notes 2.12.0](https://cwiki.apache.org/confluence/display/NIFI/Release+Notes)); when it is used, the provider's keys also become part of the backup.
 
-### Lab 7: a flow with retry and error handling
+### Lab 8: a flow with retry and error handling
 
-> The lab: [[labs/lab-7|Lab 7 — Retry and error handling]].
+> The lab: [[labs/lab-8|Lab 8 — Retry and error handling]].
 
 ---
 
@@ -1178,9 +1178,9 @@ Pros: very high IOPS/throughput of the shared pool, simplicity, fast Lucene merg
 | `Infer Schema` on large FlowFiles | Extra passes and instability |
 | One huge FlowFile | No parallelism, a hard retry |
 
-### Lab 8: a performance test and pipeline tuning
+### Lab 9: a performance test and pipeline tuning
 
-> The lab: [[labs/lab-8|Lab 8 — A performance test and tuning]].
+> The lab: [[labs/lab-9|Lab 9 — A performance test and tuning]].
 
 ---
 

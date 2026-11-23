@@ -62,4 +62,4 @@ An example of reconciliation on 2,000 events: `final.accepted` 2000 = `final.del
 
 ## Performance check and tuning
 
-Perform [[labs/lab-8|Lab 8]] on this pipeline: the goal is stable throughput without growth of the lag, GC pauses within the SLO; record the final settings (heap, thread pool, concurrent tasks, batch sizes, repositories).
+Perform [[labs/lab-9|Lab 9]] on this pipeline: the goal is stable throughput without growth of the lag, GC pauses within the SLO; record the final settings (heap, thread pool, concurrent tasks, batch sizes, repositories).

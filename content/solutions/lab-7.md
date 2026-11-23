@@ -1,43 +1,26 @@
 ---
-title: "Lab 7 — Retry and error handling"
+title: "Lab 7 — Delivering events to Splunk"
 aliases:
   - exercises/lab-7-solution
   - labs/lab-7-solution
 ---
 
-> From the materials of [[materials/day-3|Day 3 — Production, Security, and Performance]]. The lab stand is described on the [[labs/index|Labs]] page; loading the reference solutions — on the [[solutions/index|Solutions]] page.
-> Task: [[labs/lab-7|Lab 7 — Retry and error handling]].
+> From the materials of [[materials/day-2|Day 2 — Data Processing and Integrations]]. The lab stand is described on the [[labs/index|Labs]] page; loading the reference solutions — on the [[solutions/index|Solutions]] page.
+> Task: [[labs/lab-7|Lab 7 — Delivering events to Splunk]].
 
 **Architecture.**
 
 ```text
-GenerateRecord ► ValidateRecord ─ invalid ─► [DLQ group]
-                     │ valid
-                     ▼
-              InvokeHTTP (an endpoint that simulates failures)
-                 ├ Original (2xx) ► PutFile #{ok.dir}
-                 ├ Response ► LogAttribute
-                 ├ Retry ──► RetryFlowFile ─ retry ► (penalize) ► InvokeHTTP
-                 │                 └ retries_exceeded ► [DLQ group]
-                 ├ No Retry ───────────────────────────────► [DLQ group]
-                 └ Failure ► RetryFlowFile (the same one)
-[DLQ group]: UpdateAttribute (error.*) ► PutFile #{dlq.dir}/${error.stage} (with a high back pressure threshold)
+...► MergeRecord (NDJSON) ► PutSplunk (TCP) ► [Splunk TCP input / a netcat emulator]
+                       └─► (an alternative) InvokeHTTP ► [HEC / an http emulator]
 ```
 
-`Original` is the source FlowFile of the request after a 2xx response (it is the one that makes sense to put into `ok`); `Response` is the response body (here `{}`).
+**`PutSplunk` configuration:** Protocol `TCP`; Hostname `#{splunk.host}` (`splunk-sim`); Port `#{splunk.port}` (`5514`); Message Delimiter `\n`; Concurrent Tasks `1` (then an experiment with `2`, `4`). The `Connection Per FlowFile` property does not exist in NiFi 2.12 (see 2.3.2).
 
-**Configuration.**
+**`InvokeHTTP` (HEC) configuration:** HTTP Method `POST`; HTTP URL `#{hec.url}`; Request Content-Type `application/json`; the dynamic property `Authorization` = `Splunk #{hec.token}` — the dynamic properties of `InvokeHTTP` become request headers.
 
-| Component | Setting |
-|---|---|
-| `GenerateRecord` | Schema Text — a schema with `["null", …]` fields; Number of Records `5`; Nullable Fields `true`; Null Value Percentage `5`; Run Schedule `2 sec` |
-| `ValidateRecord` | Schema Access Strategy `Use 'Schema Text' Property` — a strict schema (all fields required); Strict Type Checking `true`; Validation Details Attribute Name `validation.details` |
-| `InvokeHTTP` | URL `#{flaky.url}`; POST; Connection/Read Timeout — `5 sec` each; Concurrent Tasks `2` |
-| `RetryFlowFile` | Maximum Retries `3`; Penalize Retries `true`; Retry Attribute — the default; the dynamic property `error.stage` = `retries_exceeded`. The penalty value is *Penalty Duration* on the Settings tab (for example, `10 sec`) |
-| The connection `...► DLQ` | Back Pressure Object Threshold `100000`, Size `10 GB` |
-| `UpdateAttribute` (before the DLQ) | `error.stage` = `validation` / `http-${invokehttp.status.code}` / `retries-exceeded` (depending on the error path); `filename` = `${uuid}.json` |
-| `PutFile` (DLQ) | Directory `#{dlq.dir}/${error.stage}`; Conflict Resolution `replace` (names by `${uuid}`) |
+> **The HEC body format.** The `/services/collector/event` endpoint of a real Splunk accepts events only in the envelope `{"time": …, "sourcetype": …, "event": {…}}` (see 2.3.4) and rejects "bare" NDJSON. The stand's emulator accepts any body, so the lab works without the envelope. For a real HEC, wrap the records before `InvokeHTTP`, for example with `JoltTransformRecord` using the specification `[{"operation":"shift","spec":{"*":"event.&"}},{"operation":"default","spec":{"sourcetype":"app:log","index":"main"}}]` (checked on 2.12.0) — or send to `/services/collector/raw`.
 
-**Mistakes and diagnostics.** A loop without a counter (retry → the same processor, without `RetryFlowFile`) — endless retries; the `Failure` queue is not empty and blocks the source — it must be routed to a sink; the DLQ directory fills the disk — add monitoring (`MonitorDiskUsage`) and cleanup; the `invalid` branch is always empty — the generator produces only records that are valid according to its own schema (see "A data source with invalid records").
+**Common mistakes.** `PutSplunk` goes to `failure` — the destination is unavailable/closed the connection; everything on one line — there is no delimiter between events; Splunk does not parse the time — the format/field order does not match the sourcetype settings; HEC replies `400 Invalid data format` — the event is not wrapped in the `{"event": …}` envelope.
 
-**Reference solution:** [lab7-retry-errors.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab7-retry-errors.json).
+**Reference solution:** [lab7-splunk-delivery.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab7-splunk-delivery.json) (without the HEC envelope — designed for the emulator).

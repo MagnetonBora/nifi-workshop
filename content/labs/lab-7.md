@@ -1,36 +1,37 @@
 ---
-title: "Lab 7 — Retry and error handling"
+title: "Lab 7 — Delivering events to Splunk"
 aliases:
   - exercises/lab-7
 ---
 
-> From the materials of [[materials/day-3|Day 3 — Production, Security, and Performance]]. The lab stand is described on the [[labs/index|Labs]] page; loading the reference solutions — on the [[solutions/index|Solutions]] page.
+> From the materials of [[materials/day-2|Day 2 — Data Processing and Integrations]]. The lab stand is described on the [[labs/index|Labs]] page; loading the reference solutions — on the [[solutions/index|Solutions]] page.
 > Solution: [[solutions/lab-7|Lab 7 — solution]].
 
-**Goal.** Build a flow that survives temporary failures of the destination and does not get blocked by "bad" data.
+**Goal.** Send the NDJSON events from Lab 6 to Splunk or to an emulated endpoint and measure throughput.
 
-The Parameter Context `lab7-params` (the stand): `flaky.url=http://flaky:9099/events`, `ok.dir=/opt/nifi/data/ok`, `dlq.dir=/opt/nifi/data/dlq` (on the host — `nifi/data/ok`, `nifi/data/dlq`).
-
-**A data source with invalid records.** `GenerateRecord` produces records strictly according to its schema, so without preparation the `invalid` branch is empty. Declare the fields in the generator schema as `["null", …]` and set `Nullable Fields = true`, `Null Value Percentage = 5`, and in `ValidateRecord` (Schema Access Strategy `Use 'Schema Text' Property`) validate against a strict schema in which all fields are required: records with `null` will go to `invalid`.
-
-**Simulating an unstable API.** On the stand the service is already running: the container `flaky` (`make lab-services`, the code is `lab-services/flaky.py`), the address from NiFi is `http://flaky:9099/events`. Without the stand:
+**Emulation.** On the stand, the Splunk emulator is already running (`make lab-services`, the container `splunk-sim`, the code is `lab-services/splunk_sim.py`): the TCP input on `splunk-sim:5514` writes events to `/data/splunk_in.log`, and HEC at `http://splunk-sim:8088/services/collector/event` writes to `/data/hec_in.log` and responds like Splunk (`{"text":"Success","code":0}`). Without the stand, the same effect is given by:
 
 ```bash
+# Emulating a Splunk TCP input
+nc -lk 5514 > /tmp/splunk_in.log
+# Or in Python: a simple HTTP receiver for HEC
 python3 - <<'EOF'
-import random
 from http.server import BaseHTTPRequestHandler, HTTPServer
 class H(BaseHTTPRequestHandler):
     def do_POST(self):
-        self.rfile.read(int(self.headers.get('Content-Length', 0)))
-        r = random.random()
-        code = 200 if r < 0.6 else (503 if r < 0.9 else 400)   # 60% ok, 30% 503, 10% 400
-        self.send_response(code); self.end_headers(); self.wfile.write(b'{}')
-HTTPServer(('0.0.0.0', 9099), H).serve_forever()
+        n = int(self.headers.get('Content-Length', 0)); body = self.rfile.read(n)
+        open('/tmp/hec_in.log','ab').write(body + b'\n')
+        self.send_response(200); self.end_headers(); self.wfile.write(b'{"text":"Success","code":0}')
+HTTPServer(('0.0.0.0', 8088), H).serve_forever()
 EOF
 ```
 
-**Verification** (from the stand host):
+**The event source.** `GenerateRecord` (a log event schema, 100 records per FlowFile, `Run Schedule 1 sec`) ► `MergeRecord` (Min/Max Records `10000`, Max Bin Age `10 sec`). It is convenient to build two groups: A — `PutSplunk` (TCP), B — `InvokeHTTP` (HEC) — and to run them in turn.
 
-- After a few minutes most FlowFiles are in `nifi/data/ok` (`ls nifi/data/ok | wc -l`); `400` responses — in `nifi/data/dlq/http-400`, invalid records — in `nifi/data/dlq/validation`; `503` responses pass through `RetryFlowFile` (FlowFiles with a penalty are visible in the `InvokeHTTP → RetryFlowFile` queue).
-- `retries_exceeded` almost never occurs while `flaky` is running: four `503` responses in a row are needed (~1%). Stop the service — `docker stop flaky`: requests go to `Failure`, after 3 retries with a penalty `nifi/data/dlq/retries-exceeded` appears, the queue before `InvokeHTTP` grows, and then back pressure kicks in; after `docker start flaky` the queue drains *without intervention*.
-- Check provenance: a FlowFile with several attempts has a chain of `ROUTE`/`SEND` events; the `flowfile.retries` attribute shows the number of attempts.
+**The experiment.**
+
+1. Prepare 1 million events (repeated `GenerateRecord`/`GenerateFlowFile`). On a laptop, start with ~100,000 and increase while watching the heap.
+2. Variant 1: small FlowFiles of 100 events. Variant 2: batches of 10,000 through `MergeRecord`. Variant 3: `Concurrent Tasks=4`.
+3. Measure events/s using the queue counters and time (on the stand: `make lab-splunk-count`).
+
+**Verification.** `make lab-splunk-count` (or `wc -l /tmp/splunk_in.log` without the stand) equals the number of events sent — for example, 21 FlowFiles of 100 events give exactly 2,100 lines over both TCP and HEC; in provenance the `SEND` events show the destination address. Before a new measurement, zero the emulator files: `docker exec splunk-sim sh -c ': > /data/splunk_in.log; : > /data/hec_in.log'`.

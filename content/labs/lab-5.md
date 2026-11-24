@@ -53,7 +53,12 @@ CREATE TABLE IF NOT EXISTS orders_stage (
 1. **Build the flow** in a Process Group *Lab 5* with `lab5-params`, stage by stage. The settings of every component are in the [[solutions/lab-5|solution]].
    - `ConsumeKafka` from `#{topic.in}`, Group ID `nifi-lab05`, *Processing Strategy* `RECORD`, offset reset `earliest`.
    - `ValidateRecord` against the schema `order.v1`: `invalid` → DLQ.
-   - `LookupRecord` with a `RestLookupService` on `#{customers.api}/customers/${customer_id}`: `unmatched` → DLQ.
+   - `LookupRecord` with a `RestLookupService` on `#{customers.api}/customers/${customer_id}` (its *Record Reader* — a `JsonTreeReader` with *Infer Schema*): `unmatched` → DLQ. Three settings of `LookupRecord` decide whether the order is enriched at all:
+     - the dynamic property **`customer_id`** = `/customer_id` — the lookup key; its name is what `${customer_id}` in the URL refers to;
+     - **Result RecordPath** `/` — where to put the answer of the API. Empty by default: then `LookupRecord` only routes the record to `matched` and does not change it — the order goes on without the customer;
+     - **Record Result Contents** `Insert Record Fields` — copy the fields of the answer (`customer_name`, `customer_tier`, `country`) into the record itself. The default `Insert Entire Record` puts the whole answer into one nested field, and the columns `customer_name` / `customer_tier` of `orders_stage` stay empty.
+
+     The *Record Writer* of `LookupRecord` and everything after it must not use the fixed schema `order.v1` (it has no customer fields): use a Writer with *Inherit Record Schema*.
    - `SplitRecord` (1 record per FlowFile), then `PutDatabaseRecord` UPSERT into `orders_stage` by `order_id`: `failure` → DLQ. The database connection is the same as in [[labs/lab-4|Lab 4]].
    - `PublishKafka` into `#{topic.out}` with the key from `order_id`.
    - DLQ: on every error path an `UpdateAttribute` sets `error.stage`, then one `PublishKafka` into `#{topic.dlq}`.

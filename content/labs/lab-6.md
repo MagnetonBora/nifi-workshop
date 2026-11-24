@@ -87,7 +87,7 @@ In part 1 the shape of the output comes from the Writer schema. Now do the same 
 
 1. Replace `UpdateRecord` with two processors:
    - **`UpdateAttribute`**: the attribute `ingest.ts` = `${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UTC")}`.
-   - **`JoltTransformRecord`**: *Record Reader* `r-log`, *Record Writer* `w-raw` (*Inherit Record Schema* — no output schema), *Jolt Transform* `Chain`, *Jolt Specification*:
+   - **`JoltTransformRecord`**: *Record Reader* `reader-input-schema`, *Record Writer* `writer-as-is` (*Inherit Record Schema* — no output schema), *Jolt Transform* `Chain`, *Jolt Specification*:
 
    ```json
    [
@@ -100,7 +100,7 @@ In part 1 the shape of the output comes from the Writer schema. Now do the same 
    - `shift` with `#<value>` writes a constant into `ingest_ts`; NiFi substitutes `${ingest.ts}` from the attribute before Jolt runs. `"*": "&"` copies all other fields under their own names. The constant is written first, so `ingest_ts` is the first field.
    - Because of Expression Language every FlowFile gets its own specification — set *Transform Cache Size* to `10` or more, otherwise NiFi recompiles it all the time.
 
-2. Connect `success` → `MergeRecord`, `failure` → quarantine. In `MergeRecord` set the *Record Reader* to a new `JsonTreeReader` with *Infer Schema* and the *Record Writer* to `w-raw` — otherwise its `log.schema.out` reshapes the records again and you cannot see what Jolt did. Keep `ValidateRecord` in front: Jolt does not validate anything — the broken line `{"ts":"bad","level":"INFO"}` would pass through it as `{"ingest_ts":"…","ts":"bad","level":"INFO"}`.
+2. Connect `success` → `MergeRecord`, `failure` → quarantine. In `MergeRecord` set the *Record Reader* to a new `JsonTreeReader` with *Infer Schema* and the *Record Writer* to `writer-as-is` — otherwise its `log.schema.out` reshapes the records again and you cannot see what Jolt did. Keep `ValidateRecord` in front: Jolt does not validate anything — the broken line `{"ts":"bad","level":"INFO"}` would pass through it as `{"ingest_ts":"…","ts":"bad","level":"INFO"}`.
 3. Clear the output directories, start the group and run the same verification: the result must be identical to part 1.
 
    In the reference flow part 2 is the group *Part 2 - Jolt*; it has its own generator and writes to `nifi/data/out/jolt`, so the two parts can be compared side by side: `head -n 2 nifi/data/out/jolt/*.ndjson`.

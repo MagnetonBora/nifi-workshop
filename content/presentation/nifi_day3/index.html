@@ -269,9 +269,9 @@
       <h2 class="section-heading">Shutdown and resume settings</h2>
       <table class="deployment-table">
         <tr><th>Parameter</th><th>File</th><th>Default</th><th>Meaning</th></tr>
-        <tr><td><code>nifi.flowcontroller.graceful.shutdown.period</code></td><td><code>nifi.properties</code></td><td><code>10 secs</code></td><td>How long to wait for components on stop; after 2.12.0 (NIFI-16290) it also bounds the wait before forced stop during node <strong>offload</strong></td></tr>
-        <tr><td><code>graceful.shutdown.seconds</code></td><td><code>bootstrap.conf</code></td><td><code>20</code></td><td>Seconds Bootstrap waits for a clean exit before forcing the process down; <code>bootstrap.conf</code> changes apply only after stop and start</td></tr>
-        <tr><td><code>nifi.flowcontroller.autoResumeState</code></td><td><code>nifi.properties</code></td><td><code>true</code></td><td>Restore Running/Stopped and Enabled/Disabled state after restart; must match on all cluster nodes</td></tr>
+        <tr><td><code>nifi.flowcontroller.graceful.shutdown.period</code></td><td><code>nifi.properties</code></td><td class="nowrap-code"><code>10 secs</code></td><td>How long to wait for components on stop; after 2.12.0 (NIFI-16290) it also bounds the wait before forced stop during node <strong>offload</strong></td></tr>
+        <tr><td><code>graceful.shutdown.seconds</code></td><td><code>bootstrap.conf</code></td><td class="nowrap-code"><code>20</code></td><td>Seconds Bootstrap waits for a clean exit before forcing the process down; <code>bootstrap.conf</code> changes apply only after stop and start</td></tr>
+        <tr><td><code>nifi.flowcontroller.autoResumeState</code></td><td><code>nifi.properties</code></td><td class="nowrap-code"><code>true</code></td><td>Restore Running/Stopped and Enabled/Disabled state after restart; must match on all cluster nodes</td></tr>
       </table>
       <ul class="bullets">
         <li>10 seconds is <strong>short</strong> for long operations (large <code>PutDatabaseRecord</code>, <code>MergeRecord</code>, network writes).</li>
@@ -332,6 +332,7 @@
       <div class="section-number">S17</div>
       <div class="eyebrow">Restart · autoResumeState</div>
       <h2 class="section-heading">When auto-resume helps — and when it hurts</h2>
+      <p class="subtitle"><strong>Auto-resume</strong> = <code>nifi.flowcontroller.autoResumeState</code> in <code>nifi.properties</code>. With <code>true</code>, NiFi restores each component's last state at startup: processors that were Running start again, Enabled controller services are enabled again. With <code>false</code>, everything comes up Stopped/Disabled until you start it in the UI or via the REST API.</p>
       <table class="deployment-table">
         <tr><th>Situation</th><th>Risk with <code>true</code></th><th>What to do</th></tr>
         <tr><td>Migration / upgrade</td><td>Half-migrated components start; sources consume before the flow is checked</td><td>First start with <code>false</code>; fix invalid/ghost components; then start by script</td></tr>
@@ -617,6 +618,7 @@ TimeoutStopSec=180</code></pre>
             <li><strong>Idempotent sinks</strong> — restarts and retries are safe.</li>
             <li>State lives in NiFi state, Kafka, or the sink — not in the operator’s head.</li>
             <li>Stop / start / clear / replay are written down as runbooks and automated.</li>
+            <li>Routine operations go through the <strong>REST API</strong> (scripts, <code>nipyapi</code>, NiFi CLI): start/stop groups, empty queues, deploy versions, health checks — not manual clicks in the UI.</li>
           </ol>
         </div>
       </div>
@@ -685,7 +687,6 @@ TimeoutStopSec=180</code></pre>
       <div class="eyebrow">Mini-lab 3.1.4</div>
       <h2 class="section-heading">Restart under load</h2>
       <ol class="bullets">
-        <li>Run the Lab 8 or final-lab pipeline under load.</li>
         <li><strong>Planned restart:</strong> follow the runbook (sources → drain → stop → start → sinks → sources); time stop and start.</li>
         <li><strong>Crash:</strong> <code>kill -9</code> the NiFi JVM (<strong>lab only</strong>) — the supervisor brings it back, the flow resumes by itself.</li>
         <li>Compare input and sink counts; count duplicates by event key.</li>
@@ -937,7 +938,7 @@ PORT = 9099
         <div class="split-left">
           <h3>Export</h3>
           <ul class="bullets">
-            <li><strong>Prometheus:</strong> <code>/nifi-api/flow/metrics/prometheus</code> (since 1.12.0) and <code>PrometheusReportingTask</code>.</li>
+            <li><strong>Prometheus:</strong> <code>/nifi-api/flow/metrics/prometheus</code> (since 1.12.0); <code>PrometheusReportingTask</code> is no longer available in 2.12.</li>
             <li>2.13.0 adds <code>cluster_is_primary_node</code>, <code>cluster_is_cluster_coordinator</code>.</li>
             <li><strong>Site-to-Site Reporting Tasks:</strong> status, bulletins, metrics.</li>
           </ul>
@@ -1205,9 +1206,9 @@ PartitionRecord         <span class="cm"># optional: by componentType / bulletin
       <h2 class="section-heading">Sender: NiFi Settings → Reporting Tasks → +</h2>
       <table class="deployment-table">
         <tr><th>Task</th><th>Key settings</th></tr>
-        <tr><td><code>SiteToSiteStatusReportingTask</code></td><td>Destination URL <code>https://monitor.example.com:8443/nifi</code>; Input Port <code>monitoring-in</code>; SSL Context with client cert; Instance URL <code>https://${hostname(true)}:8443/nifi</code>; <code>JsonRecordSetWriter</code> (NDJSON); Platform <code>prod-eu</code>; Type filter <code>(Processor|Connection)</code>; Run Schedule <code>1 min</code></td></tr>
-        <tr><td><code>SiteToSiteBulletinReportingTask</code></td><td>Same Destination / Input Port / SSL; <code>JsonRecordSetWriter</code>; Platform <code>prod-eu</code>; Run Schedule <code>30 sec</code></td></tr>
-        <tr><td><code>SiteToSiteMetricsReportingTask</code></td><td>Output Format <code>Record Format</code>; <code>JsonRecordSetWriter</code>; Hostname <code>${hostname(true)}</code>; Application ID <code>nifi-prod</code>; Run Schedule <code>1 min</code></td></tr>
+        <tr><td class="nowrap-code"><code>SiteToSiteStatusReportingTask</code></td><td>Destination URL <code>https://monitor.example.com:8443/nifi</code>; Input Port <code>monitoring-in</code>; SSL Context with client cert; Instance URL <code>https://${hostname(true)}:8443/nifi</code>; <code>JsonRecordSetWriter</code> (NDJSON); Platform <code>prod-eu</code>; Type filter <code>(Processor|Connection)</code>; Run Schedule <code>1 min</code></td></tr>
+        <tr><td class="nowrap-code"><code>SiteToSiteBulletinReportingTask</code></td><td>Same Destination / Input Port / SSL; <code>JsonRecordSetWriter</code>; Platform <code>prod-eu</code>; Run Schedule <code>30 sec</code></td></tr>
+        <tr><td class="nowrap-code"><code>SiteToSiteMetricsReportingTask</code></td><td>Output Format <code>Record Format</code>; <code>JsonRecordSetWriter</code>; Hostname <code>${hostname(true)}</code>; Application ID <code>nifi-prod</code>; Run Schedule <code>1 min</code></td></tr>
       </table>
       <div class="hibox">Then press <strong>Start</strong> on each task.</div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
@@ -1297,7 +1298,7 @@ PartitionRecord         <span class="cm"># optional: by componentType / bulletin
       <h2 class="section-heading">Combine the tools</h2>
       <table class="deployment-table">
         <tr><th>Tool</th><th>Best when</th></tr>
-        <tr><td>Prometheus endpoint / <code>PrometheusReportingTask</code></td><td>Standard metrics stack (Prometheus + Grafana + Alertmanager); minimal overhead; node/cluster/JVM/processor metrics</td></tr>
+        <tr><td>Prometheus endpoint <code>/nifi-api/flow/metrics/prometheus</code></td><td>Standard metrics stack (Prometheus + Grafana + Alertmanager); minimal overhead; node/cluster/JVM/processor metrics</td></tr>
         <tr><td>Site-to-Site Reporting Tasks</td><td>Monitoring data processed <strong>inside NiFi</strong>; delivery to Splunk/Kafka/DB; bulletins with error text</td></tr>
         <tr><td>REST API (<code>/nifi-api/flow/...</code>)</td><td>One-off checks, orchestration scripts</td></tr>
         <tr><td>Logs (<code>nifi-app.log</code>) in a SIEM</td><td>Exception details, forensics</td></tr>
@@ -1535,7 +1536,6 @@ PartitionRecord         <span class="cm"># optional: by componentType / bulletin
       <h2 class="section-heading">Periodic tasks outside the data flow</h2>
       <table class="deployment-table">
         <tr><th>Task</th><th>What it does</th></tr>
-        <tr><td><code>PrometheusReportingTask</code></td><td>Publishes metrics in Prometheus format</td></tr>
         <tr><td><code>SiteToSite{Status,Bulletin,Metrics}ReportingTask</code></td><td>Sends component status, bulletins, and metrics to an Input Port of another (or the same) NiFi</td></tr>
         <tr><td><code>MonitorDiskUsage</code></td><td>Warns when repository directories exceed a threshold</td></tr>
         <tr><td><code>MonitorMemory</code></td><td>Signals when JVM memory pools exceed a threshold</td></tr>
@@ -1543,7 +1543,7 @@ PartitionRecord         <span class="cm"># optional: by componentType / bulletin
       </table>
       <ul class="bullets">
         <li>Each task has a Scheduling Strategy (Timer driven / CRON), Run Schedule (default around 5 min), Running/Stopped state, and properties. It runs <strong>on every node</strong> — reporting tasks have no Primary Node option; problems show up as the task’s bulletins.</li>
-        <li><strong>Production minimum:</strong> <code>MonitorDiskUsage</code> for repository volumes, <code>MonitorMemory</code>, metrics export (Prometheus or S2S), bulletin delivery — tuned to avoid noise.</li>
+        <li><strong>Production minimum:</strong> <code>MonitorDiskUsage</code> for repository volumes, <code>MonitorMemory</code>, metrics export (Prometheus endpoint <code>/nifi-api/flow/metrics/prometheus</code> or S2S), bulletin delivery — tuned to avoid noise.</li>
       </ul>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
@@ -1840,12 +1840,17 @@ nifi.security.truststorePasswd=<span class="str">&lt;secret&gt;</span></code></p
     </div>
 
     <div class="slide s-intro" id="s91">
+      <h2>Lab 9: Performance test and tuning</h2>
+      <div class="slide-logo">Apache NiFi · Workshop</div>
+    </div>
+
+    <div class="slide s-intro" id="s92">
       <h2>Performance tuning, hardware, and storage</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s92">
-      <div class="section-number">S92</div>
+    <div class="slide s-code" id="s93">
+      <div class="section-number">S93</div>
       <div class="eyebrow">JVM</div>
       <h2 class="section-heading">Heap sizing in bootstrap.conf</h2>
       <pre><code><span class="cm"># conf/bootstrap.conf</span>
@@ -1862,8 +1867,8 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s93">
-      <div class="section-number">S93</div>
+    <div class="slide s-section" id="s94">
+      <div class="section-number">S94</div>
       <div class="eyebrow">Threads</div>
       <h2 class="section-heading">Thread pool and Concurrent Tasks</h2>
       <div class="split2">
@@ -1888,8 +1893,8 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s94">
-      <div class="section-number">S94</div>
+    <div class="slide s-section" id="s95">
+      <div class="section-number">S95</div>
       <div class="eyebrow">Scheduling and cluster</div>
       <h2 class="section-heading">Run Duration, scheduling, cluster parameters</h2>
       <ul class="bullets">
@@ -1902,8 +1907,8 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s95">
-      <div class="section-number">S95</div>
+    <div class="slide s-section" id="s96">
+      <div class="section-number">S96</div>
       <div class="eyebrow">Repositories</div>
       <h2 class="section-heading">Repository tuning knobs</h2>
       <table>
@@ -1918,8 +1923,8 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s96">
-      <div class="section-number">S96</div>
+    <div class="slide s-section s-deployment" id="s97">
+      <div class="section-number">S97</div>
       <div class="eyebrow">Hardware</div>
       <h2 class="section-heading">More cores or faster cores?</h2>
       <table class="deployment-table">
@@ -1936,8 +1941,8 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s97">
-      <div class="section-number">S97</div>
+    <div class="slide s-section" id="s98">
+      <div class="section-number">S98</div>
       <div class="eyebrow">Storage</div>
       <h2 class="section-heading">I/O profile of each repository</h2>
       <table>
@@ -1950,8 +1955,8 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s98">
-      <div class="section-number">S98</div>
+    <div class="slide s-section" id="s99">
+      <div class="section-number">S99</div>
       <div class="eyebrow">Storage layout</div>
       <h2 class="section-heading">Separate disks vs a single NVMe array</h2>
       <div class="diagram-shell">
@@ -1990,8 +1995,8 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s99">
-      <div class="section-number">S99</div>
+    <div class="slide s-section" id="s100">
+      <div class="section-number">S100</div>
       <div class="eyebrow">Storage</div>
       <h2 class="section-heading">How to choose and what to measure</h2>
       <ol class="bullets">
@@ -2005,8 +2010,8 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s100">
-      <div class="section-number">S100</div>
+    <div class="slide s-section" id="s101">
+      <div class="section-number">S101</div>
       <div class="eyebrow">Flow design</div>
       <h2 class="section-heading">Removing bottlenecks by design</h2>
       <div class="split2">
@@ -2030,8 +2035,8 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s101">
-      <div class="section-number">S101</div>
+    <div class="slide s-section" id="s102">
+      <div class="section-number">S102</div>
       <div class="eyebrow">Throughput control</div>
       <h2 class="section-heading">Prioritization and rate control</h2>
       <ul class="bullets">
@@ -2044,8 +2049,8 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s102">
-      <div class="section-number">S102</div>
+    <div class="slide s-section" id="s103">
+      <div class="section-number">S103</div>
       <div class="eyebrow">Anti-patterns</div>
       <h2 class="section-heading">Typical performance mistakes</h2>
       <table>
@@ -2060,72 +2065,17 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-intro" id="s103">
-      <h2>Lab 9: Performance test and tuning</h2>
-      <div class="slide-logo">Apache NiFi · Workshop</div>
-    </div>
-
-    <div class="slide s-section" id="s104">
-      <div class="section-number">S104</div>
-      <div class="eyebrow">Lab 9 · Method</div>
-      <h2 class="section-heading">Measure the Lab 6 pipeline, find the bottleneck</h2>
-      <div class="split2">
-        <div class="split-left">
-          <h3>Method</h3>
-          <ol class="bullets">
-            <li><strong>Baseline:</strong> version, heap, thread pool, concurrent tasks, hardware; load generator.</li>
-            <li><strong>Metrics:</strong> events/s, Tasks/Time, queues, heap/GC, CPU, <code>iostat</code>.</li>
-            <li><strong>One change at a time;</strong> 3 runs each; take the median.</li>
-            <li><strong>Report:</strong> change → effect → conclusion.</li>
-          </ol>
-        </div>
-        <div class="split-right">
-          <h3>Scenarios</h3>
-          <table>
-            <tr><th>#</th><th>Change</th></tr>
-            <tr><td>A</td><td>Baseline</td></tr>
-            <tr><td>B</td><td>Explicit schemas (no Infer)</td></tr>
-            <tr><td>C</td><td>More Concurrent Tasks on the bottleneck</td></tr>
-            <tr><td>D</td><td>Bigger batches (<code>MergeRecord</code>)</td></tr>
-            <tr><td>E</td><td>Provenance on its own volume / less indexing</td></tr>
-            <tr><td>F</td><td>More heap and threads (with more cores)</td></tr>
-          </table>
-        </div>
-      </div>
-      <div class="slide-logo">Apache NiFi · Workshop</div>
-    </div>
-
-    <div class="slide s-code" id="s105">
-      <div class="section-number">S105</div>
-      <div class="eyebrow">Lab 9 · Tooling</div>
-      <h2 class="section-heading">Useful commands and the results table</h2>
-      <div class="terminal-window">
-        <div class="terminal-titlebar"><span class="terminal-dot terminal-dot-red"></span><span class="terminal-dot terminal-dot-yellow"></span><span class="terminal-dot terminal-dot-green"></span><span class="terminal-title">Terminal</span></div>
-        <pre><code><span class="terminal-prompt">workshop@nifi:~$</span> bin/nifi.sh dump /tmp/nifi-dump.txt     <span class="cm"># thread dump</span>
-<span class="terminal-prompt">workshop@nifi:~$</span> bin/nifi.sh diagnostics /tmp/diag.txt   <span class="cm"># diagnostics</span>
-<span class="terminal-prompt">workshop@nifi:~$</span> iostat -x 5                             <span class="cm"># disk load</span>
-<span class="terminal-prompt">workshop@nifi:~$</span> jstat -gcutil &lt;pid&gt; 5000                <span class="cm"># GC</span></code></pre>
-      </div>
-      <table>
-        <tr><th>Scenario</th><th>Change</th><th>events/s</th><th>CPU %</th><th>GC pause p95</th><th>I/O await, ms</th><th>Conclusion</th></tr>
-        <tr><td>A</td><td>baseline</td><td></td><td></td><td></td><td></td><td></td></tr>
-        <tr><td>B</td><td>explicit schemas</td><td></td><td></td><td></td><td></td><td></td></tr>
-      </table>
-      <div class="hibox hibox-red">Pitfalls: unstable input, several changes at once, ignoring JVM warm-up, different data between runs.</div>
-      <div class="slide-logo">Apache NiFi · Workshop</div>
-    </div>
-
-    <div class="slide s-intro" id="s106">
+    <div class="slide s-intro" id="s104">
       <h2>Final lab: end-to-end pipeline</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s107">
-      <div class="section-number">S107</div>
+    <div class="slide s-section" id="s105">
+      <div class="section-number">S105</div>
       <div class="eyebrow">Final lab · Architecture</div>
-      <h2 class="section-heading">Kafka → validate &amp; transform → deliver, with a DLQ</h2>
+      <h2 class="section-heading">Kafka → validate &amp; transform → Kafka, with a DLQ</h2>
       <div class="diagram-shell">
-        <svg class="diagram-svg" viewBox="0 0 1100 400" role="img" aria-label="Final lab: Kafka to ingest, validate-transform, deliver process groups with errors group and DLQ">
+        <svg class="diagram-svg" viewBox="0 0 1100 400" role="img" aria-label="Final lab: Kafka logs.raw to ingest, validate-transform and deliver process groups, publishing to Kafka logs.clean; RetryFlowFile and the errors group with the DLQ">
           <defs><marker id="arr-fl" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1a6ba7"></path></marker>
           <marker id="arr-fl-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#cf4d4d"></path></marker></defs>
           <rect x="10" y="40" width="150" height="70" rx="8" fill="#ffffff" stroke="#1a6ba7" stroke-width="2"></rect>
@@ -2140,80 +2090,90 @@ java.arg.N=<span class="str">-XX:+HeapDumpOnOutOfMemoryError</span></code></pre>
           <rect x="430" y="20" width="300" height="160" rx="10" fill="#e0f0fe" stroke="#1a6ba7" stroke-width="2"></rect>
           <text x="580" y="50" text-anchor="middle" class="svg-title">validate-transform</text>
           <text x="580" y="80" text-anchor="middle" class="svg-tag">ValidateRecord (LogEvent.in)</text>
-          <text x="580" y="104" text-anchor="middle" class="svg-tag">UpdateRecord (ingest_ts, drop pwd)</text>
-          <text x="580" y="128" text-anchor="middle" class="svg-tag">QueryRecord (level &lt;&gt; 'DEBUG')</text>
-          <text x="580" y="152" text-anchor="middle" class="svg-tag">MergeRecord (NDJSON, ≤10 000, 30 s)</text>
+          <text x="580" y="104" text-anchor="middle" class="svg-tag">UpdateRecord (ingest_ts, no pwd)</text>
+          <text x="580" y="128" text-anchor="middle" class="svg-tag">QueryRecord (DEBUG → counter only)</text>
+          <text x="580" y="152" text-anchor="middle" class="svg-tag">MergeRecord (≤10 000, 30 s)</text>
 
           <rect x="760" y="20" width="230" height="110" rx="10" fill="#edf8f2" stroke="#20804d" stroke-width="2"></rect>
           <text x="875" y="50" text-anchor="middle" class="svg-title">deliver</text>
-          <text x="875" y="80" text-anchor="middle" class="svg-tag">PutSplunk / HEC / PutFile</text>
-          <text x="875" y="104" text-anchor="middle" class="svg-tag">framework retry</text>
+          <text x="875" y="80" text-anchor="middle" class="svg-tag">PublishKafka · key = id</text>
+          <text x="875" y="104" text-anchor="middle" class="svg-tag">counter after success</text>
 
-          <rect x="1015" y="40" width="80" height="70" rx="8" fill="#ffffff" stroke="#20804d" stroke-width="2"></rect>
-          <text x="1055" y="80" text-anchor="middle" class="svg-text">Splunk</text>
+          <rect x="1010" y="40" width="85" height="70" rx="8" fill="#ffffff" stroke="#20804d" stroke-width="2"></rect>
+          <text x="1052" y="70" text-anchor="middle" class="svg-text">Kafka</text>
+          <text x="1052" y="94" text-anchor="middle" class="svg-tag">logs.clean</text>
 
           <rect x="760" y="200" width="230" height="56" rx="8" fill="#fff4e6" stroke="#d17b00" stroke-width="2"></rect>
-          <text x="875" y="234" text-anchor="middle" class="svg-text">RetryFlowFile</text>
+          <text x="875" y="234" text-anchor="middle" class="svg-text">RetryFlowFile · 5 × 10 s</text>
 
           <rect x="310" y="290" width="540" height="90" rx="10" fill="#fdecec" stroke="#cf4d4d" stroke-width="2"></rect>
           <text x="580" y="320" text-anchor="middle" class="svg-title">errors</text>
-          <text x="580" y="348" text-anchor="middle" class="svg-tag">UpdateAttribute (error.*) ► PublishKafka logs.dlq / PutFile</text>
+          <text x="580" y="348" text-anchor="middle" class="svg-tag">UpdateAttribute (error.*) ► PublishKafka logs.dlq (headers) / PutFile</text>
 
           <line x1="160" y1="75" x2="200" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-fl)"></line>
           <line x1="400" y1="75" x2="430" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-fl)"></line>
           <line x1="730" y1="75" x2="760" y2="75" stroke="#1a6ba7" stroke-width="2" marker-end="url(#arr-fl)"></line>
-          <line x1="990" y1="75" x2="1015" y2="75" stroke="#20804d" stroke-width="2" marker-end="url(#arr-fl)"></line>
-          <line x1="875" y1="130" x2="875" y2="200" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-fl)"></line>
-          <text x="890" y="170" class="svg-tag">failure / retry</text>
+          <line x1="990" y1="75" x2="1010" y2="75" stroke="#20804d" stroke-width="2" marker-end="url(#arr-fl)"></line>
+          <line x1="860" y1="130" x2="860" y2="200" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-fl)"></line>
+          <text x="790" y="170" class="svg-tag">failure</text>
+          <line x1="900" y1="200" x2="900" y2="130" stroke="#d17b00" stroke-width="2" marker-end="url(#arr-fl)"></line>
+          <text x="910" y="170" class="svg-tag">retry</text>
           <line x1="840" y1="256" x2="820" y2="290" stroke="#cf4d4d" stroke-width="2" marker-end="url(#arr-fl-red)"></line>
           <text x="860" y="282" class="svg-tag">exhausted</text>
           <line x1="520" y1="180" x2="520" y2="290" stroke="#cf4d4d" stroke-width="2" marker-end="url(#arr-fl-red)"></line>
           <text x="455" y="240" class="svg-tag">invalid</text>
+          <line x1="300" y1="130" x2="360" y2="290" stroke="#cf4d4d" stroke-width="2" marker-end="url(#arr-fl-red)"></line>
+          <text x="230" y="220" class="svg-tag">parse failure</text>
         </svg>
       </div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s108">
-      <div class="section-number">S108</div>
+    <div class="slide s-section" id="s106">
+      <div class="section-number">S106</div>
       <div class="eyebrow">Final lab · Services</div>
       <h2 class="section-heading">Controller Services and parameters</h2>
       <table>
         <tr><th>Service / parameter</th><th>Value</th></tr>
-        <tr><td><code>Kafka3ConnectionService</code></td><td><code>#{kafka.bootstrap}</code></td></tr>
-        <tr><td><code>AvroSchemaRegistry</code></td><td><code>LogEvent.in</code>, <code>LogEvent.out</code></td></tr>
-        <tr><td><code>JsonTreeReader</code></td><td>Schema Name Property, registry; <strong>no Infer</strong></td></tr>
-        <tr><td><code>JsonRecordSetWriter</code></td><td><code>LogEvent.out</code>, <code>One Line Per Object</code>, no Pretty Print</td></tr>
-        <tr><td>Parameter Context <code>logs-prod</code></td><td><code>kafka.bootstrap</code>, <code>splunk.host</code>, <code>splunk.port</code>, <code>dlq.topic</code>, <code>out.dir</code></td></tr>
+        <tr><td><code>Kafka3ConnectionService</code></td><td><code>#{kafka.bootstrap}</code> = <code>kafka1:19092</code>, PLAINTEXT</td></tr>
+        <tr><td><code>AvroSchemaRegistry</code></td><td><code>LogEvent.in</code> (<code>id</code>, <code>ts</code>, <code>level</code>, <code>svc</code>, <code>msg</code>, <code>user{id,pwd}</code>) · <code>LogEvent.out</code> (<strong><code>ingest_ts</code> first</strong>, <code>user{id}</code>, <strong>no <code>pwd</code></strong>)</td></tr>
+        <tr><td><code>JsonTreeReader</code> ×2</td><td>schema by name from the registry (<code>reader-in</code>, <code>reader-out</code>); <strong>no Infer</strong></td></tr>
+        <tr><td><code>JsonRecordSetWriter</code> ×2</td><td><code>writer-in</code>, <code>writer-out</code>: schema by name, <code>One Line Per Object</code></td></tr>
+        <tr><td>Parameter Context <code>logs-prod</code></td><td><code>kafka.bootstrap</code>, <code>out.topic</code> = <code>logs.clean</code>, <code>dlq.topic</code> = <code>logs.dlq</code>, <code>out.dir</code> (fallback for the DLQ)</td></tr>
       </table>
+      <div class="hibox">The output schema does the cleaning: whatever is not in <code>LogEvent.out</code> (the password) is not written — the same trick as in Lab 6.</div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s109">
-      <div class="section-number">S109</div>
+    <div class="slide s-code" id="s107">
+      <div class="section-number">S107</div>
       <div class="eyebrow">Final lab · Build</div>
       <h2 class="section-heading">Sequence and load generator</h2>
       <div class="split2">
         <div class="split-left">
           <ol class="bullets">
-            <li>Lab stand up; topics <code>logs.raw</code> (e.g. 6 partitions) and <code>logs.dlq</code>.</li>
+            <li><code>make lab-setup</code>: topics <code>logs.raw</code> and <code>logs.clean</code> (6 partitions), <code>logs.dlq</code>.</li>
             <li>Parameter Context and Controller Services (schemas!).</li>
             <li>Groups: ingest → validate-transform → deliver → errors; connect ports.</li>
-            <li>Back pressure between groups; high thresholds in <code>errors</code>.</li>
-            <li>Framework retry on <code>PutSplunk</code> / <code>InvokeHTTP</code>; <code>RetryFlowFile</code> when exhausted.</li>
-            <li>Generate a mix: 5–10 % invalid, DEBUG events, events with secrets.</li>
+            <li><code>final.delivered</code> <strong>after</strong> <code>success</code> of <code>PublishKafka</code> — not in front of it.</li>
+            <li><strong>One</strong> retry mechanism: <code>RetryFlowFile</code> 5 × 10 s, Penalty Duration <code>0 sec</code> on the publisher.</li>
+            <li>High back-pressure thresholds into <code>errors</code>.</li>
           </ol>
         </div>
         <div class="split-right">
-          <pre><code>python3 - &lt;&lt;'EOF' | docker exec -i kafka \
-  /opt/kafka/bin/kafka-console-producer.sh \
-  --bootstrap-server kafka:9092 --topic logs.raw
-<span class="kw">import</span> json, random, time
-<span class="kw">for</span> i <span class="kw">in</span> range(100000):
+          <pre><code><span class="cm"># the stand: lab-services/produce_logs.py</span>
+make lab-final-load n=20000
+
+<span class="cm"># the same by hand</span>
+python3 - &lt;&lt;'EOF' | docker exec -i kafka1 \
+  kafka-console-producer \
+  --bootstrap-server kafka1:19092 --topic logs.raw
+<span class="kw">import</span> json, random, time, uuid
+<span class="kw">for</span> i <span class="kw">in</span> range(20000):
     <span class="kw">if</span> random.random() &lt; 0.05:
         print(<span class="str">'{"ts":"bad"}'</span>)  <span class="cm"># invalid</span>
     <span class="kw">else</span>:
-        print(json.dumps({
+        print(json.dumps({<span class="str">"id"</span>: uuid.uuid4().hex,
           <span class="str">"ts"</span>: time.strftime(<span class="str">"%Y-%m-%dT%H:%M:%SZ"</span>),
           <span class="str">"level"</span>: random.choice([<span class="str">"INFO"</span>,<span class="str">"ERROR"</span>,<span class="str">"DEBUG"</span>]),
           <span class="str">"svc"</span>: <span class="str">"api"</span>, <span class="str">"msg"</span>: <span class="str">"event %d"</span> % i,
@@ -2224,96 +2184,89 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s110">
-      <div class="section-number">S110</div>
+    <div class="slide s-section" id="s108">
+      <div class="section-number">S108</div>
       <div class="eyebrow">Final lab · Verification</div>
       <h2 class="section-heading">Correctness checks</h2>
       <ul class="bullets">
-        <li>In the target: events <strong>without</strong> <code>pwd</code>, without <code>DEBUG</code>, with <code>ingest_ts</code> as the first field.</li>
-        <li>In <code>logs.dlq</code>: invalid records (~5 %) with error attributes / headers.</li>
-        <li>Balance: <code>received = delivered + filtered (DEBUG) + DLQ</code> — via <code>record.count</code> / <code>UpdateCounter</code>.</li>
-        <li>Queues in <code>errors</code> stay below thresholds; the main queue is not blocked when the DLQ grows.</li>
-        <li>Provenance: a random event shows the path Kafka → … → <code>SEND</code>.</li>
+        <li>In <code>logs.clean</code>: events <strong>without</strong> <code>pwd</code>, without <code>DEBUG</code>, <code>ingest_ts</code> first, key = event <code>id</code>.</li>
+        <li>In <code>logs.dlq</code>: the invalid records (~5 %) with <code>error.*</code> headers, the reason in <code>error.details</code>.</li>
+        <li>Balance: <code>final.accepted = final.delivered + final.filtered.debug + final.dlq</code> — on the stand, 20 000 events: <strong>20 000 = 12 760 + 6 276 + 964</strong>.</li>
+        <li>Count messages by <strong>reading</strong> the topic: transactions leave commit markers that take offsets.</li>
+        <li>The counters live in memory: a <strong>restart of NiFi resets them</strong> — reconcile within one run.</li>
+        <li>Provenance: a random event shows the path Kafka → … → <code>SEND</code> to <code>logs.clean</code>.</li>
       </ul>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s111">
-      <div class="section-number">S111</div>
+    <div class="slide s-section" id="s109">
+      <div class="section-number">S109</div>
       <div class="eyebrow">Final lab · Failure tests</div>
-      <h2 class="section-heading">Break it on purpose</h2>
+      <h2 class="section-heading">Break it on purpose — what the stand showed</h2>
       <table>
-        <tr><th>Test</th><th>Expected behaviour</th></tr>
-        <tr><td>Stop the target (Splunk emulator)</td><td>Queue grows, back pressure stops ingest, Kafka lag grows (no loss); drains after return</td></tr>
-        <tr><td>Restart NiFi under load</td><td>Queues recover; the consumer resumes from committed offsets; duplicates possible (at-least-once) — check idempotency</td></tr>
-        <tr><td>Send 100 % garbage</td><td>Main flow keeps running; the DLQ absorbs it</td></tr>
+        <tr><th>Test</th><th>Result</th></tr>
+        <tr><td>The destination refuses writes: DENY ACL for <code>Write</code> on <code>logs.clean</code></td><td>Ingest goes on, <strong>Kafka lag stays 0</strong>; the batches circle in <code>RetryFlowFile</code>, after ~1 min they are in <code>logs.dlq</code> (<code>error.stage=deliver</code>); the balance holds; after the ACL is removed new events flow at once</td></tr>
+        <tr><td><code>docker restart nifi</code> under load</td><td>Back in ~10 s, queues restored: 12 676 of 12 676 events delivered, 0 lost, 0 twice (by <code>id</code>) — still at-least-once in general; counters start from 0</td></tr>
+        <tr><td>100 % garbage into <code>logs.raw</code></td><td>Main flow keeps running; all of it in <code>logs.dlq</code></td></tr>
       </table>
-      <div class="hibox">Then run <strong>Lab 9</strong> on this pipeline: stable throughput without lag growth, GC pauses within SLO; record final heap, thread pool, concurrent tasks, batch sizes, repository layout.</div>
+      <pre><code>kafka-acls --bootstrap-server kafka1:19092 --add --deny-principal User:ANONYMOUS --operation Write --topic logs.clean</code></pre>
+      <div class="hibox">Why does the lag not grow? 20 000 events are two merged FlowFiles — far below the thresholds: NiFi absorbs the outage itself (retry → DLQ). For back pressure to reach Kafka, the thresholds of the main path must be low.</div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s112">
-      <div class="section-number">S112</div>
+    <div class="slide s-section" id="s110">
+      <div class="section-number">S110</div>
       <div class="eyebrow">Final lab · Diagnostics</div>
       <h2 class="section-heading">Typical mistakes</h2>
       <table>
-        <tr><th>Symptom</th><th>Diagnostics</th></tr>
-        <tr><td>No data arrives</td><td><code>ConsumeKafka</code> status (Group / Offset Reset), bulletins; <code>kafka-consumer-groups.sh --describe</code></td></tr>
-        <tr><td>Everything goes to the DLQ</td><td><code>LogEvent.in</code> does not match the data (types, nesting) — check error attributes</td></tr>
-        <tr><td>Low throughput</td><td>Tasks/Time, queues; too few partitions; tiny FlowFiles; one thread on <code>PutSplunk</code></td></tr>
-        <tr><td>Duplicates in the target</td><td>Restarts / rebalances — make the target idempotent</td></tr>
+        <tr><th>Symptom</th><th>Cause → action</th></tr>
+        <tr><td>No data arrives</td><td><code>ConsumeKafka</code>: Group ID / Offset Reset, the group already read the topic → delete the group; <code>kafka-consumer-groups --describe</code></td></tr>
+        <tr><td>Everything goes to the DLQ</td><td><code>LogEvent.in</code> does not match the data → read <code>error.details</code> in the DLQ headers</td></tr>
+        <tr><td><code>ingest_ts</code> is <code>null</code></td><td>a Reader after <code>UpdateRecord</code> uses <code>LogEvent.in</code> → <code>reader-out</code> from <code>QueryRecord</code> on</td></tr>
+        <tr><td>The balance never adds up in an outage</td><td><code>final.delivered</code> in front of the publisher counts attempts → count after <code>success</code></td></tr>
+        <tr><td>Errors reach the DLQ only after ~20 min</td><td>framework retry on the publisher <strong>plus</strong> <code>RetryFlowFile</code> → one mechanism</td></tr>
+        <tr><td>Duplicates in <code>logs.clean</code></td><td>at-least-once after restarts / rebalances → consumers deduplicate by the key <code>id</code></td></tr>
       </table>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-code" id="s113">
-      <div class="section-number">S113</div>
+    <div class="slide s-code" id="s111">
+      <div class="section-number">S111</div>
       <div class="eyebrow">Lab stand</div>
-      <h2 class="section-heading">Docker Compose for the labs (not for production)</h2>
+      <h2 class="section-heading">The lab stand: Docker Compose + make (not for production)</h2>
       <div class="split2">
         <div class="split-left">
-          <pre><code><span class="kw">services</span>:
-  <span class="kw">nifi</span>:
-    image: apache/nifi:<span class="str">${NIFI_VERSION}</span>
-    ports: [<span class="str">"8443:8443"</span>, <span class="str">"8081:8081"</span>]
-    environment:
-      SINGLE_USER_CREDENTIALS_USERNAME: admin
-      SINGLE_USER_CREDENTIALS_PASSWORD: <span class="str">${NIFI_PASSWORD}</span>
-      NIFI_JVM_HEAP_INIT: 2g
-      NIFI_JVM_HEAP_MAX: 2g
-    volumes:          <span class="cm"># ... = /opt/nifi/nifi-current</span>
-      - ./data:/data
-      - ./drivers:/opt/nifi/drivers
-      - nifi_conf:.../conf
-      - nifi_flowfile:.../flowfile_repository
-      - nifi_content:.../content_repository
-      - nifi_prov:.../provenance_repository
-      - nifi_state:.../state</code></pre>
+          <table>
+            <tr><th>Service</th><th>Image · address</th></tr>
+            <tr><td>NiFi</td><td><code>apache/nifi:2.12.0</code> · <code>https://nifi:8443</code></td></tr>
+            <tr><td>NiFi Registry + LDAP</td><td><code>apache/nifi-registry:2.12.0</code> · <code>:18443</code></td></tr>
+            <tr><td>Kafka (KRaft, 1 broker)</td><td><code>confluentinc/cp-kafka:8.0.0</code> · <code>kafka1:19092</code></td></tr>
+            <tr><td>PostgreSQL</td><td><code>postgres:18-alpine</code> · <code>postgres:5432</code></td></tr>
+            <tr><td>Prometheus, Grafana</td><td><code>:9090</code>, <code>:3000</code> (Lab 3 and Lab 9 dashboards)</td></tr>
+            <tr><td>Lab stubs</td><td><code>customers-api</code>, <code>splunk-sim</code>, <code>flaky</code></td></tr>
+          </table>
         </div>
         <div class="split-right">
-          <pre><code>  <span class="kw">kafka</span>:
-    image: apache/kafka:<span class="str">${KAFKA_VERSION}</span>
-    ports: [<span class="str">"9092:9092"</span>]
-    <span class="cm"># KRaft single broker: see image docs</span>
-  <span class="kw">postgres</span>:
-    image: postgres:16
-    environment:
-      POSTGRES_PASSWORD: <span class="str">${PG_PASSWORD}</span>
-      POSTGRES_DB: orders
-    ports: [<span class="str">"5432:5432"</span>]</code></pre>
-          <div class="note">Repositories on separate volumes. From NiFi reach Kafka as <code>kafka:9092</code> with matching <code>advertised.listeners</code>. <code>NIFI_JVM_HEAP_*</code>, <code>SINGLE_USER_CREDENTIALS_*</code> and <code>/opt/nifi/nifi-current</code> are confirmed by the apache/nifi README; check Kafka KRaft and Postgres image details.</div>
+          <pre><code>make up                <span class="cm"># everything, single NiFi</span>
+make lab-setup         <span class="cm"># tables, topics, data dirs</span>
+make import f=nifi/flows/lab10-final-pipeline.json
+make lab-final-load n=20000
+make lab08-measure     <span class="cm"># Lab 8 report</span>
+make lab09-measure     <span class="cm"># Lab 9 report</span>
+make urls              <span class="cm"># addresses + passwords</span></code></pre>
+          <div class="note">All stacks share the Docker network <code>nifi-net</code>; NiFi repositories are on named volumes, <code>nifi/data</code> is mounted as <code>/opt/nifi/data</code>. Details: Appendix A.</div>
         </div>
       </div>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-intro" id="s114">
+    <div class="slide s-intro" id="s112">
       <h2>Course recap and next steps</h2>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s115">
-      <div class="section-number">S115</div>
+    <div class="slide s-section" id="s113">
+      <div class="section-number">S113</div>
       <div class="eyebrow">Three days in review</div>
       <h2 class="section-heading">Recap</h2>
       <div class="split2">
@@ -2337,8 +2290,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section s-deployment" id="s116">
-      <div class="section-number">S116</div>
+    <div class="slide s-section s-deployment" id="s114">
+      <div class="section-number">S114</div>
       <div class="eyebrow">Next steps</div>
       <h2 class="section-heading">Recommended next steps</h2>
       <table class="deployment-table">
@@ -2352,8 +2305,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s117">
-      <div class="section-number">S117</div>
+    <div class="slide s-section" id="s115">
+      <div class="section-number">S115</div>
       <div class="eyebrow">References</div>
       <h2 class="section-heading">Where to verify details for your version</h2>
       <ul class="bullets">
@@ -2368,8 +2321,8 @@ EOF</code></pre>
       <div class="slide-logo">Apache NiFi · Workshop</div>
     </div>
 
-    <div class="slide s-section" id="s118">
-      <div class="section-number">S118</div>
+    <div class="slide s-section" id="s116">
+      <div class="section-number">S116</div>
       <div class="eyebrow">Thank you</div>
       <div class="split2">
         <div class="split-left">

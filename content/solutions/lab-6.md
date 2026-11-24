@@ -8,7 +8,7 @@ aliases:
 > From the materials of [[materials/day-2|Day 2 — Data Processing and Integrations]]. The lab stand is described on the [[labs/index|Labs]] page; loading the reference solutions — on the [[solutions/index|Solutions]] page.
 > Task: [[labs/lab-6|Lab 6 — An NDJSON transformation pipeline]].
 
-**Structure of the reference flow.** One group *Lab 6 - NDJSON pipeline* with the Parameter Context `lab6-params` and the shared services (`r-log`, `r-log-out`, `w-log`, `w-raw`); inside it two independent groups, each with its own generator:
+**Structure of the reference flow.** One group *Lab 6 - NDJSON pipeline* with the Parameter Context `lab6-params` and the shared services (`reader-input-schema`, `reader-output-schema`, `writer-output-schema`, `writer-as-is`); inside it two independent groups, each with its own generator:
 
 | Group | How the output gets its shape | Output |
 |---|---|---|
@@ -32,13 +32,13 @@ UpdateRecord (writer schema: ingest_ts first, without user.pwd) ► MergeRecord 
 
 | Component | Key properties |
 |---|---|
-| `JsonTreeReader` `r-log` | Schema Access: `Use 'Schema Text' Property` = `#{log.schema.in}` (the input schema with `ts`, `level`, `svc`, `msg`, `user{id,pwd}`; `pwd` is allowed) |
-| `JsonTreeReader` `r-log-out` | Schema Access: `Use 'Schema Text' Property` = `#{log.schema.out}` (the `LogEvent` schema) — the Reader for `MergeRecord` |
-| `JsonRecordSetWriter` `w-log` | `Use 'Schema Text' Property` = `#{log.schema.out}` (the `LogEvent` schema from section 2.2.4); Output Grouping `One Line Per Object`; Pretty Print `false` |
-| `JsonRecordSetWriter` `w-raw` | `Inherit Record Schema`; `One Line Per Object` — for invalid rows (keeps them as is) |
-| `ValidateRecord` | Reader `r-log`; Writer `w-log`; Record Writer for Invalid Records `w-raw`; Schema Access Strategy `Use Reader's Schema`; Strict Type Checking `true` |
-| `UpdateRecord` | Reader `r-log`; Writer `w-log`; Strategy `Literal Value`; `/ingest_ts` = `${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UTC")}` |
-| `MergeRecord` | Reader `r-log-out`, Writer `w-log` (both — the `LogEvent` schema); Min Records `1000`; Max Records `10000`; **Max Bin Age** `30 sec` |
+| `JsonTreeReader` `reader-input-schema` | Schema Access: `Use 'Schema Text' Property` = `#{log.schema.in}` (the input schema with `ts`, `level`, `svc`, `msg`, `user{id,pwd}`; `pwd` is allowed) |
+| `JsonTreeReader` `reader-output-schema` | Schema Access: `Use 'Schema Text' Property` = `#{log.schema.out}` (the `LogEvent` schema) — the Reader for `MergeRecord` |
+| `JsonRecordSetWriter` `writer-output-schema` | `Use 'Schema Text' Property` = `#{log.schema.out}` (the `LogEvent` schema from section 2.2.4); Output Grouping `One Line Per Object`; Pretty Print `false` |
+| `JsonRecordSetWriter` `writer-as-is` | `Inherit Record Schema`; `One Line Per Object` — for invalid rows (keeps them as is) |
+| `ValidateRecord` | Reader `reader-input-schema`; Writer `writer-output-schema`; Record Writer for Invalid Records `writer-as-is`; Schema Access Strategy `Use Reader's Schema`; Strict Type Checking `true` |
+| `UpdateRecord` | Reader `reader-input-schema`; Writer `writer-output-schema`; Strategy `Literal Value`; `/ingest_ts` = `${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UTC")}` |
+| `MergeRecord` | Reader `reader-output-schema`, Writer `writer-output-schema` (both — the `LogEvent` schema); Min Records `1000`; Max Records `10000`; **Max Bin Age** `30 sec` |
 | `UpdateAttribute` | `filename` = `${uuid}.ndjson` (before each `PutFile`) |
 | `PutFile` | Directory `#{out.dir}` (for invalid ones — `#{quarantine.dir}`); Conflict Resolution `replace` |
 
@@ -65,9 +65,9 @@ UpdateAttribute (ingest.ts) ► JoltTransformRecord ─────────�
 | Component | Key properties |
 |---|---|
 | `UpdateAttribute` `ingest.ts` | `ingest.ts` = `${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UTC")}` |
-| `JoltTransformRecord` | Reader `r-log`; Writer `w-raw` (*Inherit Record Schema*); Jolt Transform `Chain`; Transform Cache Size `10`; the specification below; `original` auto-terminated, `failure` → quarantine |
-| `JsonTreeReader` `r-infer` | *Infer Schema* — in the group *Part 2 - Jolt*, for `MergeRecord` |
-| `MergeRecord` | Reader `r-infer`, Writer `w-raw`; Min Records `1000`; Max Records `10000`; Max Bin Age `30 sec` |
+| `JoltTransformRecord` | Reader `reader-input-schema`; Writer `writer-as-is` (*Inherit Record Schema*); Jolt Transform `Chain`; Transform Cache Size `10`; the specification below; `original` auto-terminated, `failure` → quarantine |
+| `JsonTreeReader` `reader-inferred-schema` | *Infer Schema* — in the group *Part 2 - Jolt*, for `MergeRecord` |
+| `MergeRecord` | Reader `reader-inferred-schema`, Writer `writer-as-is`; Min Records `1000`; Max Records `10000`; Max Bin Age `30 sec` |
 | `PutFile` | Directory `#{out.dir}/jolt` |
 
 ```json
@@ -84,7 +84,7 @@ UpdateAttribute (ingest.ts) ► JoltTransformRecord ─────────�
 **Common mistakes (part 2).**
 
 - The broken line reaches the output — `ValidateRecord` was removed: Jolt does not validate anything, `{"ts":"bad","level":"INFO"}` goes through it unchanged plus `ingest_ts`.
-- The output in `out/jolt` looks exactly like part 1 although the specification does something else — `MergeRecord` still uses `r-log-out` / `w-log`, and the schema `log.schema.out` reshapes the records again.
+- The output in `out/jolt` looks exactly like part 1 although the specification does something else — `MergeRecord` still uses `reader-output-schema` / `writer-output-schema`, and the schema `log.schema.out` reshapes the records again.
 - `ingest_ts` is empty or literally `${ingest.ts}` — the attribute is not set before `JoltTransformRecord`, or the time format is written straight into the specification: quotes inside Expression Language break the JSON of the specification — compute it in `UpdateAttribute`.
 - NiFi is slow on `JoltTransformRecord` — *Transform Cache Size* is left at `1`: because of Expression Language every FlowFile has its own specification, and it is recompiled every time.
 

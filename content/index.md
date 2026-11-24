@@ -20,6 +20,8 @@ Welcome to this three-day hands-on workshop on Apache NiFi. The course progresse
 
 [[materials/Appendix-B|Appendix B]]
 
+[[materials/additional/index|Additional]]
+
 [[labs/index|Labs]]
 
 [[solutions/index|Solutions]]

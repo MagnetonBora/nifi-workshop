@@ -21,9 +21,9 @@ B - InvokeHTTP (HEC):  GenerateRecord (100/s) ► MergeRecord (10,000 or 10 s) �
 
 ## Destination: emulator or real Splunk
 
-The flow does not change — only two parameters of `lab7-params`:
+The flow does not change — only two parameters. There are two reference files that differ only in these values: `lab7-splunk-delivery-mock.json` (Parameter Context `lab7-params-mock`) and `lab7-splunk-delivery-splunk.json` (`lab7-params-splunk`); the contexts have different names, so both groups can be imported into the same NiFi side by side.
 
-| Parameter | Emulator (in the reference flow) | Real Splunk (`make splunk`) |
+| Parameter | Emulator (`lab7-splunk-delivery-mock.json`) | Real Splunk (`lab7-splunk-delivery-splunk.json`, needs `make splunk`) |
 |---|---|---|
 | `splunk.host` | `splunk-sim` | `splunk` |
 | `hec.url` | `http://splunk-sim:8088/services/collector/event` | `http://splunk:8088/services/collector/raw` |
@@ -68,4 +68,4 @@ With the default load (100 events per second) all three settings deliver exactly
 - Nothing is found in Splunk — the search is not on `index=nifi`, the time picker does not cover the run, or `hec.url` / `splunk.host` still point to `splunk-sim` (the events are in the emulator's files, not in Splunk).
 - Splunk does not parse the time — the format or field order does not match the sourcetype settings (on the stand the time of arrival is used deliberately).
 
-**Reference solution:** [lab7-splunk-delivery.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab7-splunk-delivery.json) — the parameters point to the emulator; for the real Splunk change `splunk.host` and `hec.url` as above.
+**Reference solution:** [lab7-splunk-delivery-mock.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab7-splunk-delivery-mock.json) — the emulator `splunk-sim`; [lab7-splunk-delivery-splunk.json](https://github.com/MagnetonBora/nifi-playground/blob/master/nifi/flows/lab7-splunk-delivery-splunk.json) — the real Splunk (`splunk`, HEC `/raw`).

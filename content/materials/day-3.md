@@ -64,6 +64,7 @@ flowchart LR
 1. **The counter does not reset by itself.** If a FlowFile successfully passed a retry and then landed in another `RetryFlowFile` with the same *Retry Attribute*, the old value will keep accumulating. Delete the attribute after success (`UpdateAttribute` → *Delete Attributes Expression*) or set different *Retry Attribute* names for different retry points.
 2. **Penalty** (`30 sec` by default) protects the destination from a "storm" of retries: while a FlowFile is penalized, the processor does not take it. If **all** FlowFiles in the queue are penalized, the UI shows this, and the processor does not spin idly (an improvement in 1.16.0).
 3. Do not use `RetryFlowFile` for **data errors** (`invalid`, `4xx`): a retry will change nothing.
+4. **Penalties add up.** Some processors penalize a FlowFile themselves before routing it to a retry relationship — for example, `InvokeHTTP` does so for `Retry` (5xx) with its own *Penalty Duration*. Then `RetryFlowFile` adds its penalty, and the real pause is the sum of both (30 + 10 sec with the defaults). Keep the backoff in one place: set *Penalty Duration* `0 sec` on the processor in front of `RetryFlowFile`.
 
 **What to choose: framework retry or `RetryFlowFile`.**
 

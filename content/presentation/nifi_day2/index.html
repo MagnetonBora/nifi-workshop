@@ -1873,11 +1873,11 @@ Return Type = json
       <h2 class="section-heading">Components and key properties</h2>
       <table>
         <tr><th>Component</th><th>Key properties</th></tr>
-        <tr><td><code>JsonTreeReader</code> <code>r-log</code></td><td><code>Use 'Schema Text' Property</code>: <code>ts</code>, <code>level</code>, <code>svc</code>, <code>msg</code>, <code>user{id,pwd}</code></td></tr>
-        <tr><td><code>JsonRecordSetWriter</code> <code>w-log</code></td><td><code>LogEvent</code> schema; <code>One Line Per Object</code>; Pretty Print <code>false</code></td></tr>
-        <tr><td><code>ValidateRecord</code></td><td>Reader <code>r-log</code>; Writer <code>w-log</code>; Strict Type Checking <code>true</code></td></tr>
+        <tr><td><code>JsonTreeReader</code> <code>reader-input-schema</code></td><td><code>Use 'Schema Text' Property</code>: <code>ts</code>, <code>level</code>, <code>svc</code>, <code>msg</code>, <code>user{id,pwd}</code></td></tr>
+        <tr><td><code>JsonRecordSetWriter</code> <code>writer-output-schema</code></td><td><code>LogEvent</code> schema; <code>One Line Per Object</code>; Pretty Print <code>false</code></td></tr>
+        <tr><td><code>ValidateRecord</code></td><td>Reader <code>reader-input-schema</code>; Writer <code>writer-output-schema</code>; Strict Type Checking <code>true</code></td></tr>
         <tr><td><code>UpdateRecord</code></td><td><code>Literal Value</code>; <code>/ingest_ts</code> = <code>${now():format("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "UTC")}</code></td></tr>
-        <tr><td><code>MergeRecord</code></td><td><code>w-log</code> as Reader and Writer; Min <code>1000</code>; Max <code>10000</code>; <strong>Max Bin Age</strong> <code>30 sec</code></td></tr>
+        <tr><td><code>MergeRecord</code></td><td><code>writer-output-schema</code> as Reader and Writer; Min <code>1000</code>; Max <code>10000</code>; <strong>Max Bin Age</strong> <code>30 sec</code></td></tr>
         <tr><td><code>PutFile</code></td><td><code>/data/out</code>; <code>replace</code> or unique name <code>${uuid}.ndjson</code></td></tr>
       </table>
       <div class="note">GenerateFlowFile: <code>Custom Text</code> with the NDJSON lines, Mime Type <code>application/x-ndjson</code>.</div>

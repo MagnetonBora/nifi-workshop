@@ -49,7 +49,7 @@ make splunk                                                           # wait unt
 docker exec nifi curl -s http://splunk:8088/services/collector/health # {"text":"HEC is healthy","code":17}
 ```
 
-Parameter Context `lab7-params`: `splunk.host`, `splunk.port=5514`, `hec.url`, `hec.token=00000000-0000-0000-0000-000000000000` — `splunk.host` and `hec.url` as in the table above.
+Parameter Context `lab7-params` (in the reference files: `lab7-params-mock` / `lab7-params-splunk`): `splunk.host`, `splunk.port=5514`, `hec.url`, `hec.token=00000000-0000-0000-0000-000000000000` — `splunk.host` and `hec.url` as in the table above.
 
 ## Steps
 
@@ -130,4 +130,4 @@ EOF
 
 Count with `wc -l /tmp/splunk_in.log /tmp/hec_in.log`.
 
-Reference flow: `make import f=nifi/flows/lab7-splunk-delivery.json` (the parameters point to the emulator).
+Reference flows: `make import f=nifi/flows/lab7-splunk-delivery-mock.json` (the emulator) or `make import f=nifi/flows/lab7-splunk-delivery-splunk.json` (the real Splunk, after `make splunk`).

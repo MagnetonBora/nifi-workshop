@@ -3,7 +3,7 @@ import { componentRegistry } from "./quartz/components/registry"
 
 componentRegistry.setOptionOverrides("@quartz-community/explorer", {
 	sortFn: (a, b) => {
-		// Final lab goes after the numbered labs; appendix pages go to the very bottom.
+		// Final lab goes after the numbered labs; appendix pages, then the Additional folder, go to the bottom.
 		// No helper functions here: sortFn is serialized and runs in the browser.
 		if (a.isFolder && b.isFolder) {
 			// Fixed order of the top-level folders; unknown folders go after them
@@ -12,8 +12,8 @@ componentRegistry.setOptionOverrides("@quartz-community/explorer", {
 			const bPos = order.indexOf(b.slugSegment) === -1 ? order.length : order.indexOf(b.slugSegment)
 			if (aPos !== bPos) return aPos - bPos
 		}
-		const aRank = /^appendix/i.test(a.displayName) ? 2 : /^final/i.test(a.displayName) ? 1 : 0
-		const bRank = /^appendix/i.test(b.displayName) ? 2 : /^final/i.test(b.displayName) ? 1 : 0
+		const aRank = /^additional/i.test(a.displayName) ? 3 : /^appendix/i.test(a.displayName) ? 2 : /^final/i.test(a.displayName) ? 1 : 0
+		const bRank = /^additional/i.test(b.displayName) ? 3 : /^appendix/i.test(b.displayName) ? 2 : /^final/i.test(b.displayName) ? 1 : 0
 		if (aRank !== bRank) return aRank - bRank
 		return a.displayName.localeCompare(b.displayName, undefined, {
 			numeric: true,

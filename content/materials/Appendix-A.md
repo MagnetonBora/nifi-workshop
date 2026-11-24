@@ -19,7 +19,7 @@ A training stand for all the labs (not for production) — the stand repository 
 | Prometheus + kafka-exporter | `prom/prometheus` | `prometheus`, `kafka-exporter` | `prometheus:9090` | `9090`, `9308` | `monitoring/prometheus/docker-compose-prometheus.yml` |
 | Grafana | `grafana/grafana` | `grafana` | `grafana:3000` | `3000` | `monitoring/grafana/docker-compose-grafana.yml` |
 | A stub of the customers REST API (Lab 5) | `python:3.12-alpine` | `customers-api` | `http://customers-api:8000` | — | `lab-services/docker-compose-lab-services.yml` |
-| The Splunk emulator (Lab 7, the final lab) | `python:3.12-alpine` | `splunk-sim` | TCP `splunk-sim:5514`, HEC `http://splunk-sim:8088` | — | the same file |
+| The Splunk emulator (Lab 7) | `python:3.12-alpine` | `splunk-sim` | TCP `splunk-sim:5514`, HEC `http://splunk-sim:8088` | — | the same file |
 | An unstable API (Lab 8) | `python:3.12-alpine` | `flaky` | `http://flaky:9099/events` | — | the same file |
 | Splunk Enterprise (trial, optional) | `splunk/splunk` | `splunk` | TCP `splunk:5514`, HEC `http://splunk:8088` | `8000` (UI), `8088` | `splunk/docker-compose-splunk.yml` |
 
@@ -95,6 +95,7 @@ What to specify in the Parameter Context and in commands instead of abstract add
 | The customers REST API | `http://customers-api:8000/customers/<id>` |
 | Splunk | the emulator: TCP `splunk-sim:5514`, HEC `http://splunk-sim:8088/services/collector/event`; a real Splunk: TCP `splunk:5514`, HEC `http://splunk:8088/services/collector/raw` (NDJSON as is) or `/services/collector/event` (the envelope `{"event": …}`), the header `Authorization: Splunk 00000000-0000-0000-0000-000000000000` |
 | The unstable API | `http://flaky:9099/events` |
+| Kafka topics of the final lab | `logs.raw` (6 partitions, input), `logs.clean` (6 partitions, output), `logs.dlq` (errors) — created by `make lab-setup` |
 | NiFi Registry (the Registry Client) | `https://nifi-registry:18443` — the client is created automatically (`make nifi` / `make cluster`), an SSL Context Service is not needed |
 
 ### A.6 Specifics of the stand
@@ -109,6 +110,8 @@ What to specify in the Parameter Context and in commands instead of abstract add
 
 ```bash
 make lab03-measure                # Lab 3 measurements: split vs record, report in nifi/data/results/
+make lab08-measure                # Lab 8 measurements: retries, DLQ, API outage (~9 min), report in labs/ (.txt + .html)
+make lab09-measure                # Lab 9 measurements: scenarios A-D x 3 runs (~6 min, checks free disk), report in labs/
 make lab4-insert n=10             # 10 new gold customers in the table customers (Lab 4)
 make lab05-data                   # 100 test orders into orders.raw (Lab 5)
 make lab-final-load n=100000      # the load for the final lab into logs.raw
@@ -129,4 +132,4 @@ docker exec splunk-sim sh -c ': > /data/splunk_in.log; : > /data/hec_in.log'    
 
 ### A.8 Reference solutions
 
-The `nifi/flows` directory holds the Flow Definitions of all the labs verified on the stand (`lab1-first-flow.json` … `lab9-performance.json`, `lab10-final-pipeline.json` — the final one). Import: drag the **Process Group** icon onto the canvas and click the file upload icon, or `make import f=...`. After importing, enable the group's Controller Services (*Enable all controller services*) and start it. The environment values are moved into the Parameter Context of each lab. To change a reference solution, fix the flow in NiFi, export it (right-click the group → *Download flow definition*), and replace the file in `nifi/flows`.
+The `nifi/flows` directory holds the Flow Definitions of all the labs verified on the stand (`lab1-first-flow.json` … `lab9-performance.json`, `lab10-final-pipeline.json` — the final one; Lab 7 has two variants: `lab7-splunk-delivery-mock.json` for the emulator and `lab7-splunk-delivery-splunk.json` for the real Splunk). Import: drag the **Process Group** icon onto the canvas and click the file upload icon, or `make import f=...`. After importing, enable the group's Controller Services (*Enable all controller services*) and start it. The environment values are moved into the Parameter Context of each lab. To change a reference solution, fix the flow in NiFi, export it (right-click the group → *Download flow definition*), and replace the file in `nifi/flows`.

@@ -19,9 +19,9 @@ All labs are verified on Apache NiFi 2.12.0.
 | [[labs/lab-5\|Lab 5 — A database + REST + Kafka with record processing]] | Day 2 | ConsumeKafka, ValidateRecord, LookupRecord + REST, PutDatabaseRecord UPSERT, DLQ | [[solutions/lab-5\|Solution]] |
 | [[labs/lab-6\|Lab 6 — An NDJSON transformation pipeline]] | Day 2 | ValidateRecord, removing a secret and field order via the Writer schema, MergeRecord | [[solutions/lab-6\|Solution]] |
 | [[labs/lab-7\|Lab 7 — Delivering events to Splunk]] | Day 2 | PutSplunk (TCP), InvokeHTTP → HEC, batch size and throughput | [[solutions/lab-7\|Solution]] |
-| [[labs/lab-8\|Lab 8 — Retry and error handling]] | Day 3 | InvokeHTTP, RetryFlowFile, DLQ, back pressure when the destination fails | [[solutions/lab-8\|Solution]] |
-| [[labs/lab-9\|Lab 9 — A performance test and tuning]] | Day 3 | A baseline, tuning scenarios, metrics, and a report | [[solutions/lab-9\|Solution]] |
-| [[labs/final-lab\|Final lab — an end-to-end pipeline]] | Day 3 | Kafka → validation and transformation → Splunk → DLQ, reconciliation and failure tests | [[solutions/final-lab\|Solution]] |
+| [[labs/lab-8\|Lab 8 — Retry and error handling]] | Day 3 | InvokeHTTP, RetryFlowFile, DLQ, an API outage, measuring with `make lab08-measure` | [[solutions/lab-8\|Solution]] |
+| [[labs/lab-9\|Lab 9 — A performance test and tuning]] | Day 3 | A fixed workload of 5M records, finding the bottleneck, tuning scenarios, `make lab09-measure`, a Grafana dashboard | [[solutions/lab-9\|Solution]] |
+| [[labs/final-lab\|Final lab — an end-to-end pipeline]] | Day 3 | Kafka → validation and transformation → Kafka (`logs.clean`) → DLQ, reconciliation and failure tests | [[solutions/final-lab\|Solution]] |
 
 Try to build each flow yourself first, then compare it with the solution. Reference Flow Definitions and how to
 import them are on the [[solutions/index|Solutions]] page.

@@ -210,6 +210,27 @@ The presentations are static HTML files and do not require a build step.
 
 All presentations share the same visual style, navigation controller, and brand assets from `content/presentation/shared/`.
 
+## Versions and tags
+
+This repository keeps evolving, and future editions of the workshop may change it. Every delivery of the workshop is marked with a Git tag on GitHub, so you can always get exactly the version that was used during your course.
+
+| Tag | Course | Dates |
+|---|---|---|
+| [`workshop-2026-11-norway`](https://github.com/MagnetonBora/nifi-workshop/tree/workshop-2026-11-norway) | Apache NiFi workshop, Norway | November 23–25, 2026 |
+
+To clone the repository at a specific tag:
+
+```bash
+git clone --branch workshop-2026-11-norway https://github.com/MagnetonBora/nifi-workshop.git
+```
+
+If you already have a clone:
+
+```bash
+git fetch --tags
+git checkout tags/workshop-2026-11-norway -b workshop-2026-11-norway
+```
+
 ## Credits
 
 The workshop was produced on commission for [NobleProg](https://www.nobleprog.com/).
